@@ -498,6 +498,23 @@ export const blockFactoryDeliveries = pgTable("block_factory_deliveries", {
   createdAt: timestamp("created_at").defaultNow(),
 });
 
+// 11d. Block Factory Daily Activity Checklist
+export const blockFactoryChecklists = pgTable("block_factory_checklists", {
+  id: serial("id").primaryKey(),
+  businessId: integer("business_id").notNull(),
+  branchCode: text("branch_code"),
+  checklistDate: text("checklist_date").notNull(),
+  taskKey: text("task_key").notNull(), // e.g. MACHINE_STARTUP, MATERIAL_COUNT
+  taskLabel: text("task_label").notNull(),
+  category: text("category"), // PRODUCTION, MATERIALS, MACHINERY, QUALITY, CLEANING, SECURITY, DELIVERIES
+  isCompleted: boolean("is_completed").default(false),
+  completedByName: text("completed_by_name"),
+  completedByRole: text("completed_by_role"),
+  completedAt: timestamp("completed_at"),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
 // 12. Aquaculture Log (Tilapia/Catfish, water quality pH & dissolved O2, FCR)
 export const aquacultureLogs = pgTable("aquaculture_logs", {
   id: serial("id").primaryKey(),
