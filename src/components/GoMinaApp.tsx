@@ -17,6 +17,7 @@ import EnterpriseUserPanel from "./EnterpriseUserPanel";
 import PoultryFarmModule from "./PoultryFarmModule";
 import BlockFactoryModule from "./BlockFactoryModule";
 import AquacultureModule from "./AquacultureModule";
+import ElectronicsShopModule from "./ElectronicsShopModule";
 import UniversalExportCenter from "./UniversalExportCenter";
 import { CurrencyCode } from "@/lib/currency";
 import { getOfflineQueue } from "@/lib/offlineSync";
@@ -453,6 +454,25 @@ export default function GoMinaApp() {
         );
       }
 
+      // Electronics shop gets its dedicated management dashboard
+      if (activeTab === "TECH-01") {
+        return (
+          <ElectronicsShopModule
+            currentUser={currentUser}
+            businessInfo={bizInfo}
+            businessMetrics={bizMetric}
+            inventory={inventory}
+            customers={customers}
+            suppliers={suppliers}
+            transactions={transactions}
+            assets={assets}
+            employees={employees}
+            currentCurrency={currentCurrency}
+            onRefreshData={refreshAllData}
+          />
+        );
+      }
+
       // Aquaculture / Fish Farm gets a dedicated real-time management dashboard
       if (activeTab === "AQUA-01") {
         return (
@@ -474,7 +494,6 @@ export default function GoMinaApp() {
       let logs: any[] = [];
       if (activeTab === "LIVESTOCK-01") logs = specializedLogs.livestock || [];
       else if (activeTab === "FOOD-01") logs = specializedLogs.restaurant || [];
-      else if (activeTab === "TECH-01") logs = specializedLogs.electronics || [];
       else if (activeTab === "WASH-01") logs = specializedLogs.carWash || [];
 
       return (

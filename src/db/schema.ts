@@ -814,3 +814,84 @@ export const checklistEntries = pgTable("checklist_entries", {
   notes: text("notes"),
   createdAt: timestamp("created_at").defaultNow(),
 });
+
+// T1. Electronics Shop — Customer Orders (sales pipeline with fulfillment status)
+export const electronicsOrders = pgTable("electronics_orders", {
+  id: serial("id").primaryKey(),
+  businessId: integer("business_id").notNull(),
+  branchCode: text("branch_code"),
+  orderNumber: text("order_number").notNull().unique(),
+  customerName: text("customer_name").notNull(),
+  customerPhone: text("customer_phone"),
+  itemName: text("item_name").notNull(),
+  inventoryId: integer("inventory_id"),
+  quantity: integer("quantity").notNull(),
+  unitPriceGhs: doublePrecision("unit_price_ghs").notNull(),
+  totalGhs: doublePrecision("total_ghs").notNull(),
+  status: text("status").notNull().default("PENDING"), // PENDING, READY, DELIVERED, CANCELLED
+  dueDate: text("due_date"),
+  notes: text("notes"),
+  createdByName: text("created_by_name"),
+  createdByRole: text("created_by_role"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+// T2. Electronics Shop — Serial Number Tracking (per-unit lifecycle & warranty)
+export const electronicsSerials = pgTable("electronics_serials", {
+  id: serial("id").primaryKey(),
+  businessId: integer("business_id").notNull(),
+  branchCode: text("branch_code"),
+  serialNumber: text("serial_number").notNull().unique(),
+  productName: text("product_name").notNull(),
+  brand: text("brand"),
+  inventoryId: integer("inventory_id"),
+  status: text("status").notNull().default("IN_STOCK"), // IN_STOCK, SOLD, RESERVED, RETURNED, UNDER_REPAIR
+  customerName: text("customer_name"),
+  saleDate: text("sale_date"),
+  warrantyMonths: integer("warranty_months").default(12),
+  warrantyEnd: text("warranty_end"),
+  priceGhs: doublePrecision("price_ghs").default(0),
+  createdByName: text("created_by_name"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+// T3. Electronics Shop — Warranty Claims, Returns & Repairs
+export const electronicsWarranties = pgTable("electronics_warranties", {
+  id: serial("id").primaryKey(),
+  businessId: integer("business_id").notNull(),
+  branchCode: text("branch_code"),
+  claimNumber: text("claim_number").notNull().unique(),
+  productName: text("product_name").notNull(),
+  serialNumber: text("serial_number"),
+  customerName: text("customer_name").notNull(),
+  customerPhone: text("customer_phone"),
+  issueType: text("issue_type").notNull().default("WARRANTY_CLAIM"), // WARRANTY_CLAIM, RETURN, REPAIR
+  status: text("status").notNull().default("OPEN"), // OPEN, IN_PROGRESS, RESOLVED, CANCELLED
+  description: text("description"),
+  costGhs: doublePrecision("cost_ghs").default(0),
+  loggedDate: text("logged_date").notNull(),
+  resolvedDate: text("resolved_date"),
+  handledByName: text("handled_by_name"),
+  handledByRole: text("handled_by_role"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+// T4. Electronics Shop — Supplier Purchases (received stock auto-books inventory + expense)
+export const electronicsPurchases = pgTable("electronics_purchases", {
+  id: serial("id").primaryKey(),
+  businessId: integer("business_id").notNull(),
+  branchCode: text("branch_code"),
+  purchaseNumber: text("purchase_number").notNull().unique(),
+  supplierName: text("supplier_name").notNull(),
+  itemName: text("item_name").notNull(),
+  quantity: integer("quantity").notNull(),
+  unitCostGhs: doublePrecision("unit_cost_ghs").notNull(),
+  totalGhs: doublePrecision("total_ghs").notNull(),
+  status: text("status").notNull().default("ORDERED"), // ORDERED, RECEIVED, CANCELLED
+  orderDate: text("order_date").notNull(),
+  receivedDate: text("received_date"),
+  notes: text("notes"),
+  createdByName: text("created_by_name"),
+  createdByRole: text("created_by_role"),
+  createdAt: timestamp("created_at").defaultNow(),
+});

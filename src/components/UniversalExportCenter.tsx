@@ -235,6 +235,22 @@ export default function UniversalExportCenter({ activeModule, currentUser, busin
         ...addSection("Finance", scoped(data.transactions)),
         ...addSection("Assets", scoped(data.assets)),
       ];
+    } else if (moduleKey === "TECH-01") {
+      const res = await fetch(`/api/electronics?businessId=${businessId || activeBusiness?.id}`);
+      const p = await res.json();
+      const clRes = await fetch(`/api/checklists?businessId=${businessId || activeBusiness?.id}`);
+      const cl = await clRes.json();
+      records = [
+        ...addSection("Orders", p.orders || []),
+        ...addSection("Supplier Purchases", p.purchases || []),
+        ...addSection("Warranty & Returns", p.warranties || []),
+        ...addSection("Serial Number Registry", p.serials || []),
+        ...addSection("Daily Checklist", cl.entries || []),
+        ...addSection("Inventory", scoped(data.inventory)),
+        ...addSection("Finance", scoped(data.transactions)),
+        ...addSection("Assets", scoped(data.assets)),
+        ...addSection("Employees", scoped(data.employees)),
+      ];
     } else if (BUSINESS_MODULES.has(moduleKey)) {
       const logMap: Record<string, string> = {
         "AQUA-01": "aquaculture",
