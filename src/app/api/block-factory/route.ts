@@ -5,11 +5,21 @@ import {
   blockFactoryOrders,
   blockFactoryDeliveries,
   blockFactoryChecklists,
+  blockTypes,
   inventoryItems,
   transactions,
   businesses,
 } from "@/db/schema";
 import { and, eq } from "drizzle-orm";
+
+// Original factory block types — master list seeds with exactly these keys so
+// all existing production records, orders and filters stay unchanged.
+const DEFAULT_BLOCK_TYPES = [
+  { typeKey: "6-INCH-SOLID", name: "6-Inch Solid Blocks", dimensions: "6in x 9in x 18in", style: "SOLID" },
+  { typeKey: "6-INCH-HOLLOW", name: "6-Inch Hollow Blocks", dimensions: "6in x 8in x 16in", style: "HOLLOW" },
+  { typeKey: "5-INCH-SOLID", name: "5-Inch Solid Blocks", dimensions: "5in x 6in x 16in", style: "SOLID" },
+  { typeKey: "PAVING-BRICKS", name: "Paving Bricks", dimensions: "4in x 8in pavers", style: "PAVING" },
+];
 
 export async function GET(request: NextRequest) {
   try {
@@ -19,13 +29,23 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ success: false, error: "businessId required" }, { status: 400 });
     }
 
-    const [production, orders, deliveries, inventory, checklists] = await Promise.all([
+    const [production, orders, deliveries, inventory, checklists, existingTypes] = await Promise.all([
       db.select().from(blockFactoryLogs).where(eq(blockFactoryLogs.businessId, businessId)),
       db.select().from(blockFactoryOrders).where(eq(blockFactoryOrders.businessId, businessId)),
       db.select().from(blockFactoryDeliveries).where(eq(blockFactoryDeliveries.businessId, businessId)),
       db.select().from(inventoryItems).where(eq(inventoryItems.businessId, businessId)),
       db.select().from(blockFactoryChecklists).where(eq(blockFactoryChecklists.businessId, businessId)),
+      db.select().from(blockTypes).where(eq(blockTypes.businessId, businessId)),
     ]);
+
+    // Seed the block type master list once with the factory's original types
+    let types = existingTypes;
+    if (types.length === 0) {
+      for (const t of DEFAULT_BLOCK_TYPES) {
+        const [row] = await db.insert(blockTypes).values({ businessId, ...t }).returning();
+        types.push(row);
+      }
+    }
 
     return NextResponse.json({
       success: true,
@@ -34,6 +54,7 @@ export async function GET(request: NextRequest) {
       deliveries: deliveries.sort((a: any, b: any) => (b.id || 0) - (a.id || 0)),
       inventory,
       checklists: checklists.sort((a: any, b: any) => (a.id || 0) - (b.id || 0)),
+      blockTypes: types.sort((a: any, b: any) => (a.id || 0) - (b.id || 0)),
     });
   } catch (error: any) {
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });
@@ -54,6 +75,89 @@ export async function POST(request: NextRequest) {
     const branchName = data.branchName || biz?.name || null;
     const today = new Date().toISOString().split("T")[0];
 
+    // ── BLOCK_TYPE (extend the block production master list) ──────────
+    if (entity === "BLOCK_TYPE") {
+      const rawName = String(data.name || data.typeKey || "").trim();
+      if (!rawName) {
+        return NextResponse.json({ success: false, error: "Block type name is required" }, { status: 400 });
+      }
+      const typeKey = String(data.typeKey || rawName)
+        .toUpperCase()
+        .trim()
+        .replace(/\s+/g, "-")
+        .replace(/[^A-Z0-9&-]/g, "");
+      if (!typeKey) {
+        return NextResponse.json({ success: false, error: "Enter a valid block type name" }, { status: 400 });
+      }
+
+      // Make sure the master list exists (seeded) before duplicate-checking
+      let existing = await db.select().from(blockTypes).where(eq(blockTypes.businessId, businessId));
+      if (existing.length === 0) {
+        for (const t of DEFAULT_BLOCK_TYPES) {
+          const [seeded] = await db.insert(blockTypes).values({ businessId, ...t }).returning();
+          existing.push(seeded);
+        }
+      }
+      if (existing.some((t: any) => String(t.typeKey).toUpperCase() === typeKey)) {
+        return NextResponse.json(
+          { success: false, error: `"${typeKey}" is already in the block type master list` },
+          { status: 409 },
+        );
+      }
+
+      const upper = (rawName + " " + (data.style || "")).toUpperCase();
+      const style = ["SOLID", "HOLLOW", "PAVING", "INTERLOCKING", "OTHER"].includes(String(data.style || "").toUpperCase())
+        ? String(data.style).toUpperCase()
+        : upper.includes("HOLLOW") ? "HOLLOW"
+        : upper.includes("PAV") ? "PAVING"
+        : upper.includes("INTERLOCK") ? "INTERLOCKING"
+        : upper.includes("SOLID") ? "SOLID"
+        : "OTHER";
+
+      const unitPrice = Number(data.defaultUnitPriceGhs) || 0;
+
+      // Optionally register a finished-goods inventory item so the new type is
+      // tracked in stock, sellable in Sales, and visible in reports.
+      let linkedSku: string | null = null;
+      if (data.createInventoryItem !== false) {
+        const baseSku = `BLK-${typeKey}`;
+        const taken = new Set(
+          (await db.select({ sku: inventoryItems.sku }).from(inventoryItems)).map((r: any) => r.sku),
+        );
+        let sku = baseSku;
+        let n = 2;
+        while (taken.has(sku)) sku = `${baseSku}-${n++}`;
+        await db.insert(inventoryItems).values({
+          name: rawName,
+          sku,
+          businessId,
+          category: "Concrete Blocks",
+          quantity: 0,
+          unit: "Units",
+          costPriceGhs: unitPrice ? Math.round(unitPrice * 0.66 * 100) / 100 : 0,
+          sellingPriceGhs: unitPrice,
+          minStockThreshold: 100,
+          status: "OUT_OF_STOCK",
+        });
+        linkedSku = sku;
+      }
+
+      const [row] = await db.insert(blockTypes).values({
+        businessId,
+        branchCode,
+        typeKey,
+        name: rawName,
+        dimensions: data.dimensions || null,
+        style,
+        defaultUnitPriceGhs: unitPrice || null,
+        sku: linkedSku,
+        isActive: true,
+        createdByName: data.createdByName || null,
+        createdByRole: data.createdByRole || null,
+      }).returning();
+      return NextResponse.json({ success: true, item: row });
+    }
+
     if (entity === "PRODUCTION") {
       const blocksMolded = Number(data.blocksMolded) || 0;
       const blocksBroken = Number(data.blocksBroken) || 0;
@@ -70,9 +174,17 @@ export async function POST(request: NextRequest) {
         recordedDate: data.recordedDate || today,
       }).returning();
 
-      // Increase finished block inventory if an inventory SKU matches block type
+      // Increase finished block inventory: prefer the master list SKU link for
+      // the block type, then fall back to the original name-prefix heuristic.
       const inv = await db.select().from(inventoryItems).where(eq(inventoryItems.businessId, businessId));
-      const target = inv.find((i: any) => i.sku?.includes("BLK") && i.name?.toUpperCase().includes(blockType.split("-")[0]));
+      const [masterType] = await db
+        .select()
+        .from(blockTypes)
+        .where(and(eq(blockTypes.businessId, businessId), eq(blockTypes.typeKey, blockType)))
+        .limit(1);
+      const target =
+        (masterType?.sku ? inv.find((i: any) => i.sku === masterType.sku) : undefined) ||
+        inv.find((i: any) => i.sku?.includes("BLK") && i.name?.toUpperCase().includes(blockType.split("-")[0]));
       if (target) {
         const newQty = (target.quantity || 0) + goodBlocks;
         await db.update(inventoryItems).set({

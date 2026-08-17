@@ -515,6 +515,23 @@ export const blockFactoryChecklists = pgTable("block_factory_checklists", {
   createdAt: timestamp("created_at").defaultNow(),
 });
 
+// 11e. Block Types Master List (production master data — user-extensible)
+export const blockTypes = pgTable("block_types", {
+  id: serial("id").primaryKey(),
+  businessId: integer("business_id").notNull(),
+  branchCode: text("branch_code"),
+  typeKey: text("type_key").notNull(), // canonical key stored on production/orders/deliveries, e.g. "6-INCH-SOLID"
+  name: text("name").notNull(), // display label, e.g. "6-Inch Solid Blocks"
+  dimensions: text("dimensions"), // e.g. "6in x 9in x 18in"
+  style: text("style").default("OTHER"), // SOLID, HOLLOW, PAVING, INTERLOCKING, OTHER
+  defaultUnitPriceGhs: doublePrecision("default_unit_price_ghs"),
+  sku: text("sku"), // linked finished-goods inventory SKU (auto-created for new types)
+  isActive: boolean("is_active").default(true),
+  createdByName: text("created_by_name"),
+  createdByRole: text("created_by_role"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
 // 12. Aquaculture Log (Tilapia/Catfish, water quality pH & dissolved O2, FCR)
 export const aquacultureLogs = pgTable("aquaculture_logs", {
   id: serial("id").primaryKey(),

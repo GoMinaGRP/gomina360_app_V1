@@ -35,7 +35,10 @@ const TABS: { key: Tab; label: string; icon: any }[] = [
   { key: "CHECKLIST", label: "Daily Checklist", icon: ClipboardCheck },
 ];
 
+// Original factory types — always present as the baseline; the persisted master
+// list (block_types table) extends this with any user-created types.
 const BLOCK_TYPES = ["6-INCH-SOLID", "6-INCH-HOLLOW", "5-INCH-SOLID", "PAVING-BRICKS"];
+const ADD_NEW_TYPE = "__ADD_NEW_BLOCK_TYPE__";
 
 // Daily activity template for the block factory yard
 const DEFAULT_TASKS = [
@@ -61,6 +64,7 @@ export default function BlockFactoryModule({
   const [orders, setOrders] = useState<any[]>([]);
   const [deliveries, setDeliveries] = useState<any[]>([]);
   const [checklists, setChecklists] = useState<any[]>([]);
+  const [blockTypesList, setBlockTypesList] = useState<any[]>([]);
   const [checklistDate, setChecklistDate] = useState<string>(new Date().toISOString().split("T")[0]);
   const [showForm, setShowForm] = useState<FormType>(null);
   const [busy, setBusy] = useState(false);
@@ -82,11 +86,20 @@ export default function BlockFactoryModule({
         setOrders(d.orders || []);
         setDeliveries(d.deliveries || []);
         setChecklists(d.checklists || []);
+        setBlockTypesList(d.blockTypes || []);
       }
     } finally {
       setLoading(false);
     }
   }, [bizId]);
+
+  // Master list of block types: original factory types + any saved custom types
+  // + any type already referenced by historical records (so filters never hide data).
+  const blockTypeOptions = useMemo(() => {
+    const fromMaster = blockTypesList.filter((t) => t.isActive !== false).map((t) => t.typeKey);
+    const fromData = [...production, ...orders, ...deliveries].map((x: any) => x.blockType);
+    return Array.from(new Set([...BLOCK_TYPES, ...fromMaster, ...fromData].filter(Boolean))) as string[];
+  }, [blockTypesList, production, orders, deliveries]);
 
   useEffect(() => { refresh(); }, [refresh]);
 
@@ -280,6 +293,28 @@ export default function BlockFactoryModule({
         });
         d = await res.json();
       } else {
+        // "Add New Block Type" flow from the production form: persist the new
+        // type to the master list first, then record production against it.
+        if (entity === "PRODUCTION" && data.blockType === ADD_NEW_TYPE && data.__newBlock) {
+          const tRes = await fetch("/api/block-factory", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              entity: "BLOCK_TYPE",
+              data: {
+                ...data.__newBlock,
+                businessId: bizId,
+                branchCode: businessInfo?.code,
+                createdByName: currentUser?.name,
+                createdByRole: currentUser?.role,
+              },
+            }),
+          });
+          const tD = await tRes.json();
+          if (!tD.success) throw new Error(tD.error || "Failed to save new block type");
+          data = { ...data, blockType: tD.item.typeKey };
+          delete data.__newBlock;
+        }
         const res = await fetch("/api/block-factory", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -422,7 +457,7 @@ export default function BlockFactoryModule({
         <div>
           <label className="block text-[10px] text-slate-500 mb-1">Block Type</label>
           <select value={blockTypeFilter} onChange={(e) => setBlockTypeFilter(e.target.value)} className="px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-white text-xs">
-            <option value="ALL">All Block Types</option>{BLOCK_TYPES.map((b) => <option key={b} value={b}>{b}</option>)}
+            <option value="ALL">All Block Types</option>{blockTypeOptions.map((b) => <option key={b} value={b}>{b}</option>)}
           </select>
         </div>
         {(dateFilter !== "ALL" || blockTypeFilter !== "ALL") && <button onClick={() => { setDateFilter("ALL"); setBlockTypeFilter("ALL"); }} className="self-end px-3 py-2 rounded-lg bg-slate-700 text-xs font-semibold">Clear</button>}
@@ -697,7 +732,7 @@ export default function BlockFactoryModule({
         </div>
       )}
 
-      {showForm && <BlockFactoryForm type={showForm} busy={busy} onClose={() => { setShowForm(null); setError(""); }} onSubmit={submit} orders={orders} inventory={branchInventory} />}
+      {showForm && <BlockFactoryForm type={showForm} busy={busy} onClose={() => { setShowForm(null); setError(""); }} onSubmit={submit} orders={orders} inventory={branchInventory} blockTypeOptions={blockTypeOptions} />}
     </div>
   );
 }
@@ -728,7 +763,7 @@ function MiniList({ title, items, render }: any) {
   return <div><div className="text-[10px] uppercase text-slate-500 font-bold mb-2">{title}</div><div className="space-y-2">{items.length ? items.map((item: any) => <div key={item.id} className="p-2 rounded-lg bg-slate-900/70 border border-slate-700 text-xs text-slate-300">{render(item)}</div>) : <p className="text-xs text-slate-500">No records</p>}</div></div>;
 }
 
-function BlockFactoryForm({ type, busy, onClose, onSubmit, orders, inventory }: any) {
+function BlockFactoryForm({ type, busy, onClose, onSubmit, orders, inventory, blockTypeOptions }: any) {
   const todayStr = new Date().toISOString().split("T")[0];
   const [f, setF] = useState<any>({ blockType: "6-INCH-SOLID", qualityGrade: "GRADE_A_STANDARD", status: "PENDING", paymentMethod: "CASH", deliveryDate: todayStr, date: todayStr, recordExpense: true });
   const set = (k: string, v: any) => setF({ ...f, [k]: v });
@@ -754,13 +789,43 @@ function BlockFactoryForm({ type, busy, onClose, onSubmit, orders, inventory }: 
     e.preventDefault();
     const payload = { ...f };
     if (type === "RESTOCK") payload.totalCostGhs = restockTotal;
+    if (type === "PRODUCTION" && payload.blockType === ADD_NEW_TYPE) {
+      payload.__newBlock = {
+        name: String(payload.newTypeName || "").trim(),
+        dimensions: payload.newTypeDims,
+        style: payload.newTypeStyle,
+        defaultUnitPriceGhs: payload.newTypePrice,
+        createInventoryItem: payload.newTypeInventory !== false,
+      };
+      delete payload.newTypeName;
+      delete payload.newTypeDims;
+      delete payload.newTypeStyle;
+      delete payload.newTypePrice;
+      delete payload.newTypeInventory;
+    }
     onSubmit(type, payload);
   };
 
   return <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm p-4"><div className="bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-lg shadow-2xl max-h-[90vh] overflow-y-auto"><div className="flex items-center justify-between p-5 border-b border-slate-800 sticky top-0 bg-slate-900 z-10"><h3 className="text-lg font-bold text-white">{title}</h3><button onClick={onClose} className="text-slate-400 hover:text-white"><X className="w-5 h-5" /></button></div><form onSubmit={handle} className="p-5 space-y-3">
-    {type === "PRODUCTION" && <><div className="grid grid-cols-2 gap-3"><I label="Batch ID" k="batchId" placeholder="auto if blank" /><S label="Block Type" k="blockType" opts={BLOCK_TYPES} /><I label="Bags Cement Used" k="bagsCementUsed" t="number" required min={1} /><I label="Blocks Molded" k="blocksMolded" t="number" required min={1} /><I label="Blocks Broken" k="blocksBroken" t="number" min={0} /><S label="Quality" k="qualityGrade" opts={["GRADE_A_STANDARD", "GRADE_B_MINOR_DEFECT", "REJECTED"]} /><I label="Date" k="recordedDate" t="date" /></div></>}
-    {type === "ORDER" && <><div className="grid grid-cols-2 gap-3"><I label="Customer Name" k="customerName" required /><I label="Customer Phone" k="customerPhone" /><S label="Block Type" k="blockType" opts={BLOCK_TYPES} /><I label="Quantity" k="quantity" t="number" required min={1} /><I label="Unit Price (GH₵)" k="unitPriceGhs" t="number" step="0.01" required /><S label="Status" k="status" opts={["PENDING", "IN_PROGRESS", "COMPLETED", "CANCELLED"]} /><I label="Due Date" k="dueDate" t="date" /></div><I label="Notes" k="notes" /></>}
-    {type === "DELIVERY" && <><div className="grid grid-cols-2 gap-3"><S label="Order" k="orderNumber" opts={[{ v: "", l: "— No linked order —" }, ...orders.map((o: any) => ({ v: o.orderNumber, l: `${o.orderNumber} • ${o.customerName}` }))]} /><I label="Customer" k="customerName" required /><S label="Block Type" k="blockType" opts={BLOCK_TYPES} /><I label="Quantity" k="quantity" t="number" required min={1} /><I label="Vehicle #" k="vehicleNumber" /><I label="Driver" k="driverName" /><S label="Status" k="status" opts={["SCHEDULED", "IN_TRANSIT", "DELIVERED", "CANCELLED"]} /><I label="Delivery Date" k="deliveryDate" t="date" /></div><I label="Notes" k="notes" /></>}
+    {type === "PRODUCTION" && <><div className="grid grid-cols-2 gap-3"><I label="Batch ID" k="batchId" placeholder="auto if blank" /><S label="Block Type" k="blockType" opts={[...blockTypeOptions, { v: ADD_NEW_TYPE, l: "➕ Add New Block Type…" }]} /><I label="Bags Cement Used" k="bagsCementUsed" t="number" required min={1} /><I label="Blocks Molded" k="blocksMolded" t="number" required min={1} /><I label="Blocks Broken" k="blocksBroken" t="number" min={0} /><S label="Quality" k="qualityGrade" opts={["GRADE_A_STANDARD", "GRADE_B_MINOR_DEFECT", "REJECTED"]} /><I label="Date" k="recordedDate" t="date" /></div>
+    {f.blockType === ADD_NEW_TYPE && (
+      <div className="p-3 rounded-xl border border-cyan-500/40 bg-cyan-500/5 space-y-3">
+        <div className="text-[11px] font-bold text-cyan-300 uppercase tracking-wide">New Block Type — saved to master list</div>
+        <div className="grid grid-cols-2 gap-3">
+          <I label="Type / Name" k="newTypeName" placeholder="e.g. 8-Inch Hollow Blocks" required />
+          <I label="Dimensions / Specs" k="newTypeDims" placeholder="8in x 8in x 16in" />
+          <S label="Style" k="newTypeStyle" opts={["SOLID", "HOLLOW", "PAVING", "INTERLOCKING", "OTHER"]} />
+          <I label="Default Unit Price (GH₵)" k="newTypePrice" t="number" step="0.01" min={0} placeholder="optional" />
+        </div>
+        <label className="flex items-center gap-2 text-[11px] text-slate-300 cursor-pointer">
+          <input type="checkbox" checked={f.newTypeInventory !== false} onChange={(e) => set("newTypeInventory", e.target.checked)} className="accent-cyan-500 w-3.5 h-3.5" />
+          Also add to inventory &amp; sales catalog — production and sales then track stock for this type automatically
+        </label>
+        <p className="text-[10px] text-slate-500">The type is stored in the block production master list and becomes selectable in future production, orders, deliveries, filters and reports.</p>
+      </div>
+    )}</>}
+    {type === "ORDER" && <><div className="grid grid-cols-2 gap-3"><I label="Customer Name" k="customerName" required /><I label="Customer Phone" k="customerPhone" /><S label="Block Type" k="blockType" opts={blockTypeOptions} /><I label="Quantity" k="quantity" t="number" required min={1} /><I label="Unit Price (GH₵)" k="unitPriceGhs" t="number" step="0.01" required /><S label="Status" k="status" opts={["PENDING", "IN_PROGRESS", "COMPLETED", "CANCELLED"]} /><I label="Due Date" k="dueDate" t="date" /></div><I label="Notes" k="notes" /></>}
+    {type === "DELIVERY" && <><div className="grid grid-cols-2 gap-3"><S label="Order" k="orderNumber" opts={[{ v: "", l: "— No linked order —" }, ...orders.map((o: any) => ({ v: o.orderNumber, l: `${o.orderNumber} • ${o.customerName}` }))]} /><I label="Customer" k="customerName" required /><S label="Block Type" k="blockType" opts={blockTypeOptions} /><I label="Quantity" k="quantity" t="number" required min={1} /><I label="Vehicle #" k="vehicleNumber" /><I label="Driver" k="driverName" /><S label="Status" k="status" opts={["SCHEDULED", "IN_TRANSIT", "DELIVERED", "CANCELLED"]} /><I label="Delivery Date" k="deliveryDate" t="date" /></div><I label="Notes" k="notes" /></>}
     {type === "EXPENSE" && <><div className="grid grid-cols-2 gap-3"><I label="Category" k="category" placeholder="Fuel, Cement, Payroll..." required list="blk-exp-cats" /><I label="Amount (GH₵)" k="amountGhs" t="number" step="0.01" required /><S label="Payment" k="paymentMethod" opts={["CASH", "MTN_MOMO", "TELECEL_CASH", "BANK_TRANSFER", "POS_CARD"]} /><I label="Date" k="date" t="date" /></div><I label="Description" k="description" /><datalist id="blk-exp-cats">{["Fuel & Diesel", "Cement Purchase", "Sand & Aggregates", "Payroll", "Machine Repair", "Transport", "Utilities", "Pallets", "Rent", "Miscellaneous"].map((c) => <option key={c} value={c} />)}</datalist></>}
     {type === "SALE" && <>
       <div className="grid grid-cols-2 gap-3">
