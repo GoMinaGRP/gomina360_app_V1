@@ -20,6 +20,8 @@ import {
   aiInsights,
   scenarioSimulations,
   integrations,
+  checklistTemplates,
+  checklistEntries,
 } from "@/db/schema";
 import { seedDatabase } from "@/db/seed";
 
@@ -40,6 +42,9 @@ export async function GET() {
     const allAiInsights = await db.select().from(aiInsights);
     const allScenarios = await db.select().from(scenarioSimulations);
     const allIntegrations = await db.select().from(integrations);
+    // Unified enterprise daily checklists (master items + dated completions)
+    const allChecklistTemplates = await db.select().from(checklistTemplates);
+    const allChecklistEntries = await db.select().from(checklistEntries);
 
     // Specialized logs
     const poultry = await db.select().from(poultryLogs);
@@ -64,6 +69,10 @@ export async function GET() {
       aiInsights: allAiInsights,
       scenarios: allScenarios,
       integrations: allIntegrations,
+      checklists: {
+        templates: allChecklistTemplates,
+        entries: allChecklistEntries,
+      },
       specializedLogs: {
         poultry,
         blockFactory,

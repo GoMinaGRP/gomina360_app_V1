@@ -209,23 +209,28 @@ export default function UniversalExportCenter({ activeModule, currentUser, busin
     } else if (moduleKey === "POULTRY-01") {
       const res = await fetch(`/api/poultry?businessId=${businessId || activeBusiness?.id}`);
       const p = await res.json();
+      const clRes = await fetch(`/api/checklists?businessId=${businessId || activeBusiness?.id}`);
+      const cl = await clRes.json();
       records = [
         ...addSection("Flocks", p.flocks || []),
         ...addSection("Feed", p.feedLogs || []),
         ...addSection("Water", p.waterLogs || []),
         ...addSection("Health & Vaccination", p.healthRecords || []),
         ...addSection("Production", p.production || []),
-        ...addSection("Daily Checklist", p.checklists || []),
+        ...addSection("Daily Checklist", cl.entries || []),
         ...addSection("Inventory", scoped(data.inventory)),
         ...addSection("Finance", scoped(data.transactions)),
       ];
     } else if (moduleKey === "BLOCK-01") {
       const res = await fetch(`/api/block-factory?businessId=${businessId || activeBusiness?.id}`);
       const p = await res.json();
+      const clRes = await fetch(`/api/checklists?businessId=${businessId || activeBusiness?.id}`);
+      const cl = await clRes.json();
       records = [
         ...addSection("Production", p.production || []),
         ...addSection("Orders", p.orders || []),
         ...addSection("Deliveries", p.deliveries || []),
+        ...addSection("Daily Checklist", cl.entries || []),
         ...addSection("Inventory", p.inventory || []),
         ...addSection("Finance", scoped(data.transactions)),
         ...addSection("Assets", scoped(data.assets)),
@@ -239,8 +244,11 @@ export default function UniversalExportCenter({ activeModule, currentUser, busin
         "WASH-01": "carWash",
       };
       const logs = data.specializedLogs[logMap[moduleKey]] || [];
+      const clRes = await fetch(`/api/checklists?businessId=${businessId || activeBusiness?.id}`);
+      const cl = await clRes.json();
       records = [
         ...addSection("Operations", logs),
+        ...addSection("Daily Checklist", cl.entries || []),
         ...addSection("Inventory", scoped(data.inventory)),
         ...addSection("Sales & Expenses", scoped(data.transactions)),
         ...addSection("Assets", scoped(data.assets)),

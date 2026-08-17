@@ -22,6 +22,7 @@ import {
 } from "lucide-react";
 import { CurrencyCode, formatMoney } from "@/lib/currency";
 import { addToOfflineQueue } from "@/lib/offlineSync";
+import DailyChecklistPanel from "./DailyChecklistPanel";
 
 interface SpecializedBusinessViewProps {
   businessCode: string;
@@ -31,6 +32,8 @@ interface SpecializedBusinessViewProps {
   currentCurrency: CurrencyCode;
   isOnline: boolean;
   onRefreshLogs: () => void;
+  currentUser?: any;
+  employees?: any[];
 }
 
 export default function SpecializedBusinessView({
@@ -41,6 +44,8 @@ export default function SpecializedBusinessView({
   currentCurrency,
   isOnline,
   onRefreshLogs,
+  currentUser,
+  employees,
 }: SpecializedBusinessViewProps) {
   const [showLogModal, setShowLogModal] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -676,6 +681,17 @@ export default function SpecializedBusinessView({
           </table>
         </div>
       </div>
+
+      {/* ══════════ DAILY OPERATIONS CHECKLIST (unified) ══════════ */}
+      <DailyChecklistPanel
+        businessId={businessInfo?.id}
+        branchCode={businessInfo?.code}
+        businessName={businessInfo?.name}
+        employees={employees || []}
+        currentUser={currentUser}
+        accent="cyan"
+        onChanged={onRefreshLogs}
+      />
 
       {/* Modal to log specialized operational data */}
       {showLogModal && (

@@ -12,6 +12,7 @@ import {
   LineChart, Line, AreaChart, Area,
 } from "recharts";
 import { CurrencyCode, formatMoney } from "@/lib/currency";
+import DailyChecklistPanel from "./DailyChecklistPanel";
 
 interface Props {
   currentUser: any;
@@ -40,19 +41,6 @@ const TABS: { key: Tab; label: string; icon: any }[] = [
 const BLOCK_TYPES = ["6-INCH-SOLID", "6-INCH-HOLLOW", "5-INCH-SOLID", "PAVING-BRICKS"];
 const ADD_NEW_TYPE = "__ADD_NEW_BLOCK_TYPE__";
 
-// Daily activity template for the block factory yard
-const DEFAULT_TASKS = [
-  { taskKey: "MACHINE_STARTUP", taskLabel: "Start up & warm block molding machine", category: "MACHINERY" },
-  { taskKey: "MIXER_INSPECTION", taskLabel: "Inspect mixer blades, belts & pallets", category: "MACHINERY" },
-  { taskKey: "MATERIAL_COUNT", taskLabel: "Count cement, sand, quarry & water stock", category: "MATERIALS" },
-  { taskKey: "FIRST_BATCH", taskLabel: "Start first production batch of the day", category: "PRODUCTION" },
-  { taskKey: "QUALITY_SPOT_CHECK", taskLabel: "Quality spot-check on fresh blocks", category: "QUALITY" },
-  { taskKey: "CURING_WATERING", taskLabel: "Water the curing yard & stacks", category: "PRODUCTION" },
-  { taskKey: "DISPATCH_CONFIRM", taskLabel: "Confirm today's delivery dispatch plan", category: "DELIVERIES" },
-  { taskKey: "YARD_CLEANING", taskLabel: "Clean yard & clear broken blocks", category: "CLEANING" },
-  { taskKey: "GENERATOR_CHECK", taskLabel: "Generator fuel & oil level check", category: "MACHINERY" },
-  { taskKey: "SITE_LOCKDOWN", taskLabel: "End-of-day store & site security lockdown", category: "SECURITY" },
-];
 
 export default function BlockFactoryModule({
   currentUser, businessInfo, businessMetrics, inventory, transactions, assets,
@@ -85,7 +73,6 @@ export default function BlockFactoryModule({
         setProduction(d.production || []);
         setOrders(d.orders || []);
         setDeliveries(d.deliveries || []);
-        setChecklists(d.checklists || []);
         setBlockTypesList(d.blockTypes || []);
       }
     } finally {
@@ -222,18 +209,6 @@ export default function BlockFactoryModule({
     };
   }, [filteredTransactions]);
 
-  // Checklist for the selected date
-  const dayChecklist = useMemo(
-    () => checklists.filter((c) => c.checklistDate === checklistDate),
-    [checklists, checklistDate]
-  );
-  const checklistDone = dayChecklist.filter((c) => c.isCompleted).length;
-  const checklistPct = dayChecklist.length > 0 ? Math.round((checklistDone / dayChecklist.length) * 100) : 0;
-  const checklistDates = useMemo(
-    () => Array.from(new Set(checklists.map((c) => c.checklistDate))).sort().reverse(),
-    [checklists]
-  );
-
   const byDate = (rows: any[], getVal: (r: any) => number, dateKey = "recordedDate") => {
     const map: Record<string, number> = {};
     rows.forEach((r) => { const d = r[dateKey] || r.date; map[d] = (map[d] || 0) + getVal(r); });
@@ -343,47 +318,6 @@ export default function BlockFactoryModule({
       setError(e.message);
     } finally {
       setBusy(false);
-    }
-  };
-
-  const createChecklist = async () => {
-    setBusy(true); setError("");
-    try {
-      const res = await fetch("/api/block-factory", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          entity: "CHECKLIST",
-          data: { businessId: bizId, branchCode: businessInfo?.code, checklistDate, tasks: DEFAULT_TASKS },
-        }),
-      });
-      const d = await res.json();
-      if (!d.success) throw new Error(d.error || "Failed to create checklist");
-      await refresh();
-    } catch (e: any) {
-      setError(e.message);
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const toggleTask = async (task: any) => {
-    setError("");
-    try {
-      const res = await fetch("/api/block-factory", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          entity: "CHECKLIST",
-          id: task.id,
-          data: { completedByName: currentUser?.name, completedByRole: currentUser?.role },
-        }),
-      });
-      const d = await res.json();
-      if (!d.success) throw new Error(d.error || "Failed to update task");
-      await refresh();
-    } catch (e: any) {
-      setError(e.message);
     }
   };
 
@@ -672,64 +606,17 @@ export default function BlockFactoryModule({
         </div>
       )}
 
-      {/* ══════════════ DAILY CHECKLIST ══════════════ */}
+            {/* ══════════════ DAILY CHECKLIST ══════════════ */}
       {tab === "CHECKLIST" && (
-        <div className="space-y-5">
-          <Card title="Daily Activity Checklist" icon={ClipboardCheck}
-            action={
-              <div className="flex items-center gap-2">
-                <input type="date" value={checklistDate} onChange={(e) => setChecklistDate(e.target.value)} className="px-2 py-1.5 bg-slate-900 border border-slate-700 rounded-lg text-white text-xs" />
-                {dayChecklist.length === 0 && (
-                  <button onClick={createChecklist} disabled={busy} className="px-3 py-1.5 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-bold flex items-center gap-1 disabled:opacity-50">
-                    <Plus className="w-3.5 h-3.5" />{busy ? "Creating..." : `Create Checklist (${checklistDate})`}
-                  </button>
-                )}
-              </div>
-            }>
-            {/* Progress */}
-            <div className="px-5 pt-4">
-              <div className="flex items-center justify-between text-xs mb-1">
-                <span className="text-slate-400 font-semibold">{checklistDone} of {dayChecklist.length} tasks completed</span>
-                <span className={`font-black ${checklistPct === 100 ? "text-emerald-300" : "text-cyan-300"}`}>{checklistPct}%</span>
-              </div>
-              <div className="w-full h-2.5 rounded-full bg-slate-700 overflow-hidden">
-                <div className={`h-full rounded-full transition-all ${checklistPct === 100 ? "bg-emerald-500" : "bg-cyan-500"}`} style={{ width: `${checklistPct}%` }} />
-              </div>
-            </div>
-
-            <div className="p-4 space-y-2">
-              {dayChecklist.length === 0 && (
-                <div className="p-6 text-center text-slate-400 text-sm">
-                  No checklist for {checklistDate} yet.
-                  {checklistDates.length > 0 && (
-                    <span className="block text-[11px] mt-1 text-slate-500">Existing checklists: {checklistDates.slice(0, 5).join(", ")}</span>
-                  )}
-                </div>
-              )}
-              {dayChecklist.map((task) => (
-                <button key={task.id} onClick={() => toggleTask(task)}
-                  className={`w-full text-left p-3 rounded-xl border text-xs flex items-center gap-3 transition ${
-                    task.isCompleted
-                      ? "bg-emerald-500/10 border-emerald-500/40 text-emerald-200"
-                      : "bg-slate-900/70 border-slate-700 text-slate-200 hover:border-cyan-500/40"}`}>
-                  {task.isCompleted
-                    ? <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0" />
-                    : <CircleDot className="w-5 h-5 text-slate-500 shrink-0" />}
-                  <div className="flex-1">
-                    <div className={`font-semibold ${task.isCompleted ? "line-through opacity-70" : ""}`}>{task.taskLabel}</div>
-                    {task.isCompleted && (
-                      <div className="text-[10px] text-slate-500 mt-0.5">
-                        Done by {task.completedByName || "Staff"}{task.completedByRole ? ` (${task.completedByRole})` : ""}{task.completedAt ? ` • ${new Date(task.completedAt).toLocaleTimeString()}` : ""}
-                      </div>
-                    )}
-                  </div>
-                  <span className="px-2 py-0.5 rounded-full bg-slate-800 border border-slate-600 text-[10px] font-bold text-slate-300">{task.category}</span>
-                </button>
-              ))}
-            </div>
-            <p className="px-4 pb-4 text-[10px] text-slate-500">Tasks track machine, material, production, quality, delivery and security duties per day. Completion stamps the user, role and time.</p>
-          </Card>
-        </div>
+        <DailyChecklistPanel
+          businessId={bizId}
+          branchCode={businessInfo?.code}
+          businessName={businessInfo?.name}
+          employees={employees}
+          currentUser={currentUser}
+          accent="cyan"
+          onChanged={() => { refresh(); onRefreshData?.(); }}
+        />
       )}
 
       {showForm && <BlockFactoryForm type={showForm} busy={busy} onClose={() => { setShowForm(null); setError(""); }} onSubmit={submit} orders={orders} inventory={branchInventory} blockTypeOptions={blockTypeOptions} />}

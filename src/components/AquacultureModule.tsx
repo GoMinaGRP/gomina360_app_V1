@@ -12,6 +12,7 @@ import {
 } from "recharts";
 import { CurrencyCode, formatMoney } from "@/lib/currency";
 import { analyzeAquaculture, AQUA_ALERT_STYLES, AQUA_METRIC_COLORS } from "@/lib/aquacultureAnalytics";
+import DailyChecklistPanel from "./DailyChecklistPanel";
 
 interface Props {
   currentUser: any;
@@ -447,63 +448,15 @@ export default function AquacultureModule({
 
       {/* ══════════ TASKS ══════════ */}
       {tab === "HEALTH" && (
-        <Card title={`Daily Aquaculture Tasks — ${today}`} icon={ClipboardCheck}
-          action={
-            todayTasks.length === 0 ? (
-              <button onClick={() => setShowForm("CHECKLIST")} disabled={busy}
-                className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-bold disabled:opacity-50">
-                <Plus className="w-3.5 h-3.5" /> {busy ? "Creating…" : "Generate Today's Checklist"}
-              </button>
-            ) : null
-          }>
-          <div className="p-5">
-            <div className="flex items-center justify-between mb-4">
-              <div className="text-xs text-slate-400">{tasksDone} of {todayTasks.length} tasks done</div>
-              <div className="text-lg font-black text-emerald-400">{taskPct}%</div>
-            </div>
-            <div className="w-full bg-slate-700 rounded-full h-2.5 overflow-hidden mb-4">
-              <div className="bg-cyan-500 h-2.5 rounded-full transition-all" style={{ width: `${taskPct}%` }} />
-            </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-              {todayTasks.map((t: any) => (
-                <button key={t.id}
-                  onClick={async () => {
-                    const res = await fetch("/api/aquaculture", {
-                      method: "PATCH",
-                      headers: { "Content-Type": "application/json" },
-                      body: JSON.stringify({
-                        entity: "CHECKLIST",
-                        id: t.id,
-                        data: {
-                          completedByName: currentUser?.name,
-                          completedByRole: currentUser?.role,
-                        },
-                      }),
-                    });
-                    if (res.ok) await refresh();
-                  }}
-                  className={`flex items-center gap-3 p-3 rounded-xl border text-left transition ${
-                    t.isCompleted
-                      ? "border-emerald-500/40 bg-emerald-500/10"
-                      : "border-slate-700 bg-slate-900/60 hover:border-slate-500"
-                  }`}>
-                  {t.isCompleted ? <CheckCircle className="w-5 h-5 text-emerald-400 shrink-0" /> : <Circle className="w-5 h-5 text-slate-600 shrink-0" />}
-                  <div>
-                    <div className={`text-sm font-semibold ${t.isCompleted ? "line-through text-slate-500" : "text-slate-100"}`}>{t.taskLabel}</div>
-                    <div className="text-[10px] text-slate-500">
-                      {t.isCompleted ? `Done by ${t.completedByName || "—"}` : `Category: ${t.category || "GENERAL"}`}
-                    </div>
-                  </div>
-                </button>
-              ))}
-            </div>
-            {todayTasks.length === 0 && (
-              <p className="text-sm text-center py-8 text-slate-400">
-                No task checklist for today. Click "Generate Today's Checklist" to create one.
-              </p>
-            )}
-          </div>
-        </Card>
+        <DailyChecklistPanel
+          businessId={bizId}
+          branchCode={businessInfo?.code}
+          businessName={businessInfo?.name}
+          employees={employees}
+          currentUser={currentUser}
+          accent="cyan"
+          onChanged={() => { refresh(); onRefreshData?.(); }}
+        />
       )}
 
       {/* ══════════ HARVEST ══════════ */}

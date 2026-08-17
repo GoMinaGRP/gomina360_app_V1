@@ -40,6 +40,7 @@ export default function GoMinaApp() {
   const [aiInsights, setAiInsights] = useState<any[]>([]);
   const [scenarios, setScenarios] = useState<any[]>([]);
   const [integrations, setIntegrations] = useState<any[]>([]);
+  const [checklistData, setChecklistData] = useState<{ templates: any[]; entries: any[] }>({ templates: [], entries: [] });
   const [specializedLogs, setSpecializedLogs] = useState<Record<string, any[]>>({
     poultry: [],
     blockFactory: [],
@@ -90,6 +91,7 @@ export default function GoMinaApp() {
         setAiInsights(data.aiInsights || []);
         setScenarios(data.scenarios || []);
         setIntegrations(data.integrations || []);
+        setChecklistData(data.checklists || { templates: [], entries: [] });
         setSpecializedLogs(
           data.specializedLogs || {
             poultry: [],
@@ -396,6 +398,7 @@ export default function GoMinaApp() {
           currentCurrency={currentCurrency}
           onSelectTab={setActiveTab}
           onOpenNewBusinessModal={() => setIsNewBusinessModalOpen(true)}
+          checklists={checklistData}
         />
       );
     }
@@ -483,6 +486,8 @@ export default function GoMinaApp() {
           currentCurrency={currentCurrency}
           isOnline={isOnline}
           onRefreshLogs={() => handleRefreshLogsForBusiness(activeTab)}
+          currentUser={currentUser}
+          employees={employees}
         />
       );
     }

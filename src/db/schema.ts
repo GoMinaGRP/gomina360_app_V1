@@ -770,3 +770,47 @@ export const assetDownloads = pgTable("asset_downloads", {
   createdAt: timestamp("created_at").defaultNow(),
   status: text("status").notNull().default("COMPLETED"), // 'COMPLETED' or 'APPROVED'
 });
+
+// P7. Enterprise Daily Checklists (unified across all 7 business modules)
+// 7a. Checklist item templates — the manageable master list of tasks per business+branch.
+//     OWNER / GENERAL_MANAGER / BRANCH_MANAGER can add, edit, activate & deactivate items
+//     and assign them to a user/worker. Deactivated items stay in history.
+export const checklistTemplates = pgTable("checklist_templates", {
+  id: serial("id").primaryKey(),
+  businessId: integer("business_id").notNull(),
+  branchCode: text("branch_code"),
+  taskKey: text("task_key").notNull(),
+  taskLabel: text("task_label").notNull(),
+  category: text("category").default("GENERAL"),
+  sortOrder: integer("sort_order").default(0),
+  isActive: boolean("is_active").default(true),
+  assignedToUserId: integer("assigned_to_user_id"),
+  assignedToName: text("assigned_to_name"),
+  assignedToRole: text("assigned_to_role"),
+  createdByName: text("created_by_name"),
+  createdByRole: text("created_by_role"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at"),
+});
+
+// 7b. Daily checklist entries — one row per task per business+branch+date.
+//     Generated from active templates; completion records who did it and when.
+export const checklistEntries = pgTable("checklist_entries", {
+  id: serial("id").primaryKey(),
+  businessId: integer("business_id").notNull(),
+  branchCode: text("branch_code"),
+  checklistDate: text("checklist_date").notNull(),
+  templateId: integer("template_id"),
+  taskKey: text("task_key").notNull(),
+  taskLabel: text("task_label").notNull(),
+  category: text("category").default("GENERAL"),
+  assignedToUserId: integer("assigned_to_user_id"),
+  assignedToName: text("assigned_to_name"),
+  assignedToRole: text("assigned_to_role"),
+  isCompleted: boolean("is_completed").default(false),
+  completedByName: text("completed_by_name"),
+  completedByRole: text("completed_by_role"),
+  completedAt: timestamp("completed_at"),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").defaultNow(),
+});

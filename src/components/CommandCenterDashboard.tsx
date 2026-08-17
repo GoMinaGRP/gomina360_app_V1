@@ -15,6 +15,7 @@ import {
   ExternalLink,
   Zap,
   CheckCircle,
+  ClipboardCheck,
   Plus,
 } from "lucide-react";
 import {
@@ -45,6 +46,7 @@ interface CommandCenterDashboardProps {
   currentCurrency: CurrencyCode;
   onSelectTab: (tab: ActiveTab) => void;
   onOpenNewBusinessModal: () => void;
+  checklists?: { templates: any[]; entries: any[] };
 }
 
 export default function CommandCenterDashboard({
@@ -55,6 +57,7 @@ export default function CommandCenterDashboard({
   currentCurrency,
   onSelectTab,
   onOpenNewBusinessModal,
+  checklists,
 }: CommandCenterDashboardProps) {
   const [chartView, setChartView] = useState<
     "PROFIT_BAR" | "ROI_RADAR" | "CASH_AREA" | "SALES_BAR" | "ASSETS_BAR"
@@ -228,6 +231,25 @@ export default function CommandCenterDashboard({
   const selectAllBiz = () => setSelectedBizIds(allBizIds);
   const clearBiz = () => setSelectedBizIds([]);
 
+  const todayStr = new Date().toISOString().split("T")[0];
+  const clEntries = checklists?.entries || [];
+  const checklistStats = (businesses || []).map((b) => {
+    const rows = clEntries.filter((e) => e.businessId === b.id && e.checklistDate === todayStr);
+    const done = rows.filter((e) => e.isCompleted).length;
+    return {
+      id: b.id,
+      name: (b.name || "").replace("Mina ", ""),
+      total: rows.length,
+      done,
+      pct: rows.length ? Math.round((done / rows.length) * 100) : 0,
+    };
+  });
+  const checklistTotals = checklistStats.reduce<{ done: number; total: number }>(
+    (acc, c) => ({ done: acc.done + c.done, total: acc.total + c.total }),
+    { done: 0, total: 0 }
+  );
+  const checklistTotalsPct = checklistTotals.total ? Math.round((checklistTotals.done / checklistTotals.total) * 100) : 0;
+
   return (
     <div className="p-4 sm:p-6 space-y-6 max-w-[1600px] mx-auto text-slate-100">
       {/* Top Welcome & Quick Actions */}
@@ -359,6 +381,40 @@ export default function CommandCenterDashboard({
             <CheckCircle className="w-3 h-3 mr-0.5 inline" />
             <span>Low Enterprise Risk</span>
           </div>
+        </div>
+      </div>
+
+
+      {/* Daily Checklist Compliance — unified across all business modules */}
+      <div className="bg-slate-800/90 border border-slate-700/80 rounded-2xl p-5 shadow-xl">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-4">
+          <h3 className="text-base font-bold text-white flex items-center gap-2">
+            <ClipboardCheck className="w-4 h-4 text-teal-400" />
+            Daily Checklist Compliance
+            <span className="text-[10px] font-semibold text-slate-400">today • all businesses</span>
+          </h3>
+          <div className="text-xs text-slate-400">
+            Enterprise: <span className="text-teal-300 font-black">{checklistTotals.done}/{checklistTotals.total}</span> tasks
+            <span className={`ml-2 font-black ${checklistTotalsPct === 100 && checklistTotals.total > 0 ? "text-emerald-400" : "text-teal-300"}`}>{checklistTotalsPct}%</span>
+          </div>
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5">
+          {checklistStats.map((c) => (
+            <div key={c.id} className="p-3 rounded-xl bg-slate-900/70 border border-slate-700">
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-[11px] font-bold text-slate-200 truncate">{c.name}</span>
+                <span className={`text-[11px] font-black ${c.total === 0 ? "text-slate-500" : c.pct === 100 ? "text-emerald-400" : "text-teal-300"}`}>
+                  {c.total === 0 ? "—" : `${c.pct}%`}
+                </span>
+              </div>
+              <div className="w-full bg-slate-700 rounded-full h-1.5 overflow-hidden mt-2">
+                <div className={`h-1.5 rounded-full transition-all ${c.pct === 100 ? "bg-emerald-500" : "bg-teal-400"}`} style={{ width: `${c.total === 0 ? 0 : c.pct}%` }} />
+              </div>
+              <div className="text-[10px] text-slate-500 mt-1">
+                {c.total === 0 ? "No checklist yet — manager creates it in the module" : `${c.done} of ${c.total} done`}
+              </div>
+            </div>
+          ))}
         </div>
       </div>
 

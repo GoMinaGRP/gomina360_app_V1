@@ -15,6 +15,7 @@ import { CurrencyCode, formatMoney } from "@/lib/currency";
 import { addToOfflineQueue } from "@/lib/offlineSync";
 import { analyzePoultry } from "@/lib/poultryAnalytics";
 import PoultryAnalyticsAlerts from "./PoultryAnalyticsAlerts";
+import DailyChecklistPanel from "./DailyChecklistPanel";
 
 interface Props {
   currentUser: any;
@@ -179,8 +180,12 @@ export default function PoultryFarmModule({
         setWaterLogs(d.waterLogs || []);
         setHealthRecords(d.healthRecords || []);
         setProduction(d.production || []);
-        setChecklists(d.checklists || []);
       }
+      // Daily checklists come from the unified enterprise checklist engine
+      // (same row shape: checklistDate, isCompleted, completedByName/Role/At).
+      const cRes = await fetch(`/api/checklists?businessId=${bizId}`);
+      const cD = await cRes.json();
+      if (cD.success) setChecklists(cD.entries || []);
     } catch (e) { console.error(e); }
     finally { setLoading(false); }
   }, [bizId]);
@@ -1148,52 +1153,15 @@ export default function PoultryFarmModule({
 
       {/* ══════════ CHECKLIST ══════════ */}
       {tab === "CHECKLIST" && (
-        <Card title={`Daily Activity Checklist — ${today}`} icon={ClipboardCheck}
-          action={todayChecklist.length === 0 ? (
-            <button onClick={generateChecklist} disabled={busy}
-              className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold shadow disabled:opacity-50">
-              <Plus className="w-3.5 h-3.5" /> {busy ? "Creating…" : "Generate Today's Checklist"}
-            </button>
-          ) : (
-            <div className="text-xs">
-              <span className="text-slate-400">{checklistDone}/{todayChecklist.length} complete</span>
-              <span className="ml-2 text-lg font-black text-emerald-400">{checklistPct}%</span>
-            </div>
-          )}>
-          <div className="p-5">
-            {todayChecklist.length > 0 && (
-              <div className="w-full bg-slate-700 rounded-full h-2.5 overflow-hidden mb-4">
-                <div className="bg-emerald-500 h-2.5 rounded-full transition-all" style={{ width: `${checklistPct}%` }} />
-              </div>
-            )}
-            <div className="space-y-2">
-              {todayChecklist.map((c) => (
-                <button key={c.id} onClick={() => toggleTask(c.id)}
-                  className={`w-full flex items-center gap-3 p-3 rounded-xl border text-left transition ${
-                    c.isCompleted ? "bg-emerald-500/10 border-emerald-500/40" : "bg-slate-900/60 border-slate-700 hover:border-slate-500"}`}>
-                  {c.isCompleted ? <CheckCircle className="w-5 h-5 text-emerald-400 shrink-0" />
-                    : <Circle className="w-5 h-5 text-slate-600 shrink-0" />}
-                  <div className="flex-1 min-w-0">
-                    <div className={`text-sm font-semibold ${c.isCompleted ? "text-slate-400 line-through" : "text-slate-100"}`}>
-                      {c.taskLabel}
-                    </div>
-                    <div className="text-[10px] text-slate-500 flex items-center gap-2 mt-0.5">
-                      <span className="px-1.5 py-0.5 rounded bg-slate-800 text-slate-400 font-bold">{c.category}</span>
-                      {c.isCompleted && c.completedByName && (
-                        <span>✓ {c.completedByName} ({c.completedByRole}) • {c.completedAt ? new Date(c.completedAt).toLocaleTimeString() : ""}</span>
-                      )}
-                    </div>
-                  </div>
-                </button>
-              ))}
-              {todayChecklist.length === 0 && (
-                <p className="text-sm text-slate-400 text-center py-10">
-                  No checklist for today. Click "Generate Today's Checklist" to create the standard daily tasks.
-                </p>
-              )}
-            </div>
-          </div>
-        </Card>
+        <DailyChecklistPanel
+          businessId={bizId}
+          branchCode={businessInfo?.code}
+          businessName={businessInfo?.name}
+          employees={employees}
+          currentUser={currentUser}
+          accent="emerald"
+          onChanged={() => { refresh(); onRefreshData?.(); }}
+        />
       )}
 
       {/* ══════════ AI KNOWLEDGE ══════════ */}
