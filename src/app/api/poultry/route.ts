@@ -1,0 +1,422 @@
+import { NextRequest, NextResponse } from "next/server";
+import { db } from "@/db";
+import {
+  poultryFlocks,
+  poultryFeedLogs,
+  poultryWaterLogs,
+  poultryHealthRecords,
+  poultryProduction,
+  poultryChecklists,
+  businesses,
+  transactions,
+} from "@/db/schema";
+import { eq, desc, and } from "drizzle-orm";
+
+/**
+ * GET /api/poultry?businessId=1
+ * Returns every dataset for the Poultry Farm Management module,
+ * scoped to the selected Business → Branch.
+ */
+export async function GET(request: NextRequest) {
+  try {
+    const { searchParams } = new URL(request.url);
+    const businessIdParam = searchParams.get("businessId");
+    const bizId = businessIdParam ? Number(businessIdParam) : null;
+
+    const scope = <T extends { businessId: any }>(table: any) =>
+      bizId
+        ? db.select().from(table).where(eq(table.businessId, bizId))
+        : db.select().from(table);
+
+    const [flocks, feedLogs, waterLogs, healthRecords, production, checklists] =
+      await Promise.all([
+        scope(poultryFlocks),
+        scope(poultryFeedLogs),
+        scope(poultryWaterLogs),
+        scope(poultryHealthRecords),
+        scope(poultryProduction),
+        scope(poultryChecklists),
+      ]);
+
+    const sortByIdDesc = (a: any, b: any) => (b.id || 0) - (a.id || 0);
+
+    return NextResponse.json({
+      success: true,
+      flocks: flocks.sort(sortByIdDesc),
+      feedLogs: feedLogs.sort(sortByIdDesc),
+      waterLogs: waterLogs.sort(sortByIdDesc),
+      healthRecords: healthRecords.sort(sortByIdDesc),
+      production: production.sort(sortByIdDesc),
+      checklists: checklists.sort((a: any, b: any) => (a.id || 0) - (b.id || 0)),
+    });
+  } catch (error: any) {
+    console.error("GET /api/poultry error:", error);
+    return NextResponse.json(
+      { success: false, error: error.message },
+      { status: 500 }
+    );
+  }
+}
+
+/**
+ * POST /api/poultry
+ * Body: { entity: 'FLOCK'|'FEED'|'WATER'|'HEALTH'|'PRODUCTION'|'CHECKLIST', data: {...} }
+ */
+export async function POST(request: NextRequest) {
+  try {
+    const body = await request.json();
+    const { entity, data } = body;
+
+    if (!entity || !data) {
+      return NextResponse.json(
+        { success: false, error: "entity and data are required" },
+        { status: 400 }
+      );
+    }
+
+    const businessId = Number(data.businessId);
+    if (!businessId) {
+      return NextResponse.json(
+        { success: false, error: "businessId is required" },
+        { status: 400 }
+      );
+    }
+
+    // Resolve branch details from the business record
+    const [biz] = await db
+      .select()
+      .from(businesses)
+      .where(eq(businesses.id, businessId));
+    const branchCode = data.branchCode || biz?.code || null;
+    const branchName = data.branchName || biz?.name || null;
+    const today = new Date().toISOString().split("T")[0];
+
+    // ── FLOCK ──────────────────────────────────────────────────────
+    if (entity === "FLOCK") {
+      const initialCount = Number(data.initialCount) || 0;
+      const [row] = await db
+        .insert(poultryFlocks)
+        .values({
+          businessId,
+          branchCode,
+          branchName,
+          batchNumber:
+            data.batchNumber ||
+            `BATCH-${new Date().getFullYear()}-${Date.now().toString().slice(-5)}`,
+          flockName: data.flockName || null,
+          birdType: data.birdType || "LAYERS",
+          breed: data.breed || null,
+          genetics: data.genetics || null,
+          supplier: data.supplier || null,
+          houseName: data.houseName || null,
+          initialCount,
+          currentCount: Number(data.currentCount) || initialCount,
+          mortalityTotal: Number(data.mortalityTotal) || 0,
+          arrivalDate: data.arrivalDate || today,
+          ageWeeks: Number(data.ageWeeks) || 0,
+          sourceHatchery: data.sourceHatchery || null,
+          costPerBirdGhs: Number(data.costPerBirdGhs) || 0,
+          status: data.status || "ACTIVE",
+          notes: data.notes || null,
+          createdByName: data.createdByName || "Farm Staff",
+          createdByRole: data.createdByRole || null,
+        })
+        .returning();
+      return NextResponse.json({ success: true, item: row });
+    }
+
+    // ── FEED ───────────────────────────────────────────────────────
+    if (entity === "FEED") {
+      const qty = Number(data.quantityKg) || 0;
+      const costPerKg = Number(data.costPerKgGhs) || 0;
+      const totalCost = Number(data.totalCostGhs) || qty * costPerKg;
+      const [row] = await db
+        .insert(poultryFeedLogs)
+        .values({
+          businessId,
+          branchCode,
+          flockId: data.flockId ? Number(data.flockId) : null,
+          batchNumber: data.batchNumber || null,
+          feedType: data.feedType || "LAYER_MASH",
+          brandSupplier: data.brandSupplier || null,
+          quantityKg: qty,
+          costPerKgGhs: costPerKg,
+          totalCostGhs: totalCost,
+          entryType: data.entryType || "CONSUMPTION",
+          recordedDate: data.recordedDate || today,
+          recordedByName: data.recordedByName || "Farm Staff",
+          recordedByRole: data.recordedByRole || null,
+        })
+        .returning();
+
+      // Auto-create expense transaction for feed PURCHASE
+      if ((data.entryType || "CONSUMPTION") === "PURCHASE" && totalCost > 0) {
+        const trxNum = `TRX-${new Date().getFullYear()}-${Date.now().toString().slice(-6)}`;
+        await db.insert(transactions).values({
+          transactionNumber: trxNum,
+          businessId,
+          branchCode,
+          branchName: data.branchName || null,
+          type: "EXPENSE",
+          category: "POULTRY_FEED_PURCHASE",
+          amountGhs: totalCost,
+          paymentMethod: data.paymentMethod || "CASH",
+          description: `Feed: ${row.feedType.replace(/_/g, " ")} — ${qty}kg | ${row.brandSupplier || "No supplier"}`,
+          date: today,
+          createdAt: new Date(),
+          status: "COMPLETED",
+          recordedBy: data.recordedByName || "Poultry Farm User",
+          recordedByRole: data.recordedByRole || null,
+          recordedByUserId: data.recordedByUserId ? Number(data.recordedByUserId) : null,
+        });
+      }
+
+      return NextResponse.json({ success: true, item: row });
+    }
+
+    // ── WATER ──────────────────────────────────────────────────────
+    if (entity === "WATER") {
+      const [row] = await db
+        .insert(poultryWaterLogs)
+        .values({
+          businessId,
+          branchCode,
+          flockId: data.flockId ? Number(data.flockId) : null,
+          batchNumber: data.batchNumber || null,
+          volumeLiters: Number(data.volumeLiters) || 0,
+          sourceType: data.sourceType || "BOREHOLE",
+          phLevel: data.phLevel ? Number(data.phLevel) : null,
+          isTreated: Boolean(data.isTreated),
+          treatmentUsed: data.treatmentUsed || null,
+          recordedDate: data.recordedDate || today,
+          recordedByName: data.recordedByName || "Farm Staff",
+        })
+        .returning();
+      return NextResponse.json({ success: true, item: row });
+    }
+
+    // ── HEALTH ─────────────────────────────────────────────────────
+    if (entity === "HEALTH") {
+      const healthCost = Number(data.costGhs) || 0;
+      const [row] = await db
+        .insert(poultryHealthRecords)
+        .values({
+          businessId,
+          branchCode,
+          flockId: data.flockId ? Number(data.flockId) : null,
+          batchNumber: data.batchNumber || null,
+          recordType: data.recordType || "INSPECTION",
+          vaccineOrDrug: data.vaccineOrDrug || null,
+          diseaseOrCondition: data.diseaseOrCondition || null,
+          dosage: data.dosage || null,
+          administeredBy: data.administeredBy || null,
+          birdsAffected: Number(data.birdsAffected) || 0,
+          mortalityCount: Number(data.mortalityCount) || 0,
+          costGhs: healthCost,
+          nextDueDate: data.nextDueDate || null,
+          outcome: data.outcome || "MONITORING",
+          notes: data.notes || null,
+          recordedDate: data.recordedDate || today,
+          recordedByName: data.recordedByName || "Farm Staff",
+        })
+        .returning();
+
+      // Auto-create expense transaction for health costs
+      if (healthCost > 0) {
+        const trxNum = `TRX-${new Date().getFullYear()}-${Date.now().toString().slice(-6)}`;
+        await db.insert(transactions).values({
+          transactionNumber: trxNum,
+          businessId,
+          branchCode,
+          branchName: data.branchName || null,
+          type: "EXPENSE",
+          category: row.recordType === "VACCINATION" ? "POULTRY_VACCINATION" : "POULTRY_HEALTH",
+          amountGhs: healthCost,
+          paymentMethod: data.paymentMethod || "CASH",
+          description: `Health: ${row.recordType} — ${row.vaccineOrDrug || row.diseaseOrCondition || "Routine"}${row.administeredBy ? ` | Admin: ${row.administeredBy}` : ""}`,
+          date: today,
+          createdAt: new Date(),
+          status: "COMPLETED",
+          recordedBy: data.recordedByName || "Poultry Farm User",
+          recordedByRole: data.recordedByRole || null,
+          recordedByUserId: data.recordedByUserId ? Number(data.recordedByUserId) : null,
+        });
+      }
+
+      // Mortalities reduce the flock's live bird count
+      const mortality = Number(data.mortalityCount) || 0;
+      if (mortality > 0 && data.flockId) {
+        const [flock] = await db
+          .select()
+          .from(poultryFlocks)
+          .where(eq(poultryFlocks.id, Number(data.flockId)));
+        if (flock) {
+          await db
+            .update(poultryFlocks)
+            .set({
+              currentCount: Math.max(0, flock.currentCount - mortality),
+              mortalityTotal: (flock.mortalityTotal || 0) + mortality,
+            })
+            .where(eq(poultryFlocks.id, flock.id));
+        }
+      }
+
+      return NextResponse.json({ success: true, item: row });
+    }
+
+    // ── PRODUCTION ─────────────────────────────────────────────────
+    if (entity === "PRODUCTION") {
+      const eggs = Number(data.eggsCollected) || 0;
+      const soldEggs = Number(data.eggsSold) || 0;
+      const revenue = Number(data.revenueGhs) || 0;
+      const broilersSold = Number(data.broilersSold) || 0;
+      const [row] = await db
+        .insert(poultryProduction)
+        .values({
+          businessId,
+          branchCode,
+          flockId: data.flockId ? Number(data.flockId) : null,
+          batchNumber: data.batchNumber || null,
+          productionType: data.productionType || "EGGS",
+          eggsCollected: eggs,
+          traysProduced: Number(data.traysProduced) || Number((eggs / 30).toFixed(2)),
+          crackedEggs: Number(data.crackedEggs) || 0,
+          gradeA: Number(data.gradeA) || 0,
+          gradeB: Number(data.gradeB) || 0,
+          birdsHarvested: Number(data.birdsHarvested) || 0,
+          totalWeightKg: Number(data.totalWeightKg) || 0,
+          avgWeightKg: Number(data.avgWeightKg) || 0,
+          layPercentage: Number(data.layPercentage) || 0,
+          fcr: Number(data.fcr) || 0,
+          revenueGhs: revenue,
+          recordedDate: data.recordedDate || today,
+          recordedByName: data.recordedByName || "Farm Staff",
+        })
+        .returning();
+
+      // Auto-create revenue transaction when production includes sales revenue
+      if (revenue > 0) {
+        const trxNum = `TRX-${new Date().getFullYear()}-${Date.now().toString().slice(-6)}`;
+        let desc = "Poultry production";
+        if (eggs > 0) desc += ` — ${eggs} eggs collected`;
+        if (soldEggs > 0) desc += `, ${soldEggs} sold`;
+        if (broilersSold > 0) desc += `, ${broilersSold} broilers sold`;
+        if (data.revenueSource) desc += ` | ${data.revenueSource}`;
+
+        await db.insert(transactions).values({
+          transactionNumber: trxNum,
+          businessId,
+          branchCode,
+          branchName: data.branchName || null,
+          type: "INCOME",
+          category: row.productionType === "BROILER_WEIGHT" ? "POULTRY_BROILER_SALE" : "POULTRY_EGG_SALE",
+          amountGhs: revenue,
+          paymentMethod: data.paymentMethod || "CASH",
+          description: desc,
+          date: today,
+          createdAt: new Date(),
+          status: "COMPLETED",
+          recordedBy: data.recordedByName || "Poultry Farm User",
+          recordedByRole: data.recordedByRole || null,
+          recordedByUserId: data.recordedByUserId ? Number(data.recordedByUserId) : null,
+        });
+      }
+
+      return NextResponse.json({ success: true, item: row });
+    }
+
+    // ── CHECKLIST (create today's list) ────────────────────────────
+    if (entity === "CHECKLIST") {
+      const tasks = Array.isArray(data.tasks) ? data.tasks : [];
+      const rows = [];
+      for (const t of tasks) {
+        const [row] = await db
+          .insert(poultryChecklists)
+          .values({
+            businessId,
+            branchCode,
+            checklistDate: data.checklistDate || today,
+            taskKey: t.taskKey,
+            taskLabel: t.taskLabel,
+            category: t.category || "GENERAL",
+            isCompleted: false,
+          })
+          .returning();
+        rows.push(row);
+      }
+      return NextResponse.json({ success: true, items: rows });
+    }
+
+    return NextResponse.json(
+      { success: false, error: `Unknown entity: ${entity}` },
+      { status: 400 }
+    );
+  } catch (error: any) {
+    console.error("POST /api/poultry error:", error);
+    return NextResponse.json(
+      { success: false, error: error.message },
+      { status: 500 }
+    );
+  }
+}
+
+/**
+ * PATCH /api/poultry
+ * Toggle a checklist task, or update a flock.
+ */
+export async function PATCH(request: NextRequest) {
+  try {
+    const body = await request.json();
+    const { entity, id, data } = body;
+
+    if (entity === "CHECKLIST" && id) {
+      const [existing] = await db
+        .select()
+        .from(poultryChecklists)
+        .where(eq(poultryChecklists.id, Number(id)));
+      if (!existing) {
+        return NextResponse.json(
+          { success: false, error: "Checklist task not found" },
+          { status: 404 }
+        );
+      }
+      const nowCompleted = !existing.isCompleted;
+      const [row] = await db
+        .update(poultryChecklists)
+        .set({
+          isCompleted: nowCompleted,
+          completedByName: nowCompleted ? data?.completedByName || "Staff" : null,
+          completedByRole: nowCompleted ? data?.completedByRole || null : null,
+          completedAt: nowCompleted ? new Date() : null,
+        })
+        .where(eq(poultryChecklists.id, Number(id)))
+        .returning();
+      return NextResponse.json({ success: true, item: row });
+    }
+
+    if (entity === "FLOCK" && id) {
+      const [row] = await db
+        .update(poultryFlocks)
+        .set({
+          currentCount:
+            data?.currentCount !== undefined ? Number(data.currentCount) : undefined,
+          ageWeeks: data?.ageWeeks !== undefined ? Number(data.ageWeeks) : undefined,
+          status: data?.status || undefined,
+          notes: data?.notes ?? undefined,
+        })
+        .where(eq(poultryFlocks.id, Number(id)))
+        .returning();
+      return NextResponse.json({ success: true, item: row });
+    }
+
+    return NextResponse.json(
+      { success: false, error: "Unsupported patch operation" },
+      { status: 400 }
+    );
+  } catch (error: any) {
+    return NextResponse.json(
+      { success: false, error: error.message },
+      { status: 500 }
+    );
+  }
+}

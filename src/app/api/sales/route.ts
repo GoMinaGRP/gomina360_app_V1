@@ -1,0 +1,236 @@
+import { NextRequest, NextResponse } from "next/server";
+import { db } from "@/db";
+import { transactions, inventoryItems, salesDocuments, businesses } from "@/db/schema";
+import { eq } from "drizzle-orm";
+
+/**
+ * POST /api/sales
+ *
+ * Inventory-linked sale processor:
+ * 1. Validates every cart item against branch inventory (stock check)
+ * 2. Deducts sold quantities from inventory
+ * 3. Updates inventory status (IN_STOCK / LOW_STOCK / OUT_OF_STOCK)
+ * 4. Creates a financial transaction record
+ * 5. Creates a sales document (receipt) with line items
+ * 6. Records any custom price overrides for audit
+ *
+ * Body: {
+ *   businessId, branchCode,
+ *   customerName, customerPhone,
+ *   paymentMethod,
+ *   cartItems: [{ inventoryId, sku, name, quantity, originalPrice, sellingPrice, customPriceReason? }],
+ *   notes,
+ *   createdByUserId, createdByName, createdByRole,
+ *   discount?
+ * }
+ */
+export async function POST(request: NextRequest) {
+  try {
+    const body = await request.json();
+    const {
+      businessId,
+      branchCode,
+      customerName,
+      customerPhone,
+      paymentMethod,
+      cartItems,
+      notes,
+      createdByUserId,
+      createdByName,
+      createdByRole,
+      discount,
+    } = body;
+
+    if (!businessId || !cartItems || !Array.isArray(cartItems) || cartItems.length === 0) {
+      return NextResponse.json(
+        { success: false, error: "businessId and at least one cart item are required." },
+        { status: 400 }
+      );
+    }
+
+    // ── 1. Validate every item against inventory ──────────────────────
+    const validationErrors: string[] = [];
+    const inventoryUpdates: { id: number; newQty: number; newStatus: string }[] = [];
+    const lineItems: any[] = [];
+    const priceAuditEntries: any[] = [];
+
+    for (const item of cartItems) {
+      const { inventoryId, quantity, sellingPrice, originalPrice, customPriceReason } = item;
+
+      if (!inventoryId || !quantity || quantity <= 0) {
+        validationErrors.push(`Invalid cart item: missing inventoryId or quantity.`);
+        continue;
+      }
+
+      const [inv] = await db
+        .select()
+        .from(inventoryItems)
+        .where(eq(inventoryItems.id, Number(inventoryId)));
+
+      if (!inv) {
+        validationErrors.push(`Product #${inventoryId} not found in inventory.`);
+        continue;
+      }
+
+      if (inv.businessId !== Number(businessId)) {
+        validationErrors.push(`Product "${inv.name}" does not belong to this branch.`);
+        continue;
+      }
+
+      if (inv.status === "OUT_OF_STOCK" || inv.quantity <= 0) {
+        validationErrors.push(`"${inv.name}" is OUT OF STOCK and cannot be sold.`);
+        continue;
+      }
+
+      if (Number(quantity) > inv.quantity) {
+        validationErrors.push(
+          `Insufficient stock for "${inv.name}": requested ${quantity}, available ${inv.quantity} ${inv.unit}.`
+        );
+        continue;
+      }
+
+      const effectivePrice = Number(sellingPrice) || inv.sellingPriceGhs;
+      const itemTotal = effectivePrice * Number(quantity);
+      const newQty = inv.quantity - Number(quantity);
+      const newStatus =
+        newQty <= 0
+          ? "OUT_OF_STOCK"
+          : newQty <= inv.minStockThreshold
+          ? "LOW_STOCK"
+          : "IN_STOCK";
+
+      inventoryUpdates.push({ id: inv.id, newQty, newStatus });
+
+      lineItems.push({
+        inventoryId: inv.id,
+        sku: inv.sku,
+        description: `${inv.name} (${inv.sku})`,
+        category: inv.category,
+        quantity: Number(quantity),
+        unit: inv.unit,
+        originalPrice: inv.sellingPriceGhs,
+        unitPrice: effectivePrice,
+        total: itemTotal,
+      });
+
+      // Track price overrides for audit
+      if (effectivePrice !== inv.sellingPriceGhs) {
+        priceAuditEntries.push({
+          inventoryId: inv.id,
+          sku: inv.sku,
+          name: inv.name,
+          originalPrice: inv.sellingPriceGhs,
+          customPrice: effectivePrice,
+          difference: effectivePrice - inv.sellingPriceGhs,
+          reason: customPriceReason || "No reason provided",
+          changedBy: createdByName || "Unknown",
+          changedByRole: createdByRole || "Staff",
+        });
+      }
+    }
+
+    if (validationErrors.length > 0) {
+      return NextResponse.json(
+        { success: false, error: validationErrors.join(" | "), errors: validationErrors },
+        { status: 400 }
+      );
+    }
+
+    // ── 2. Deduct inventory quantities ───────────────────────────────
+    for (const update of inventoryUpdates) {
+      await db
+        .update(inventoryItems)
+        .set({ quantity: update.newQty, status: update.newStatus })
+        .where(eq(inventoryItems.id, update.id));
+    }
+
+    // ── 3. Calculate totals ──────────────────────────────────────────
+    const subtotal = lineItems.reduce((acc: number, li: any) => acc + li.total, 0);
+    const discountAmount = Number(discount) || 0;
+    const total = subtotal - discountAmount;
+
+    // ── 4. Get branch info ───────────────────────────────────────────
+    const [biz] = await db
+      .select()
+      .from(businesses)
+      .where(eq(businesses.id, Number(businessId)));
+    const resolvedBranchCode = branchCode || biz?.code || "";
+    const resolvedBranchName = biz?.name || "";
+
+    // ── 5. Create financial transaction ──────────────────────────────
+    const trxNum = `TRX-${new Date().getFullYear()}-${Date.now().toString().slice(-6)}`;
+    const dateStr = new Date().toISOString().split("T")[0];
+
+    const lineDesc = lineItems
+      .map((li: any) => `${li.quantity}× ${li.description}`)
+      .join(", ");
+
+    const [newTrx] = await db
+      .insert(transactions)
+      .values({
+        transactionNumber: trxNum,
+        businessId: Number(businessId),
+        branchCode: resolvedBranchCode,
+        branchName: resolvedBranchName,
+        type: "INCOME",
+        category: "Inventory Sale",
+        amountGhs: total,
+        paymentMethod: paymentMethod || "CASH",
+        description: `[INV:${trxNum}] ${lineDesc} — ${customerName || "Walk-in"}`,
+        date: dateStr,
+        createdAt: new Date(),
+        status: "COMPLETED",
+        recordedBy: createdByName || "Sales Center",
+        recordedByRole: createdByRole || null,
+        recordedByUserId: createdByUserId ? Number(createdByUserId) : null,
+      })
+      .returning();
+
+    // ── 6. Create receipt sales document ─────────────────────────────
+    const docNum = `RCP-${new Date().getFullYear()}-${Date.now().toString().slice(-6)}`;
+
+    const [newDoc] = await db
+      .insert(salesDocuments)
+      .values({
+        documentNumber: docNum,
+        documentType: "RECEIPT",
+        businessId: Number(businessId),
+        branchCode: resolvedBranchCode,
+        branchName: resolvedBranchName,
+        customerName: customerName || "Walk-in Customer",
+        customerPhone: customerPhone || null,
+        lineItems,
+        subtotalGhs: subtotal,
+        discountGhs: discountAmount,
+        totalGhs: total,
+        currency: "GHS",
+        status: "PAID",
+        notes: notes || null,
+        paymentMethod: paymentMethod || "CASH",
+        linkedTransactionId: newTrx.id,
+        createdByUserId: createdByUserId ? Number(createdByUserId) : null,
+        createdByName: createdByName || "Sales Center",
+        createdByRole: createdByRole || null,
+      })
+      .returning();
+
+    return NextResponse.json({
+      success: true,
+      transaction: newTrx,
+      receipt: newDoc,
+      lineItems,
+      priceOverrides: priceAuditEntries,
+      inventoryUpdates: inventoryUpdates.map((u) => ({
+        inventoryId: u.id,
+        newQuantity: u.newQty,
+        newStatus: u.newStatus,
+      })),
+    });
+  } catch (error: any) {
+    console.error("POST /api/sales error:", error);
+    return NextResponse.json(
+      { success: false, error: error.message },
+      { status: 500 }
+    );
+  }
+}
