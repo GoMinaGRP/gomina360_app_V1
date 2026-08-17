@@ -200,6 +200,7 @@ export async function POST(request: Request) {
           sellingPriceGhs: Number(data.sellingPriceGhs) || 35,
           minStockThreshold: Number(data.minStockThreshold) || 10,
           status: "IN_STOCK",
+          expiryDate: data.expiryDate || null,
         })
         .returning();
       return NextResponse.json({ success: true, item: inserted });

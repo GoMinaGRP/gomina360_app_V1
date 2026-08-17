@@ -180,6 +180,7 @@ export const inventoryItems = pgTable("inventory_items", {
   sellingPriceGhs: doublePrecision("selling_price_ghs").notNull(),
   minStockThreshold: doublePrecision("min_stock_threshold").notNull(),
   status: text("status").default("IN_STOCK"), // 'IN_STOCK', 'LOW_STOCK', 'OUT_OF_STOCK'
+  expiryDate: text("expiry_date"), // perishable stock safety tracking (used by Restaurant & Kitchen)
 });
 
 // 8b. Inventory Downloads audit trail
@@ -885,6 +886,80 @@ export const electronicsPurchases = pgTable("electronics_purchases", {
   supplierName: text("supplier_name").notNull(),
   itemName: text("item_name").notNull(),
   quantity: integer("quantity").notNull(),
+  unitCostGhs: doublePrecision("unit_cost_ghs").notNull(),
+  totalGhs: doublePrecision("total_ghs").notNull(),
+  status: text("status").notNull().default("ORDERED"), // ORDERED, RECEIVED, CANCELLED
+  orderDate: text("order_date").notNull(),
+  receivedDate: text("received_date"),
+  notes: text("notes"),
+  createdByName: text("created_by_name"),
+  createdByRole: text("created_by_role"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+// R1. Restaurant & Kitchen — Orders (kitchen ticket pipeline)
+export const restaurantOrders = pgTable("restaurant_orders", {
+  id: serial("id").primaryKey(),
+  businessId: integer("business_id").notNull(),
+  branchCode: text("branch_code"),
+  orderNumber: text("order_number").notNull().unique(),
+  customerName: text("customer_name").notNull(),
+  itemName: text("item_name").notNull(),
+  menuItemId: integer("menu_item_id"),
+  quantity: integer("quantity").notNull(),
+  unitPriceGhs: doublePrecision("unit_price_ghs").notNull(),
+  totalGhs: doublePrecision("total_ghs").notNull(),
+  orderType: text("order_type").notNull().default("DINE_IN"), // DINE_IN, TAKEAWAY, DELIVERY
+  status: text("status").notNull().default("QUEUED"), // QUEUED, COOKING, READY, SERVED, CANCELLED
+  orderedDate: text("ordered_date").notNull(),
+  notes: text("notes"),
+  createdByName: text("created_by_name"),
+  createdByRole: text("created_by_role"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+// R2. Restaurant & Kitchen — Menu master (price + recipe cost per plate drives food-cost analytics)
+export const restaurantMenuItems = pgTable("restaurant_menu_items", {
+  id: serial("id").primaryKey(),
+  businessId: integer("business_id").notNull(),
+  branchCode: text("branch_code"),
+  name: text("name").notNull(),
+  category: text("category").default("MAIN"), // STARTER, MAIN, SIDE, DRINK, DESSERT
+  priceGhs: doublePrecision("price_ghs").notNull(),
+  costGhs: doublePrecision("cost_ghs").default(0), // recipe cost per plate
+  description: text("description"),
+  isActive: boolean("is_active").default(true),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+// R3. Restaurant & Kitchen — Food Waste log (decrements stock, feeds cost analytics)
+export const restaurantWaste = pgTable("restaurant_waste", {
+  id: serial("id").primaryKey(),
+  businessId: integer("business_id").notNull(),
+  branchCode: text("branch_code"),
+  itemName: text("item_name").notNull(),
+  inventoryId: integer("inventory_id"),
+  quantity: doublePrecision("quantity").notNull(),
+  unit: text("unit").default("Units"),
+  reason: text("reason").notNull().default("SPOILAGE"), // SPOILAGE, EXPIRED, OVERCOOKED, PREP_LOSS, CUSTOMER_RETURN
+  costGhs: doublePrecision("cost_ghs").default(0),
+  loggedDate: text("logged_date").notNull(),
+  recordedByName: text("recorded_by_name"),
+  recordedByRole: text("recorded_by_role"),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+// R4. Restaurant & Kitchen — Supplier Purchases (RECEIVED stock-ins update inventory + finance)
+export const restaurantPurchases = pgTable("restaurant_purchases", {
+  id: serial("id").primaryKey(),
+  businessId: integer("business_id").notNull(),
+  branchCode: text("branch_code"),
+  purchaseNumber: text("purchase_number").notNull().unique(),
+  supplierName: text("supplier_name").notNull(),
+  itemName: text("item_name").notNull(),
+  quantity: doublePrecision("quantity").notNull(),
+  unit: text("unit").default("Kg"),
   unitCostGhs: doublePrecision("unit_cost_ghs").notNull(),
   totalGhs: doublePrecision("total_ghs").notNull(),
   status: text("status").notNull().default("ORDERED"), // ORDERED, RECEIVED, CANCELLED
