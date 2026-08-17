@@ -384,6 +384,48 @@ export default function CommandCenterDashboard({
         </div>
       </div>
 
+      {/* Stock Alerts — low / out-of-stock products across every business */}
+      {(() => {
+        const low = inventory.filter((i) => i.status === "LOW_STOCK" || ((i.quantity || 0) > 0 && (i.quantity || 0) <= (i.minStockThreshold || 0)));
+        const out = inventory.filter((i) => i.status === "OUT_OF_STOCK" || (i.quantity || 0) <= 0);
+        if (low.length === 0 && out.length === 0) return null;
+        const bizName = (id: number) => businesses.find((b) => b.id === id)?.name || "";
+        return (
+          <div className="bg-slate-800/90 border border-amber-500/30 rounded-2xl p-5 shadow-xl" data-testid="command-stock-alerts">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-base font-bold text-white flex items-center gap-2">
+                <AlertTriangle className="w-4 h-4 text-amber-400" />
+                Stock Alerts — Replenishment Required
+              </h3>
+              <button onClick={() => onSelectTab("INVENTORY")} className="text-[11px] font-bold text-amber-300 hover:text-amber-200">
+                Open Inventory →
+              </button>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              {out.map((i) => (
+                <div key={`out-${i.id}`} className="flex items-center justify-between p-2.5 rounded-xl bg-rose-500/10 border border-rose-500/30">
+                  <div className="min-w-0">
+                    <div className="text-[12px] font-bold text-rose-300 truncate">{i.name}</div>
+                    <div className="text-[10px] text-slate-400 truncate">{bizName(i.businessId)} • {i.sku}</div>
+                  </div>
+                  <span className="ml-3 shrink-0 text-[10px] font-black uppercase text-rose-300 bg-rose-500/20 px-2 py-1 rounded-lg">Out of stock</span>
+                </div>
+              ))}
+              {low.map((i) => (
+                <div key={`low-${i.id}`} className="flex items-center justify-between p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/30">
+                  <div className="min-w-0">
+                    <div className="text-[12px] font-bold text-amber-300 truncate">{i.name}</div>
+                    <div className="text-[10px] text-slate-400 truncate">{bizName(i.businessId)} • {i.sku}</div>
+                  </div>
+                  <span className="ml-3 shrink-0 text-[10px] font-black uppercase text-amber-300 bg-amber-500/20 px-2 py-1 rounded-lg">
+                    Low: {i.quantity} {i.unit}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Daily Checklist Compliance — unified across all business modules */}
       <div className="bg-slate-800/90 border border-slate-700/80 rounded-2xl p-5 shadow-xl">

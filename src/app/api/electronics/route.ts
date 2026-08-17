@@ -10,6 +10,60 @@ import {
   businesses,
 } from "@/db/schema";
 import { eq } from "drizzle-orm";
+import { computeStockStatus } from "@/lib/stock";
+
+/**
+ * Complete a delivered electronics order as a real sale:
+ * deduct the stock, record the INCOME transaction, and mark the matching
+ * in-stock serials SOLD for the customer. Idempotent via fulfilledDate.
+ */
+async function fulfillElectronicsOrder(order: any, businessId: number, branchCode: string | null, actorName?: string | null, actorRole?: string | null) {
+  const today = new Date().toISOString().split("T")[0];
+  const stamp = Date.now().toString().slice(-5);
+  if (order.inventoryId) {
+    const [inv] = await db.select().from(inventoryItems).where(eq(inventoryItems.id, Number(order.inventoryId)));
+    if (inv) {
+      const newQty = Math.max(0, (inv.quantity || 0) - (order.quantity || 0));
+      await db
+        .update(inventoryItems)
+        .set({ quantity: newQty, status: computeStockStatus(newQty, inv.minStockThreshold || 0) })
+        .where(eq(inventoryItems.id, inv.id));
+    }
+    // Mark matching in-stock serials as SOLD to this customer
+    const serialRows = await db
+      .select()
+      .from(electronicsSerials)
+      .where(eq(electronicsSerials.inventoryId, Number(order.inventoryId)));
+    const toSell = serialRows.filter((s) => s.status === "IN_STOCK").slice(0, order.quantity || 0);
+    for (const s of toSell) {
+      await db
+        .update(electronicsSerials)
+        .set({ status: "SOLD", customerName: order.customerName, saleDate: today })
+        .where(eq(electronicsSerials.id, s.id));
+    }
+  }
+  // Revenue into Finance so dashboards / reports update
+  await db.insert(transactions).values({
+    transactionNumber: `TRX-${new Date().getFullYear()}-${stamp}`,
+    businessId,
+    branchCode,
+    branchName: null,
+    type: "INCOME",
+    category: "ELECTRONICS_ORDER_SALE",
+    amountGhs: order.totalGhs || (order.quantity || 0) * (order.unitPriceGhs || 0),
+    paymentMethod: "CASH",
+    description: `Order ${order.orderNumber} delivered: ${order.quantity}× ${order.itemName} — ${order.customerName}`,
+    date: today,
+    createdAt: new Date(),
+    status: "COMPLETED",
+    recordedBy: actorName || "Electronics Shop",
+    recordedByRole: actorRole || null,
+  });
+  await db
+    .update(electronicsOrders)
+    .set({ fulfilledDate: today })
+    .where(eq(electronicsOrders.id, order.id));
+}
 
 export async function GET(request: NextRequest) {
   try {
@@ -74,6 +128,12 @@ export async function POST(request: NextRequest) {
           createdByRole: data.createdByRole || null,
         })
         .returning();
+      // Orders created straight as DELIVERED complete their sale immediately
+      // (stock deduction + finance + serial lifecycle).
+      if (row.status === "DELIVERED") {
+        await fulfillElectronicsOrder(row, businessId, branchCode, data.createdByName, data.createdByRole);
+        row.fulfilledDate = today;
+      }
       return NextResponse.json({ success: true, item: row });
     }
 
@@ -252,6 +312,10 @@ export async function PATCH(request: NextRequest) {
 
     // ── ORDER status progression ────────────────────────────────────────
     if (entity === "ORDER") {
+      const [before] = await db
+        .select()
+        .from(electronicsOrders)
+        .where(eq(electronicsOrders.id, Number(id)));
       const [row] = await db
         .update(electronicsOrders)
         .set({
@@ -261,6 +325,12 @@ export async function PATCH(request: NextRequest) {
         .where(eq(electronicsOrders.id, Number(id)))
         .returning();
       if (!row) return NextResponse.json({ success: false, error: "Order not found" }, { status: 404 });
+      // Completing the delivery converts the order into a sale exactly once:
+      // stock is deducted, finance records the revenue, serials become SOLD.
+      if (row.status === "DELIVERED" && before?.status !== "DELIVERED" && !row.fulfilledDate) {
+        await fulfillElectronicsOrder(row, row.businessId, row.branchCode, data?.actorName || row.createdByName, data?.actorRole || row.createdByRole);
+        row.fulfilledDate = today;
+      }
       return NextResponse.json({ success: true, item: row });
     }
 

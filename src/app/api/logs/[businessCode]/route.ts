@@ -9,8 +9,10 @@ import {
   electronicsLogs,
   carWashLogs,
   businesses,
+  transactions,
 } from "@/db/schema";
 import { eq, desc } from "drizzle-orm";
+import { stockOut } from "@/lib/stock";
 
 export async function GET(
   request: Request,
@@ -201,6 +203,51 @@ export async function POST(
           recordedDate: today,
         })
         .returning();
+
+      // ── Finance linkage: wash revenue flows into Transactions so the
+      // branch's revenue / profit / dashboards update immediately ──
+      if ((inserted.totalRevenueGhs || 0) > 0) {
+        await db.insert(transactions).values({
+          transactionNumber: `TRX-${new Date().getFullYear()}-${Date.now().toString().slice(-6)}`,
+          businessId: biz.id,
+          branchCode: biz.code,
+          branchName: biz.name,
+          type: "INCOME",
+          category: "CAR_WASH_REVENUE",
+          amountGhs: inserted.totalRevenueGhs,
+          paymentMethod: body.paymentMethod || "CASH",
+          description: `Auto Wash shift ${inserted.shiftDate}: ${inserted.vehiclesWashed} vehicles washed`,
+          date: today,
+          createdAt: new Date(),
+          status: "COMPLETED",
+          recordedBy: body.recordedBy || body.createdByName || "Auto Wash Supervisor",
+          recordedByRole: body.recordedByRole || body.createdByRole || null,
+          recordedByUserId: body.recordedByUserId ? Number(body.recordedByUserId) : null,
+        }).catch((e) => console.error("wash revenue txn warning:", e));
+      }
+
+      // ── Stock linkage: shampoo / chemical consumption deducts stock ──
+      // Targets the seeded 50L chemical drum (liters ÷ 50 = drums); falls
+      // back to a liters-priced shampoo product if the branch stocks one.
+      if ((inserted.chemicalUsedLiters || 0) > 0) {
+        try {
+          let out = await stockOut({
+            businessId: biz.id,
+            sku: "WASH-CHEM-50L",
+            quantity: Number((inserted.chemicalUsedLiters / 50).toFixed(2)),
+          });
+          if (!out.deducted) {
+            out = await stockOut({
+              businessId: biz.id,
+              name: "Car Wash Shampoo (Liters)",
+              quantity: inserted.chemicalUsedLiters,
+            });
+          }
+        } catch (e) {
+          console.error("wash chemical stock warning:", e);
+        }
+      }
+
       return NextResponse.json({ success: true, log: inserted });
     }
 

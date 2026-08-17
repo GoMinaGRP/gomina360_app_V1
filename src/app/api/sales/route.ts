@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
-import { transactions, inventoryItems, salesDocuments, businesses } from "@/db/schema";
+import { transactions, inventoryItems, salesDocuments, businesses, customers } from "@/db/schema";
 import { eq } from "drizzle-orm";
 
 /**
@@ -111,6 +111,9 @@ export async function POST(request: NextRequest) {
         originalPrice: inv.sellingPriceGhs,
         unitPrice: effectivePrice,
         total: itemTotal,
+        costPrice: inv.costPriceGhs || 0,
+        costTotal: (inv.costPriceGhs || 0) * Number(quantity),
+        lineProfit: itemTotal - (inv.costPriceGhs || 0) * Number(quantity),
       });
 
       // Track price overrides for audit
@@ -148,6 +151,55 @@ export async function POST(request: NextRequest) {
     const subtotal = lineItems.reduce((acc: number, li: any) => acc + li.total, 0);
     const discountAmount = Number(discount) || 0;
     const total = subtotal - discountAmount;
+    // Cost of goods sold (inventory cost × qty) → real profit per sale
+    const cogs = lineItems.reduce((acc: number, li: any) => acc + (li.costTotal || 0), 0);
+    const grossProfit = total - cogs;
+
+    // ── 3b. Link / accumulate the customer record (shared CRM) ──────
+    let linkedCustomerId: number | null = null;
+    try {
+      const allCustomers = await db.select().from(customers);
+      const norm = (s: any) => String(s || "").trim().toLowerCase();
+      const cust =
+        (customerPhone &&
+          allCustomers.find(
+            (c) =>
+              norm(c.phone) === norm(customerPhone) &&
+              (c.businessId === null || c.businessId === Number(businessId))
+          )) ||
+        (customerName &&
+          allCustomers.find(
+            (c) =>
+              norm(c.name) === norm(customerName) &&
+              (c.businessId === null || c.businessId === Number(businessId))
+          )) ||
+        null;
+      if (cust) {
+        linkedCustomerId = cust.id;
+        await db
+          .update(customers)
+          .set({
+            totalSpentGhs: (cust.totalSpentGhs || 0) + total,
+            loyaltyPoints: (cust.loyaltyPoints || 0) + Math.floor(total / 100),
+          })
+          .where(eq(customers.id, cust.id));
+      } else if (customerName && String(customerName).trim() && norm(customerName) !== "walk-in" && norm(customerName) !== "walk-in customer") {
+        const [created] = await db
+          .insert(customers)
+          .values({
+            name: String(customerName).trim(),
+            type: "RETAIL",
+            phone: customerPhone || null,
+            totalSpentGhs: total,
+            loyaltyPoints: Math.floor(total / 100),
+            businessId: null,
+          })
+          .returning();
+        linkedCustomerId = created?.id ?? null;
+      }
+    } catch (custErr) {
+      console.error("/api/sales customer link warning:", custErr);
+    }
 
     // ── 4. Get branch info ───────────────────────────────────────────
     const [biz] = await db
@@ -176,6 +228,7 @@ export async function POST(request: NextRequest) {
         category: "Inventory Sale",
         amountGhs: total,
         paymentMethod: paymentMethod || "CASH",
+        customerId: linkedCustomerId,
         description: `[INV:${trxNum}] ${lineDesc} — ${customerName || "Walk-in"}`,
         date: dateStr,
         createdAt: new Date(),
@@ -197,12 +250,15 @@ export async function POST(request: NextRequest) {
         businessId: Number(businessId),
         branchCode: resolvedBranchCode,
         branchName: resolvedBranchName,
+        customerId: linkedCustomerId,
         customerName: customerName || "Walk-in Customer",
         customerPhone: customerPhone || null,
         lineItems,
         subtotalGhs: subtotal,
         discountGhs: discountAmount,
         totalGhs: total,
+        cogsGhs: cogs,
+        grossProfitGhs: grossProfit,
         currency: "GHS",
         status: "PAID",
         notes: notes || null,
@@ -219,6 +275,9 @@ export async function POST(request: NextRequest) {
       transaction: newTrx,
       receipt: newDoc,
       lineItems,
+      cogsGhs: cogs,
+      grossProfitGhs: grossProfit,
+      customerId: linkedCustomerId,
       priceOverrides: priceAuditEntries,
       inventoryUpdates: inventoryUpdates.map((u) => ({
         inventoryId: u.id,

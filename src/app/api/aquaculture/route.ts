@@ -11,6 +11,19 @@ import {
   businesses,
 } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
+import { stockIn, stockOut } from "@/lib/stock";
+
+// Species → canonical sellable product in Inventory (sold by the Kg).
+const AQUA_PRODUCTS: Record<string, { sku: string; name: string; unit: string; costPriceGhs: number; sellingPriceGhs: number; minStockThreshold: number }> = {
+  // seeded product SKU — harvests top up the existing Fresh Volta Tilapia item
+  VOLTA_TILAPIA: { sku: "AQUA-TILAP-800G", name: "Fresh Harvested Volta Tilapia (Average 800g)", unit: "Kg", costPriceGhs: 38, sellingPriceGhs: 62, minStockThreshold: 300 },
+  RED_TILAPIA: { sku: "AQUA-RED-TILAPIA-KG", name: "Fresh Red Tilapia (Whole, per Kg)", unit: "Kg", costPriceGhs: 38, sellingPriceGhs: 60, minStockThreshold: 30 },
+  HYBRID_TILAPIA: { sku: "AQUA-HYBRID-TILAPIA-KG", name: "Fresh Hybrid Tilapia (Whole, per Kg)", unit: "Kg", costPriceGhs: 38, sellingPriceGhs: 62, minStockThreshold: 30 },
+  AFRICAN_CATFISH: { sku: "AQUA-CATFISH-KG", name: "Fresh Catfish (Whole, per Kg)", unit: "Kg", costPriceGhs: 32, sellingPriceGhs: 52, minStockThreshold: 30 },
+  CATFISH: { sku: "AQUA-CATFISH-KG", name: "Fresh Catfish (Whole, per Kg)", unit: "Kg", costPriceGhs: 32, sellingPriceGhs: 52, minStockThreshold: 30 },
+};
+const aquaProductFor = (species: string) =>
+  AQUA_PRODUCTS[species] || { sku: `AQUA-${(species || "FISH").toUpperCase()}-KG`, name: `Fresh ${(species || "fish").replace(/_/g, " ").toLowerCase()} (per Kg)`, unit: "Kg", costPriceGhs: 38, sellingPriceGhs: 60, minStockThreshold: 30 };
 
 export async function GET(request: NextRequest) {
   try {
@@ -185,6 +198,8 @@ export async function POST(request: NextRequest) {
     // ─────────────────────────────────────────────────────────────────
     //  HARVEST
     // ─────────────────────────────────────────────────────────────────
+    // ── HARVEST: completed production stocks fresh fish into Inventory;
+    //    a farm-gate sale recorded with the harvest deducts it again ──
     if (entity === "HARVEST") {
       const harvested = Number(data.harvestedCount) || 0;
       const totalWt = Number(data.totalWeightKg) || 0;
@@ -203,6 +218,19 @@ export async function POST(request: NextRequest) {
         recordedByName: data.recordedByName || "Farm Operator",
       }).returning();
 
+      // ── Stock linkage: harvest stocks fresh fish (Kg) into Inventory; a
+      // farm-gate sale booked with the harvest deducts the sold weight ──
+      const product = aquaProductFor(row.species);
+      let stockNote = "";
+      if (totalWt > 0) {
+        await stockIn({ businessId, category: "Fresh Fish", ...product, quantity: totalWt });
+        stockNote += ` | +${totalWt}kg to stock`;
+      }
+      if (revenue > 0 && totalWt > 0) {
+        const out = await stockOut({ businessId, sku: product.sku, quantity: totalWt });
+        stockNote += ` | −${out.deducted}kg sold from stock`;
+      }
+
       // Auto-create income transaction for fish sales
       if (revenue > 0) {
         const trxNum = `TRX-${new Date().getFullYear()}-${Date.now().toString().slice(-6)}`;
@@ -213,7 +241,7 @@ export async function POST(request: NextRequest) {
           category: "AQUA_HARVEST_SALE",
           amountGhs: revenue,
           paymentMethod: data.paymentMethod || "CASH",
-          description: `Harvest: ${row.species} — ${harvested} fish, ${totalWt}kg | Buyer: ${data.buyerName || "Unknown"}`,
+          description: `Harvest: ${row.species} — ${harvested} fish, ${totalWt}kg | Buyer: ${data.buyerName || "Unknown"}${stockNote}`,
           date: data.saleDate || today,
           createdAt: now,
           status: "COMPLETED",
@@ -231,7 +259,7 @@ export async function POST(request: NextRequest) {
         }).where(eq(aquacultureBatches.id, Number(data.batchId)));
       }
 
-      return NextResponse.json({ success: true, item: row });
+      return NextResponse.json({ success: true, item: row, stockNote });
     }
 
     // ─────────────────────────────────────────────────────────────────

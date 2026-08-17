@@ -67,7 +67,7 @@ export default function PoultryFarmModule({
   const [dashDateFilter, setDashDateFilter] = useState<string>("ALL"); // "ALL", "TODAY", "LAST_7", "LAST_30"
   const [dashProductFilter, setDashProductFilter] = useState<string>("ALL"); // "ALL", "EGGS", "BROILERS"
   const [loading, setLoading] = useState(true);
-  const [showForm, setShowForm] = useState<null | Tab>(null);
+  const [showForm, setShowForm] = useState<null | Tab | "SALE">(null);
   const [showExpenseForm, setShowExpenseForm] = useState(false);
   const [expenseBusy, setExpenseBusy] = useState(false);
   const [expenseError, setExpenseError] = useState("");
@@ -354,6 +354,34 @@ export default function PoultryFarmModule({
   const submit = async (entity: string, data: any) => {
     setBusy(true); setErr("");
     try {
+      // Stock-linked sale: shared pipeline validates available stock, deducts
+      // quantities, records revenue + receipt and updates every dashboard.
+      if (entity === "SALE") {
+        const res = await fetch("/api/sales", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            businessId: bizId,
+            branchCode: businessInfo?.code,
+            customerName: data.customerName,
+            customerPhone: data.customerPhone,
+            paymentMethod: data.paymentMethod,
+            notes: data.notes,
+            cartItems: [{
+              inventoryId: Number(data.inventoryId),
+              quantity: Number(data.quantity),
+              sellingPrice: data.sellingPrice ? Number(data.sellingPrice) : undefined,
+              customPriceReason: data.customPriceReason,
+            }],
+            createdByUserId: currentUser?.id,
+            createdByName: currentUser?.name,
+            createdByRole: currentUser?.role,
+          }),
+        });
+        const d = await res.json();
+        if (d.success) { setShowForm(null); await refresh(); onRefreshData(); }
+        else setErr(d.error || "Sale failed.");
+        return;
+      }
       const res = await fetch("/api/poultry", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -978,7 +1006,14 @@ export default function PoultryFarmModule({
             <Stat label="Total Records" value={production.length} color="cyan" />
             <Stat label="Cracked (latest)" value={latestEggs.reduce((s, p) => s + (p.crackedEggs || 0), 0)} color="rose" />
           </div>
-          <Card title="Production Records" icon={Egg} action={<AddBtn onClick={() => setShowForm("PRODUCTION")} label="Log Production" />}>
+          <Card title="Production Records" icon={Egg} action={
+            <div className="flex items-center gap-2">
+              <button onClick={() => setShowForm("SALE")} className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-bold shadow">
+                <Plus className="w-3.5 h-3.5" /> Record Sale
+              </button>
+              <AddBtn onClick={() => setShowForm("PRODUCTION")} label="Log Production" />
+            </div>
+          }>
             <div className="overflow-x-auto">
               <table className="w-full text-left text-xs">
                 <thead className="bg-slate-900/90 text-slate-400 uppercase font-semibold text-[10px]">
@@ -1466,7 +1501,7 @@ export default function PoultryFarmModule({
       {/* ══════════ FORMS ══════════ */}
       {showForm && (
         <PoultryForm
-          type={showForm} flocks={flocks} busy={busy} error={err}
+          type={showForm} flocks={flocks} inventory={branchInventory} busy={busy} error={err}
           onClose={() => { setShowForm(null); setErr(""); }}
           onSubmit={submit}
         />
@@ -1476,21 +1511,24 @@ export default function PoultryFarmModule({
 }
 
 // ─────────────────────────── FORM MODAL ───────────────────────────
-function PoultryForm({ type, flocks, busy, error, onClose, onSubmit }: any) {
+function PoultryForm({ type, flocks, inventory = [], busy, error, onClose, onSubmit }: any) {
   const [f, setF] = useState<any>({
     birdType: "LAYERS", status: "ACTIVE", feedType: "LAYER_MASH", entryType: "CONSUMPTION",
     sourceType: "BOREHOLE", isTreated: false, recordType: "VACCINATION", outcome: "MONITORING",
-    productionType: "EGGS",
+    productionType: "EGGS", paymentMethod: "CASH",
   });
   const set = (k: string, v: any) => setF({ ...f, [k]: v });
 
   const titles: Record<string, string> = {
     FLOCKS: "Register New Flock", FEED: "Log Feed Record", WATER: "Log Water Record",
     HEALTH: "Add Health / Vaccination Record", PRODUCTION: "Log Production Record",
+    SALE: "Record Sale — Farm Products",
   };
   const entities: Record<string, string> = {
     FLOCKS: "FLOCK", FEED: "FEED", WATER: "WATER", HEALTH: "HEALTH", PRODUCTION: "PRODUCTION",
+    SALE: "SALE",
   };
+  const sellable = (inventory || []).filter((i: any) => (i.quantity || 0) > 0);
 
   const I = ({ label, k, t = "text", ...rest }: any) => (
     <div>
@@ -1622,6 +1660,49 @@ function PoultryForm({ type, flocks, busy, error, onClose, onSubmit }: any) {
               </div>
             )}
             <I label="Date" k="recordedDate" t="date" />
+          </>)}
+
+          {type === "SALE" && (<>
+            {(() => {
+              const sel = sellable.find((i: any) => String(i.id) === String(f.inventoryId));
+              return (<>
+                <div>
+                  <label className="block text-[10px] font-semibold text-slate-400 mb-1">Product (from available stock) *</label>
+                  <select required value={f.inventoryId ?? ""} onChange={(e) => {
+                    const it = sellable.find((x: any) => String(x.id) === e.target.value);
+                    setF((prev: any) => ({ ...prev, inventoryId: e.target.value, sellingPrice: it ? it.sellingPriceGhs : prev.sellingPrice }));
+                  }} className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-white text-xs">
+                    <option value="">{sellable.length ? "— select product —" : "— no stock available: log production first —"}</option>
+                    {sellable.map((i: any) => (
+                      <option key={i.id} value={i.id}>{i.name} — {i.quantity} {i.unit} available @ GH₵{i.sellingPriceGhs}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-[10px] font-semibold text-slate-400 mb-1">Quantity * {sel ? <span className="text-slate-500">(max {sel.quantity} {sel.unit})</span> : null}</label>
+                    <input type="number" required min={0.01} step="any" max={sel?.quantity || undefined} value={f.quantity ?? ""} onChange={(e) => set("quantity", Number(e.target.value))}
+                      className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-white text-xs" />
+                  </div>
+                  <I label="Unit Price (GH₵)" k="sellingPrice" t="number" step="0.01" placeholder={sel ? String(sel.sellingPriceGhs) : "Auto from stock"} />
+                </div>
+                {sel && f.quantity ? (
+                  <div className="text-[11px] text-cyan-300 bg-cyan-500/10 border border-cyan-500/30 rounded-lg px-3 py-2">
+                    Total: <b>GH₵ {(((Number(f.sellingPrice) || sel.sellingPriceGhs) || 0) * Number(f.quantity)).toLocaleString(undefined, { maximumFractionDigits: 2 })}</b>
+                    {" "}— stock will drop to {(sel.quantity - Number(f.quantity)).toLocaleString()} {sel.unit}; revenue & profit update instantly.
+                  </div>
+                ) : null}
+                <div className="grid grid-cols-2 gap-3">
+                  <I label="Customer Name" k="customerName" placeholder="Walk-in Customer" />
+                  <I label="Customer Phone" k="customerPhone" placeholder="024…" />
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <S label="Payment Method" k="paymentMethod" opts={["CASH", "MTN_MOMO", "TELECEL_CASH", "BANK_TRANSFER", "CARD"]} />
+                  <I label="Price Override Reason" k="customPriceReason" placeholder="Only if price changed" />
+                </div>
+                <I label="Notes" k="notes" placeholder="Optional" />
+              </>);
+            })()}
           </>)}
 
           <div className="flex justify-end gap-3 pt-3 border-t border-slate-800">

@@ -283,6 +283,8 @@ export const salesDocuments = pgTable("sales_documents", {
   taxAmountGhs: doublePrecision("tax_amount_ghs").default(0),
   discountGhs: doublePrecision("discount_ghs").default(0),
   totalGhs: doublePrecision("total_ghs").notNull(),
+  cogsGhs: doublePrecision("cogs_ghs").default(0), // cost of goods sold (inventory cost × qty) for profit reporting
+  grossProfitGhs: doublePrecision("gross_profit_ghs").default(0), // totalGhs − cogsGhs
   currency: text("currency").notNull().default("GHS"),
   status: text("status").notNull().default("DRAFT"), // 'DRAFT', 'SENT', 'PAID', 'PARTIAL', 'CANCELLED', 'ACCEPTED', 'REJECTED', 'CONVERTED', 'EXPIRED'
   notes: text("notes"),
@@ -831,6 +833,7 @@ export const electronicsOrders = pgTable("electronics_orders", {
   totalGhs: doublePrecision("total_ghs").notNull(),
   status: text("status").notNull().default("PENDING"), // PENDING, READY, DELIVERED, CANCELLED
   dueDate: text("due_date"),
+  fulfilledDate: text("fulfilled_date"), // set when the order completed its sale (stock deducted + finance recorded)
   notes: text("notes"),
   createdByName: text("created_by_name"),
   createdByRole: text("created_by_role"),

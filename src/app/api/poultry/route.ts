@@ -11,6 +11,31 @@ import {
   transactions,
 } from "@/db/schema";
 import { eq, desc, and } from "drizzle-orm";
+import { stockIn, stockOut } from "@/lib/stock";
+
+// Canonical sellable products for the poultry branch — production stocks these
+// in, sales deduct them, and they appear in every stock picker automatically.
+export const POULTRY_PRODUCTS = {
+  EGGS: {
+    // matches the seeded product SKU so production tops up the existing item
+    sku: "POUL-EGG-L01",
+    name: "Grade A Large Egg Trays (30 Eggs/Tray)",
+    category: "Poultry Products",
+    unit: "Trays",
+    costPriceGhs: 38,
+    sellingPriceGhs: 55,
+    minStockThreshold: 150,
+  },
+  BROILER: {
+    sku: "PGH-BROILER-DRESSED",
+    name: "Dressed Broiler Chicken (Whole)",
+    category: "Poultry Meat",
+    unit: "Birds",
+    costPriceGhs: 65,
+    sellingPriceGhs: 90,
+    minStockThreshold: 10,
+  },
+} as const;
 
 /**
  * GET /api/poultry?businessId=1
@@ -294,6 +319,35 @@ export async function POST(request: NextRequest) {
         })
         .returning();
 
+      // ── Stock linkage: completed production adds products to Inventory ──
+      // Eggs collected become sellable crates; harvested broilers become
+      // sellable dressed birds. Farm-gate quantities sold in the same entry
+      // are deducted again so stock always reflects what is on hand.
+      let stockNote = "";
+      if (row.productionType === "EGGS") {
+        const goodEggs = Math.max(0, eggs - (Number(data.crackedEggs) || 0));
+        const cratesIn = Number(data.traysProduced) || eggs > 0 ? Number((goodEggs / 30).toFixed(2)) : 0;
+        if (cratesIn > 0) {
+          await stockIn({ businessId, ...POULTRY_PRODUCTS.EGGS, quantity: cratesIn });
+          stockNote += ` | +${cratesIn} crates to stock`;
+        }
+        if (soldEggs > 0) {
+          const cratesOut = Number((soldEggs / 30).toFixed(2));
+          const out = await stockOut({ businessId, sku: POULTRY_PRODUCTS.EGGS.sku, quantity: cratesOut });
+          stockNote += ` | −${out.deducted} crates sold from stock`;
+        }
+      } else {
+        const harvested = Number(data.birdsHarvested) || 0;
+        if (harvested > 0) {
+          await stockIn({ businessId, ...POULTRY_PRODUCTS.BROILER, quantity: harvested });
+          stockNote += ` | +${harvested} dressed birds to stock`;
+        }
+        if (broilersSold > 0) {
+          const out = await stockOut({ businessId, sku: POULTRY_PRODUCTS.BROILER.sku, quantity: broilersSold });
+          stockNote += ` | −${out.deducted} birds sold from stock`;
+        }
+      }
+
       // Auto-create revenue transaction when production includes sales revenue
       if (revenue > 0) {
         const trxNum = `TRX-${new Date().getFullYear()}-${Date.now().toString().slice(-6)}`;
@@ -302,6 +356,7 @@ export async function POST(request: NextRequest) {
         if (soldEggs > 0) desc += `, ${soldEggs} sold`;
         if (broilersSold > 0) desc += `, ${broilersSold} broilers sold`;
         if (data.revenueSource) desc += ` | ${data.revenueSource}`;
+        if (stockNote) desc += stockNote;
 
         await db.insert(transactions).values({
           transactionNumber: trxNum,
@@ -322,7 +377,7 @@ export async function POST(request: NextRequest) {
         });
       }
 
-      return NextResponse.json({ success: true, item: row });
+      return NextResponse.json({ success: true, item: row, stockNote });
     }
 
     // ── CHECKLIST (create today's list) ────────────────────────────

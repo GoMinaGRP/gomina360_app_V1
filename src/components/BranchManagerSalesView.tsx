@@ -1459,6 +1459,27 @@ export default function BranchManagerSalesView({
           {/* ~~~~~~~~~~ RECEIPTS ~~~~~~~~~~ */}
           {activeSubTab === "RECEIPTS" && (
             <div className="space-y-4">
+              {/* Profit summary — revenue vs cost of goods sold across stock sales */}
+              {branchReceipts.length > 0 && (() => {
+                const rev = branchReceipts.reduce((s: number, d: any) => s + (d.totalGhs || 0), 0);
+                const cogs = branchReceipts.reduce((s: number, d: any) => s + (d.cogsGhs || 0), 0);
+                const profit = branchReceipts.reduce((s: number, d: any) => s + (d.grossProfitGhs || 0), 0);
+                const margin = rev > 0 ? (profit / rev) * 100 : 0;
+                const Cell = ({ label, value, color }: any) => (
+                  <div className="bg-slate-800/90 border border-slate-700/80 rounded-2xl p-4 shadow-xl">
+                    <div className="text-[10px] uppercase font-bold text-slate-400">{label}</div>
+                    <div className={`text-xl font-black mt-1 ${color}`}>{value}</div>
+                  </div>
+                );
+                return (
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3" data-testid="sales-profit-summary">
+                    <Cell label="Stock-Sale Revenue" value={formatMoney(rev, currentCurrency, true)} color="text-emerald-400" />
+                    <Cell label="Cost of Goods (COGS)" value={formatMoney(cogs, currentCurrency, true)} color="text-amber-400" />
+                    <Cell label="Gross Profit" value={formatMoney(profit, currentCurrency, true)} color="text-cyan-400" />
+                    <Cell label="Avg Margin" value={`${margin.toFixed(1)}%`} color="text-purple-400" />
+                  </div>
+                );
+              })()}
               {/* Saved receipt documents (from sales_documents table) */}
               {branchReceipts.length > 0 && (
                 <div className="bg-slate-800/90 border border-slate-700/80 rounded-2xl overflow-hidden shadow-xl">
