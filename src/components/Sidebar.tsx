@@ -2,6 +2,7 @@
 
 import React from "react";
 import {
+  Beef,
   LayoutDashboard,
   Building2,
   Egg,
@@ -47,7 +48,9 @@ export type ActiveTab =
   | "BRANCH_SALES"
   | "USERS_MANAGE"
   | "SALES_CENTER"
-  | "BRANCH_ASSETS";
+  | "BRANCH_ASSETS"
+  // Allows any dynamically created business code (new branch units)
+  | (string & {});
 
 interface SidebarProps {
   activeTab: ActiveTab;
@@ -76,6 +79,16 @@ export default function Sidebar({
     "FOOD-01": Utensils,
     "TECH-01": Cpu,
     "WASH-01": Droplets,
+  };
+
+  const CATEGORY_ICONS: Record<string, any> = {
+    "Poultry Farm": Egg,
+    "Block Factory": Boxes,
+    "Aquaculture": Fish,
+    "Livestock": typeof Beef !== "undefined" ? Beef : Building2,
+    "Restaurant & Food": Utensils,
+    "Electronic Shop": Cpu,
+    "Car Wash": Droplets,
   };
 
   const isAccessible = (biz: any) => {
@@ -119,11 +132,11 @@ export default function Sidebar({
       {!isWorker && (
       <div className="px-3 py-2 border-b border-slate-800/70">
         <div className="px-3 py-1 text-[11px] font-bold uppercase tracking-wider text-slate-400">
-          {isExecutive ? "7 Ghana Businesses" : "My Branch"}
+          {isExecutive ? `${businesses.length} Ghana Businesses` : "My Branch"}
         </div>
         <div className="space-y-1 mt-1">
           {businesses.map((biz) => {
-            const IconComp = businessIcons[biz.code] || Building2;
+            const IconComp = businessIcons[biz.code] || CATEGORY_ICONS[biz.category] || Building2;
             const accessible = isAccessible(biz);
 
             return (

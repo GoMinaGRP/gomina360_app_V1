@@ -320,7 +320,20 @@ export default function UniversalExportCenter({ activeModule, currentUser, busin
         SCENARIO_PLANNER: data.scenarios,
         INTEGRATIONS: data.integrations,
       };
-      records = addSection(moduleLabel, scoped(map[moduleKey] || []));
+      if (moduleKey in map) {
+        records = addSection(moduleLabel, scoped(map[moduleKey]));
+      } else if (businesses.find((b) => b.code === moduleKey)) {
+        const moduleBusiness = businesses.find((b) => b.code === moduleKey)!;
+        // Any auto-provisioned business unit (dynamic code): export its full
+        // branch report — performance, stock, ledger and CRM — so reports are
+        // never empty for newly created units.
+        records = [
+          ...addSection("Business Performance", data.metrics.filter((m) => m.businessId === moduleBusiness.id).map((m) => ({ ...m, business: moduleBusiness.name, branchCode: moduleBusiness.code }))),
+          ...addSection("Inventory", scoped(data.inventory)),
+          ...addSection("Transactions", scoped(data.transactions)),
+          ...addSection("Customers", scoped(data.customers)),
+        ];
+      }
     }
 
     records = records.filter((r) => {

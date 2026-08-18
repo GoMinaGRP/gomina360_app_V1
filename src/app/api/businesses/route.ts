@@ -1,7 +1,12 @@
 import { NextResponse } from "next/server";
 import { db } from "@/db";
-import { businesses, businessMetrics } from "@/db/schema";
-import { desc } from "drizzle-orm";
+import { businesses } from "@/db/schema";
+import { eq } from "drizzle-orm";
+import {
+  CATEGORY_ICON,
+  nextBusinessCode,
+  provisionBusiness,
+} from "@/lib/businessProvisioning";
 
 export async function GET() {
   try {
@@ -15,6 +20,12 @@ export async function GET() {
   }
 }
 
+/**
+ * POST /api/businesses — create a new enterprise unit AND auto-provision its
+ * complete operating workspace (metrics, category starter inventory kit,
+ * specialized checklist templates) so its dashboard is fully formed the
+ * moment it first opens.
+ */
 export async function POST(request: Request) {
   try {
     const body = await request.json();
@@ -33,6 +44,15 @@ export async function POST(request: Request) {
       iconName,
     } = body;
 
+    const resolvedCategory = category || "Other";
+    const all = await db.select({ code: businesses.code }).from(businesses);
+
+    // Pretty sequential code per category (BLOCK-02, WASH-02, …). If the caller
+    // supplied a code that is already taken, fall back to the next free one.
+    let resolvedCode = code && !all.some((b) => b.code === code)
+      ? code
+      : nextBusinessCode(all.map((b) => b.code), resolvedCategory);
+
     // Standardized Ghana location: Region → District/MMDA → Town.
     // branchLocation is a derived human-readable summary line.
     const derivedBranchLocation =
@@ -45,10 +65,8 @@ export async function POST(request: Request) {
       .insert(businesses)
       .values({
         name: name || "New Enterprise Unit",
-        code:
-          code ||
-          `BIZ-${Math.floor(100 + Math.random() * 900)}`,
-        category: category || "Other",
+        code: resolvedCode,
+        category: resolvedCategory,
         branchLocation: derivedBranchLocation,
         region: region || "Greater Accra",
         district: district || null,
@@ -58,26 +76,51 @@ export async function POST(request: Request) {
         status: "ACTIVE",
         initialCapitalGhs: Number(initialCapitalGhs) || 100000,
         monthlyTargetRevenueGhs: Number(monthlyTargetRevenueGhs) || 50000,
-        iconName: iconName || "Building2",
+        iconName: iconName || CATEGORY_ICON[resolvedCategory] || "Building2",
       })
       .returning();
 
-    // Automatically create initial Q1 metrics for new business
-    await db.insert(businessMetrics).values({
-      businessId: newBiz.id,
-      period: "2026-Q1",
-      revenueGhs: 45000,
-      expensesGhs: 29000,
-      netProfitGhs: 16000,
-      roiPercent: 16.0,
-      cashFlowGhs: 11000,
-      assetsValueGhs: Number(initialCapitalGhs) || 100000,
-      inventoryValueGhs: 18000,
-      growthRatePercent: 10.0,
-      riskScore: 25,
+    // Auto-provision the full workspace (idempotent per area).
+    const provisioned = await provisionBusiness({
+      id: newBiz.id,
+      code: newBiz.code,
+      name: newBiz.name,
+      category: newBiz.category,
+      initialCapitalGhs: newBiz.initialCapitalGhs,
     });
 
-    return NextResponse.json({ success: true, business: newBiz });
+    return NextResponse.json({ success: true, business: newBiz, provisioned });
+  } catch (error: any) {
+    return NextResponse.json(
+      { success: false, error: error.message },
+      { status: 500 }
+    );
+  }
+}
+
+/**
+ * PUT /api/businesses { id } — repair/complete provisioning for an existing
+ * business (fills in any missing metrics, starter kit or checklist templates).
+ */
+export async function PUT(request: Request) {
+  try {
+    const body = await request.json();
+    const id = Number(body.id || body.businessId);
+    if (!id) {
+      return NextResponse.json({ success: false, error: "id required" }, { status: 400 });
+    }
+    const [biz] = await db.select().from(businesses).where(eq(businesses.id, id));
+    if (!biz) {
+      return NextResponse.json({ success: false, error: "Business not found" }, { status: 404 });
+    }
+    const provisioned = await provisionBusiness({
+      id: biz.id,
+      code: biz.code,
+      name: biz.name,
+      category: biz.category,
+      initialCapitalGhs: biz.initialCapitalGhs,
+    });
+    return NextResponse.json({ success: true, business: biz, provisioned });
   } catch (error: any) {
     return NextResponse.json(
       { success: false, error: error.message },

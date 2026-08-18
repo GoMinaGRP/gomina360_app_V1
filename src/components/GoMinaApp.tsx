@@ -19,6 +19,7 @@ import BlockFactoryModule from "./BlockFactoryModule";
 import AquacultureModule from "./AquacultureModule";
 import ElectronicsShopModule from "./ElectronicsShopModule";
 import RestaurantKitchenModule from "./RestaurantKitchenModule";
+import BusinessDashboardModule from "./BusinessDashboardModule";
 import UniversalExportCenter from "./UniversalExportCenter";
 import { CurrencyCode } from "@/lib/currency";
 import { getOfflineQueue } from "@/lib/offlineSync";
@@ -593,6 +594,31 @@ export default function GoMinaApp() {
       );
     }
 
+    // ANY other business code: auto-provisioned enterprise unit (created via
+    // "New Branch / Unit"). Every new unit gets the complete category-aware
+    // dashboard wired into sales, inventory, finance, activities, alerts,
+    // checklists and reports — never a blank or plain view.
+    const dynamicBiz = businesses.find((b) => b.code === activeTab);
+    if (dynamicBiz) {
+      const dynMetric = liveMetrics.find((m) => m.businessId === dynamicBiz.id);
+      return (
+        <BusinessDashboardModule
+          currentUser={currentUser}
+          businessInfo={dynamicBiz}
+          businessMetrics={{ ...dynMetric, monthlyTargetRevenueGhs: dynamicBiz.monthlyTargetRevenueGhs }}
+          inventory={inventory}
+          transactions={transactions}
+          assets={assets}
+          employees={employees}
+          customers={customers}
+          businesses={businesses}
+          currentCurrency={currentCurrency}
+          onRefreshData={refreshAllData}
+          onSelectTab={setActiveTab}
+        />
+      );
+    }
+
     return null;
   };
 
@@ -681,7 +707,10 @@ export default function GoMinaApp() {
       <NewBusinessModal
         isOpen={isNewBusinessModalOpen}
         onClose={() => setIsNewBusinessModalOpen(false)}
-        onBusinessCreated={refreshAllData}
+        onBusinessCreated={async (biz?: any) => {
+          await refreshAllData();
+          if (biz?.code) setActiveTab(biz.code as ActiveTab);
+        }}
       />
     </div>
   );

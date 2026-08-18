@@ -7,7 +7,7 @@ import LocationSelector, { LocationValue } from "./LocationSelector";
 interface NewBusinessModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onBusinessCreated: () => void;
+  onBusinessCreated: (business?: any) => void;
 }
 
 export default function NewBusinessModal({
@@ -34,12 +34,15 @@ export default function NewBusinessModal({
     e.preventDefault();
     setIsSubmitting(true);
     try {
+      // No code is sent — the server assigns the next sequential code for the
+      // category (e.g. BLOCK-02, WASH-03) and auto-provisions the full
+      // operating workspace (metrics, starter stock kit, daily checklist
+      // templates) so the new unit's dashboard is complete on first open.
       const res = await fetch("/api/businesses", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           name: name || "Mina Kumasi Block & Concrete",
-          code: `BIZ-${Math.floor(100 + Math.random() * 900)}`,
           category,
           region: location.region,
           district: location.district,
@@ -51,9 +54,12 @@ export default function NewBusinessModal({
         }),
       });
 
-      if (res.ok) {
-        onBusinessCreated();
+      const d = await res.json().catch(() => null);
+      if (res.ok && d?.success) {
+        onBusinessCreated(d.business);
         onClose();
+      } else {
+        console.error("Create business failed:", d?.error);
       }
     } catch (err) {
       console.error("Error creating business:", err);
@@ -179,6 +185,13 @@ export default function NewBusinessModal({
                 className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-white text-sm"
               />
             </div>
+          </div>
+
+          <div className="rounded-xl bg-emerald-500/10 border border-emerald-500/30 p-3 text-[11px] text-emerald-200/90 leading-relaxed">
+            <span className="font-bold text-emerald-300">Auto-provisioned on creation:</span> a complete{" "}
+            {category} dashboard, starter stock kit funded from initial capital, specialized daily-checklist
+            templates, and live links into Inventory, Sales, Finance, Expenses, Activities, Alerts, Checklists
+            and enterprise Reports — ready the moment the unit opens.
           </div>
 
           <div className="flex justify-end space-x-3 pt-3 border-t border-slate-800">

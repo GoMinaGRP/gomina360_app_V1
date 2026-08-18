@@ -10,6 +10,7 @@ import {
   businesses,
 } from "@/db/schema";
 import { eq } from "drizzle-orm";
+import { computeStockStatus } from "@/lib/stock";
 
 export async function POST(request: Request) {
   try {
@@ -187,6 +188,8 @@ export async function POST(request: Request) {
     }
 
     if (entityType === "inventory") {
+      const qty = Number(data.quantity) || 100;
+      const threshold = Number(data.minStockThreshold) || 10;
       const [inserted] = await db
         .insert(inventoryItems)
         .values({
@@ -194,12 +197,12 @@ export async function POST(request: Request) {
           sku: data.sku || `SKU-${Math.floor(10000 + Math.random() * 90000)}`,
           businessId: Number(data.businessId) || 1,
           category: data.category || "General Stock",
-          quantity: Number(data.quantity) || 100,
+          quantity: qty,
           unit: data.unit || "Units",
           costPriceGhs: Number(data.costPriceGhs) || 20,
           sellingPriceGhs: Number(data.sellingPriceGhs) || 35,
-          minStockThreshold: Number(data.minStockThreshold) || 10,
-          status: "IN_STOCK",
+          minStockThreshold: threshold,
+          status: computeStockStatus(qty, threshold),
           expiryDate: data.expiryDate || null,
         })
         .returning();
