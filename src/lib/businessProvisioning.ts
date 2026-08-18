@@ -221,3 +221,125 @@ export async function provisionBusiness(biz: {
     checklistTemplates: templateCount,
   };
 }
+
+/**
+ * Re-provision a business after the OWNER changes its type (category).
+ *
+ * Keeps every existing row (history is never destroyed), then makes the unit
+ * fully operational as the NEW type:
+ *   • inserts any missing starter-kit SKUs for the new category (per-SKU
+ *     idempotent — existing stock rows are never touched) and folds the added
+ *     kit cost incrementally into the live metrics row (expenses / inventory
+ *     value / net profit / cash flow)
+ *   • re-points daily checklists at the new type: templates whose taskKey is
+ *     not part of the new type's set are deactivated (kept in history), and
+ *     missing new-type templates are created active with the unit's branch code
+ */
+export async function reprovisionForTypeChange(biz: {
+  id: number;
+  code: string;
+  name: string;
+  category: string; // NEW category
+}) {
+  const businessId = biz.id;
+
+  // 1. Starter kit: add only the SKUs of the new category that do not exist yet.
+  const kit = KITS[biz.category] || GENERIC_KIT;
+  const existingInv = await db
+    .select({ sku: inventoryItems.sku })
+    .from(inventoryItems)
+    .where(eq(inventoryItems.businessId, businessId));
+  const existingSkus = new Set(existingInv.map((r) => r.sku));
+  const addedItems: any[] = [];
+  let addedKitCost = 0;
+  for (const item of kit) {
+    const sku = `${biz.code}-${item.skuSuffix}`;
+    if (existingSkus.has(sku)) continue;
+    const qty = Number(item.quantity) || 0;
+    const [row] = await db
+      .insert(inventoryItems)
+      .values({
+        name: item.name,
+        sku,
+        businessId,
+        category: item.category,
+        quantity: qty,
+        unit: item.unit,
+        costPriceGhs: item.costPriceGhs,
+        sellingPriceGhs: item.sellingPriceGhs,
+        minStockThreshold: item.minStockThreshold,
+        status: computeStockStatus(qty, item.minStockThreshold),
+      })
+      .returning();
+    addedKitCost += qty * (Number(item.costPriceGhs) || 0);
+    addedItems.push(row);
+  }
+
+  // Fold the added kit cost incrementally into the metrics row (exactly like
+  // creation does, but as a delta instead of an absolute set).
+  if (addedKitCost > 0) {
+    const [metric] = await db
+      .select()
+      .from(businessMetrics)
+      .where(eq(businessMetrics.businessId, businessId));
+    if (metric) {
+      await db
+        .update(businessMetrics)
+        .set({
+          expensesGhs: Math.round((metric.expensesGhs + addedKitCost) * 100) / 100,
+          netProfitGhs: Math.round((metric.netProfitGhs - addedKitCost) * 100) / 100,
+          cashFlowGhs: Math.round((metric.cashFlowGhs - addedKitCost) * 100) / 100,
+          inventoryValueGhs: Math.round((metric.inventoryValueGhs + addedKitCost) * 100) / 100,
+        })
+        .where(eq(businessMetrics.id, metric.id));
+    }
+  }
+
+  // 2. Checklist templates: point the unit at its new type's task set.
+  const wanted = tasksForBusiness(undefined, biz.category);
+  const wantedKeys = new Set(wanted.map((t) => t.taskKey));
+  const existingTpls = await db
+    .select()
+    .from(checklistTemplates)
+    .where(eq(checklistTemplates.businessId, businessId));
+  const existingKeys = new Set(existingTpls.map((t) => t.taskKey));
+
+  let deactivated = 0;
+  for (const tpl of existingTpls) {
+    if (!wantedKeys.has(tpl.taskKey) && tpl.isActive) {
+      await db
+        .update(checklistTemplates)
+        .set({ isActive: false })
+        .where(eq(checklistTemplates.id, tpl.id));
+      deactivated++;
+    } else if (wantedKeys.has(tpl.taskKey) && !tpl.isActive) {
+      await db
+        .update(checklistTemplates)
+        .set({ isActive: true, branchCode: biz.code })
+        .where(eq(checklistTemplates.id, tpl.id));
+    }
+  }
+
+  let createdTpls = 0;
+  for (let i = 0; i < wanted.length; i++) {
+    const t = wanted[i];
+    if (existingKeys.has(t.taskKey)) continue;
+    await db.insert(checklistTemplates).values({
+      businessId,
+      branchCode: biz.code,
+      taskKey: t.taskKey,
+      taskLabel: t.taskLabel,
+      category: t.category,
+      sortOrder: i + 1,
+      isActive: true,
+    });
+    createdTpls++;
+  }
+
+  return {
+    kitItemsAdded: addedItems.length,
+    kitCostAddedGhs: Math.round(addedKitCost * 100) / 100,
+    checklistTemplatesCreated: createdTpls,
+    checklistTemplatesDeactivated: deactivated,
+  };
+}

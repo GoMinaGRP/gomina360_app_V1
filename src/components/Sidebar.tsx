@@ -168,6 +168,11 @@ export default function Sidebar({
                     }`}
                   />
                   <span className="truncate">{biz.name}</span>
+                  {(biz.status || "").toUpperCase() === "INACTIVE" && (
+                    <span className="text-[9px] font-black text-rose-300 bg-rose-500/15 border border-rose-500/40 px-1 py-0.5 rounded shrink-0">
+                      INACTIVE
+                    </span>
+                  )}
                 </div>
                 <ChevronRight className="w-3.5 h-3.5 opacity-50" />
               </button>

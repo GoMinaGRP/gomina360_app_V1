@@ -1417,6 +1417,16 @@ export const GUIDES: Record<string, Record<string, SectionGuide>> = {
             "“Export / Audit” (top right) downloads any unit's full report.",
           ],
         },
+        {
+          name: "Manage any business unit (Owner)",
+          steps: [
+            "Click “Manage Units” (Owner only) to open the management console.",
+            "Use the pencil to edit: rename, change location, change business type, change manager, targets or status.",
+            "Use the power button to deactivate a unit — it is flagged INACTIVE everywhere but keeps ALL its data; click again to re-activate.",
+            "Use the trash button to permanently delete — you must type the unit code to confirm, and every related record (stock, sales, orders, finance, checklists) is removed.",
+            "Every change updates inventory, sales, finance, dashboards and reports automatically.",
+          ],
+        },
       ],
       faqs: [
         {
@@ -1428,6 +1438,11 @@ export const GUIDES: Record<string, Record<string, SectionGuide>> = {
           q: "How do I add another business?",
           match: ["add", "new", "business", "branch"],
           answer: "“New Branch / Unit” — pick its type and it receives the same dashboard and features as the original business of that type, automatically provisioned and linked.",
+        },
+        {
+          q: "How do I edit, rename, deactivate or delete a business?",
+          match: ["edit", "rename", "deactivate", "delete", "remove", "manage", "type", "location"],
+          answer: "Open “Manage Units” (Owner). The pencil edits name, location, business type, manager and targets — changing type auto-provisions the new module's starter stock and checklists. The power button deactivates/re-activates without losing data. The trash button deletes the unit and all its records — you must type the unit code to confirm.",
         },
       ],
     },

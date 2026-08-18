@@ -18,6 +18,7 @@ import {
   CheckCircle,
   ClipboardCheck,
   Plus,
+  Settings2,
 } from "lucide-react";
 import {
   BarChart,
@@ -47,6 +48,8 @@ interface CommandCenterDashboardProps {
   currentCurrency: CurrencyCode;
   onSelectTab: (tab: ActiveTab) => void;
   onOpenNewBusinessModal: () => void;
+  onOpenManageBusinesses?: () => void;
+  canManageBusinesses?: boolean;
   checklists?: { templates: any[]; entries: any[] };
 }
 
@@ -58,6 +61,8 @@ export default function CommandCenterDashboard({
   currentCurrency,
   onSelectTab,
   onOpenNewBusinessModal,
+  onOpenManageBusinesses,
+  canManageBusinesses = false,
   checklists,
 }: CommandCenterDashboardProps) {
   const [chartView, setChartView] = useState<
@@ -291,6 +296,16 @@ export default function CommandCenterDashboard({
           </button>
 
           <AiSectionGuide moduleKey="COMMAND_CENTER" section="COMMAND_CENTER" variant="header" />
+          {canManageBusinesses && onOpenManageBusinesses && (
+            <button
+              onClick={onOpenManageBusinesses}
+              data-testid="open-manage-businesses"
+              className="flex items-center space-x-1.5 px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs sm:text-sm shadow-lg transition"
+            >
+              <Settings2 className="w-4 h-4" />
+              <span>Manage Units</span>
+            </button>
+          )}
           <button
             onClick={onOpenNewBusinessModal}
             className="flex items-center space-x-1.5 px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs sm:text-sm shadow-lg transition"
@@ -537,6 +552,11 @@ export default function CommandCenterDashboard({
                   {active && <CheckCircle className="w-3 h-3 text-white" />}
                 </span>
                 <span className="truncate">{biz.name}</span>
+                {(biz.status || "").toUpperCase() === "INACTIVE" && (
+                  <span className="ml-auto text-[9px] font-black text-rose-300 bg-rose-500/15 border border-rose-500/40 px-1.5 py-0.5 rounded shrink-0">
+                    INACTIVE
+                  </span>
+                )}
               </button>
             );
           })}

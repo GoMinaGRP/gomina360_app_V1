@@ -10,6 +10,7 @@ import AiAdvisorView from "./AiAdvisorView";
 import ScenarioPlannerView from "./ScenarioPlannerView";
 import IntegrationsHubView from "./IntegrationsHubView";
 import NewBusinessModal from "./NewBusinessModal";
+import ManageBusinessesModal from "./ManageBusinessesModal";
 import WorkerDashboard from "./WorkerDashboard";
 import BranchManagerWorkerPanel from "./BranchManagerWorkerPanel";
 import BranchManagerSalesView from "./BranchManagerSalesView";
@@ -60,6 +61,7 @@ export default function GoMinaApp() {
   const [isOnline, setIsOnline] = useState<boolean>(true);
   const [offlineQueueCount, setOfflineQueueCount] = useState<number>(0);
   const [isNewBusinessModalOpen, setIsNewBusinessModalOpen] = useState(false);
+  const [isManageBizOpen, setIsManageBizOpen] = useState(false);
 
   // Baseline snapshot of the highest transaction id at first load. Any transaction
   // created after this point (a new in-app sale/expense) is layered onto the seeded
@@ -423,6 +425,8 @@ export default function GoMinaApp() {
           currentCurrency={currentCurrency}
           onSelectTab={setActiveTab}
           onOpenNewBusinessModal={() => setIsNewBusinessModalOpen(true)}
+          onOpenManageBusinesses={() => setIsManageBizOpen(true)}
+          canManageBusinesses={currentUser?.role === "OWNER"}
           checklists={checklistData}
         />
       );
@@ -746,6 +750,20 @@ export default function GoMinaApp() {
         onBusinessCreated={async (biz?: any) => {
           await refreshAllData();
           if (biz?.code) setActiveTab(biz.code as ActiveTab);
+        }}
+      />
+
+      {/* OWNER business management console — add / edit / rename / relocate /
+          change type / deactivate / permanently delete any branch. */}
+      <ManageBusinessesModal
+        isOpen={isManageBizOpen}
+        onClose={() => setIsManageBizOpen(false)}
+        businesses={businesses}
+        currentUser={currentUser}
+        onChanged={refreshAllData}
+        onAddNew={() => setIsNewBusinessModalOpen(true)}
+        onDeleted={(code) => {
+          if (activeTab === code) setActiveTab("COMMAND_CENTER");
         }}
       />
     </div>
