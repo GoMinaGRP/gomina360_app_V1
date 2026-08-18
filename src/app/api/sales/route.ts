@@ -189,7 +189,9 @@ export async function POST(request: NextRequest) {
           .values({
             name: String(customerName).trim(),
             type: "RETAIL",
-            phone: customerPhone || null,
+            // phone is NOT NULL in the schema — store "" when the sale has no
+            // number so walk-in customers still get a CRM record
+            phone: customerPhone || "",
             totalSpentGhs: total,
             loyaltyPoints: Math.floor(total / 100),
             businessId: null,

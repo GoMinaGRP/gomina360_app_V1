@@ -55,6 +55,7 @@ export default function BlockFactoryModule({
   const [blockTypesList, setBlockTypesList] = useState<any[]>([]);
   const [checklistDate, setChecklistDate] = useState<string>(new Date().toISOString().split("T")[0]);
   const [showForm, setShowForm] = useState<FormType>(null);
+  const [restockItemId, setRestockItemId] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
@@ -268,9 +269,10 @@ export default function BlockFactoryModule({
         });
         d = await res.json();
       } else {
-        // "Add New Block Type" flow from the production form: persist the new
-        // type to the master list first, then record production against it.
-        if (entity === "PRODUCTION" && data.blockType === ADD_NEW_TYPE && data.__newBlock) {
+        // "Add New Block Type" flow (from the production OR restock forms):
+        // persist the new type to the master list first — with its linked
+        // finished-goods stock item — then carry on against the new typeKey.
+        if ((entity === "PRODUCTION" || entity === "RESTOCK") && data.__newBlock) {
           const tRes = await fetch("/api/block-factory", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -360,7 +362,7 @@ export default function BlockFactoryModule({
         <div className="flex flex-wrap gap-2">
           <button onClick={() => setShowForm("PRODUCTION")} className="px-3 py-2 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-bold flex items-center gap-1"><Plus className="w-3.5 h-3.5" />Production</button>
           <button onClick={() => setShowForm("SALE")} className="px-3 py-2 rounded-lg bg-amber-600 hover:bg-amber-500 text-white text-xs font-bold flex items-center gap-1"><BadgeDollarSign className="w-3.5 h-3.5" />Sale</button>
-          <button onClick={() => setShowForm("RESTOCK")} className="px-3 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold flex items-center gap-1"><PackagePlus className="w-3.5 h-3.5" />Restock</button>
+          <button onClick={() => { setRestockItemId(null); setShowForm("RESTOCK"); }} className="px-3 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold flex items-center gap-1"><PackagePlus className="w-3.5 h-3.5" />Restock</button>
           <button onClick={() => setShowForm("ORDER")} className="px-3 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold flex items-center gap-1"><ShoppingCart className="w-3.5 h-3.5" />Order</button>
           <button onClick={() => setShowForm("DELIVERY")} className="px-3 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold flex items-center gap-1"><Truck className="w-3.5 h-3.5" />Delivery</button>
           <button onClick={() => setShowForm("EXPENSE")} className="px-3 py-2 rounded-lg bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold flex items-center gap-1"><Wallet className="w-3.5 h-3.5" />Expense</button>
@@ -500,7 +502,7 @@ export default function BlockFactoryModule({
 
           <Card title="Inventory & Stock" icon={Boxes}
             action={<div className="flex gap-2">
-              <button onClick={() => setShowForm("RESTOCK")} className="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold flex items-center gap-1"><PackagePlus className="w-3.5 h-3.5" />Receive Stock</button>
+              <button onClick={() => { setRestockItemId(null); setShowForm("RESTOCK"); }} className="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold flex items-center gap-1"><PackagePlus className="w-3.5 h-3.5" />Receive Stock</button>
               <button onClick={() => setShowForm("ITEM")} className="px-3 py-1.5 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-bold flex items-center gap-1"><Plus className="w-3.5 h-3.5" />New Item</button>
             </div>}>
             <div className="overflow-x-auto">
@@ -525,14 +527,14 @@ export default function BlockFactoryModule({
                         <td className="px-4 py-3 text-slate-300">{formatMoney(i.sellingPriceGhs, currentCurrency, true)}</td>
                         <td className="px-4 py-3 text-emerald-300 font-semibold">{formatMoney((i.quantity || 0) * (i.costPriceGhs || 0), currentCurrency, true)}</td>
                         <td className="px-4 py-3"><span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${i.status === "OUT_OF_STOCK" ? "bg-rose-500/15 text-rose-300 border-rose-500/40" : warn ? "bg-amber-500/15 text-amber-300 border-amber-500/40" : "bg-emerald-500/15 text-emerald-300 border-emerald-500/40"}`}>{i.status}</span></td>
-                        <td className="px-4 py-3"><button onClick={() => setShowForm("RESTOCK")} className="px-2 py-1 rounded-md bg-indigo-600/80 hover:bg-indigo-500 text-white text-[10px] font-bold">Restock</button></td>
+                        <td className="px-4 py-3"><button onClick={() => { setRestockItemId(i.id); setShowForm("RESTOCK"); }} className="px-2 py-1 rounded-md bg-indigo-600/80 hover:bg-indigo-500 text-white text-[10px] font-bold">Restock</button></td>
                       </tr>
                     );
                   })}
                 </tbody>
               </table>
             </div>
-            <p className="px-4 pb-4 pt-2 text-[10px] text-slate-500">Production entries automatically add finished blocks to stock; sales deduct stock; restocks add purchased materials and can book the expense to Finance in one step.</p>
+            <p className="px-4 pb-4 pt-2 text-[10px] text-slate-500">Fully interconnected: completed production adds good blocks to each type’s stock item automatically • restocks work straight from the Block Production Master List (or add a new type) and can book the expense to Finance in one step • sales deduct stock, post revenue and refresh dashboards &amp; low-stock alerts instantly.</p>
           </Card>
         </div>
       )}
@@ -550,7 +552,7 @@ export default function BlockFactoryModule({
           <div className="flex flex-wrap gap-2">
             <button onClick={() => setShowForm("SALE")} className="px-3 py-2 rounded-lg bg-amber-600 hover:bg-amber-500 text-white text-xs font-bold flex items-center gap-1"><BadgeDollarSign className="w-3.5 h-3.5" />Record Sale / Payment</button>
             <button onClick={() => setShowForm("EXPENSE")} className="px-3 py-2 rounded-lg bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold flex items-center gap-1"><Wallet className="w-3.5 h-3.5" />Record Expense</button>
-            <button onClick={() => setShowForm("RESTOCK")} className="px-3 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold flex items-center gap-1"><PackagePlus className="w-3.5 h-3.5" />Purchase Stock</button>
+            <button onClick={() => { setRestockItemId(null); setShowForm("RESTOCK"); }} className="px-3 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold flex items-center gap-1"><PackagePlus className="w-3.5 h-3.5" />Purchase Stock</button>
           </div>
 
           <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
@@ -619,7 +621,7 @@ export default function BlockFactoryModule({
         />
       )}
 
-      {showForm && <BlockFactoryForm type={showForm} busy={busy} onClose={() => { setShowForm(null); setError(""); }} onSubmit={submit} orders={orders} inventory={branchInventory} blockTypeOptions={blockTypeOptions} />}
+      {showForm && <BlockFactoryForm type={showForm} busy={busy} onClose={() => { setShowForm(null); setError(""); setRestockItemId(null); }} onSubmit={submit} orders={orders} inventory={branchInventory} blockTypeOptions={blockTypeOptions} blockTypes={blockTypesList} initialRestockItemId={restockItemId} />}
     </div>
   );
 }
@@ -650,9 +652,13 @@ function MiniList({ title, items, render }: any) {
   return <div><div className="text-[10px] uppercase text-slate-500 font-bold mb-2">{title}</div><div className="space-y-2">{items.length ? items.map((item: any) => <div key={item.id} className="p-2 rounded-lg bg-slate-900/70 border border-slate-700 text-xs text-slate-300">{render(item)}</div>) : <p className="text-xs text-slate-500">No records</p>}</div></div>;
 }
 
-function BlockFactoryForm({ type, busy, onClose, onSubmit, orders, inventory, blockTypeOptions }: any) {
+function BlockFactoryForm({ type, busy, onClose, onSubmit, orders, inventory, blockTypeOptions, blockTypes = [], initialRestockItemId = null }: any) {
   const todayStr = new Date().toISOString().split("T")[0];
-  const [f, setF] = useState<any>({ blockType: "6-INCH-SOLID", qualityGrade: "GRADE_A_STANDARD", status: "PENDING", paymentMethod: "CASH", deliveryDate: todayStr, date: todayStr, recordExpense: true });
+  const [f, setF] = useState<any>({
+    blockType: "6-INCH-SOLID", qualityGrade: "GRADE_A_STANDARD", status: "PENDING",
+    paymentMethod: "CASH", deliveryDate: todayStr, date: todayStr, recordExpense: true,
+    restockTarget: initialRestockItemId ? `ITEM:${initialRestockItemId}` : "",
+  });
   const set = (k: string, v: any) => setF({ ...f, [k]: v });
   const I = ({ label, k, t = "text", ...rest }: any) => <div><label className="block text-[10px] text-slate-400 font-semibold mb-1">{label}</label><input type={t} value={f[k] ?? ""} onChange={(e) => set(k, t === "number" ? Number(e.target.value) : e.target.value)} className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-white text-xs" {...rest} /></div>;
   const S = ({ label, k, opts }: any) => <div><label className="block text-[10px] text-slate-400 font-semibold mb-1">{label}</label><select value={f[k] ?? ""} onChange={(e) => set(k, e.target.value)} className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-white text-xs">{opts.map((o: any) => <option key={o.v ?? o} value={o.v ?? o}>{o.l ?? o}</option>)}</select></div>;
@@ -672,54 +678,93 @@ function BlockFactoryForm({ type, busy, onClose, onSubmit, orders, inventory, bl
   const restockCost = Number(f.unitCostGhs) || 0;
   const restockTotal = (Number(f.quantity) || 0) * restockCost;
 
+  // Restock target resolution: master-list block type OR direct inventory item
+  const restockTypeKey = String(f.restockTarget || "").startsWith("TYPE:") ? String(f.restockTarget).slice(5) : null;
+  const restockTypeRow = restockTypeKey ? (blockTypes || []).find((t: any) => t.typeKey === restockTypeKey) : null;
+  const restockTypeItem = restockTypeRow?.sku ? (inventory || []).find((i: any) => i.sku === restockTypeRow.sku) : null;
+  const restockDirectItem = String(f.restockTarget || "").startsWith("ITEM:")
+    ? (inventory || []).find((i: any) => String(i.id) === String(f.restockTarget).slice(5))
+    : null;
+  const restockItem = restockDirectItem || restockTypeItem || null;
+  const restockIsNewType = f.restockTarget === ADD_NEW_TYPE;
+  const restockQty = Number(f.quantity) || 0;
+
+  const buildNewBlock = (payload: any) => {
+    payload.__newBlock = {
+      name: String(payload.newTypeName || "").trim(),
+      dimensions: payload.newTypeDims,
+      style: payload.newTypeStyle,
+      defaultUnitPriceGhs: payload.newTypePrice,
+      createInventoryItem: payload.newTypeInventory !== false,
+    };
+    delete payload.newTypeName;
+    delete payload.newTypeDims;
+    delete payload.newTypeStyle;
+    delete payload.newTypePrice;
+    delete payload.newTypeInventory;
+  };
+
   const handle = (e: React.FormEvent) => {
     e.preventDefault();
     const payload = { ...f };
-    if (type === "RESTOCK") payload.totalCostGhs = restockTotal;
+    if (type === "RESTOCK") {
+      payload.totalCostGhs = restockTotal;
+      const target = String(payload.restockTarget || "");
+      delete payload.restockTarget;
+      if (target === ADD_NEW_TYPE) {
+        buildNewBlock(payload);            // parent saves the type, then sets payload.blockType
+        delete payload.inventoryId;
+      } else if (target.startsWith("TYPE:")) {
+        payload.blockType = target.slice(5);
+        delete payload.inventoryId;
+      } else if (target.startsWith("ITEM:")) {
+        payload.inventoryId = Number(target.slice(5));
+        delete payload.blockType;
+      }
+    }
     if (type === "PRODUCTION" && payload.blockType === ADD_NEW_TYPE) {
-      payload.__newBlock = {
-        name: String(payload.newTypeName || "").trim(),
-        dimensions: payload.newTypeDims,
-        style: payload.newTypeStyle,
-        defaultUnitPriceGhs: payload.newTypePrice,
-        createInventoryItem: payload.newTypeInventory !== false,
-      };
-      delete payload.newTypeName;
-      delete payload.newTypeDims;
-      delete payload.newTypeStyle;
-      delete payload.newTypePrice;
-      delete payload.newTypeInventory;
+      buildNewBlock(payload);
     }
     onSubmit(type, payload);
   };
 
   return <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm p-4"><div className="bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-lg shadow-2xl max-h-[90vh] overflow-y-auto"><div className="flex items-center justify-between p-5 border-b border-slate-800 sticky top-0 bg-slate-900 z-10"><h3 className="text-lg font-bold text-white">{title}</h3><button onClick={onClose} className="text-slate-400 hover:text-white"><X className="w-5 h-5" /></button></div><form onSubmit={handle} className="p-5 space-y-3">
     {type === "PRODUCTION" && <><div className="grid grid-cols-2 gap-3"><I label="Batch ID" k="batchId" placeholder="auto if blank" /><S label="Block Type" k="blockType" opts={[...blockTypeOptions, { v: ADD_NEW_TYPE, l: "➕ Add New Block Type…" }]} /><I label="Bags Cement Used" k="bagsCementUsed" t="number" required min={1} /><I label="Blocks Molded" k="blocksMolded" t="number" required min={1} /><I label="Blocks Broken" k="blocksBroken" t="number" min={0} /><S label="Quality" k="qualityGrade" opts={["GRADE_A_STANDARD", "GRADE_B_MINOR_DEFECT", "REJECTED"]} /><I label="Date" k="recordedDate" t="date" /></div>
-    {f.blockType === ADD_NEW_TYPE && (
-      <div className="p-3 rounded-xl border border-cyan-500/40 bg-cyan-500/5 space-y-3">
-        <div className="text-[11px] font-bold text-cyan-300 uppercase tracking-wide">New Block Type — saved to master list</div>
-        <div className="grid grid-cols-2 gap-3">
-          <I label="Type / Name" k="newTypeName" placeholder="e.g. 8-Inch Hollow Blocks" required />
-          <I label="Dimensions / Specs" k="newTypeDims" placeholder="8in x 8in x 16in" />
-          <S label="Style" k="newTypeStyle" opts={["SOLID", "HOLLOW", "PAVING", "INTERLOCKING", "OTHER"]} />
-          <I label="Default Unit Price (GH₵)" k="newTypePrice" t="number" step="0.01" min={0} placeholder="optional" />
+    {f.blockType !== ADD_NEW_TYPE && (() => {
+      const bt = (blockTypes || []).find((t: any) => t.typeKey === f.blockType);
+      const it = bt?.sku ? (inventory || []).find((x: any) => x.sku === bt.sku) : null;
+      const good = Math.max(0, (Number(f.blocksMolded) || 0) - (Number(f.blocksBroken) || 0));
+      if (!good) return null;
+      return (
+        <div className="p-3 rounded-lg bg-cyan-500/10 border border-cyan-500/30 text-xs text-cyan-200">
+          Production → Stock: +{good.toLocaleString()} good {f.blockType} blocks {it
+            ? <>→ “{it.name}” ({it.sku}): {Number(it.quantity || 0).toLocaleString()} → {(Number(it.quantity || 0) + good).toLocaleString()} {it.unit}</>
+            : <>→ a finished-goods stock item will be auto-created for this type</>}
         </div>
-        <label className="flex items-center gap-2 text-[11px] text-slate-300 cursor-pointer">
-          <input type="checkbox" checked={f.newTypeInventory !== false} onChange={(e) => set("newTypeInventory", e.target.checked)} className="accent-cyan-500 w-3.5 h-3.5" />
-          Also add to inventory &amp; sales catalog — production and sales then track stock for this type automatically
-        </label>
-        <p className="text-[10px] text-slate-500">The type is stored in the block production master list and becomes selectable in future production, orders, deliveries, filters and reports.</p>
-      </div>
-    )}</>}
+      );
+    })()}
+    {f.blockType === ADD_NEW_TYPE && <NewBlockTypePanel f={f} set={set} />}</>}
     {type === "ORDER" && <><div className="grid grid-cols-2 gap-3"><I label="Customer Name" k="customerName" required /><I label="Customer Phone" k="customerPhone" /><S label="Block Type" k="blockType" opts={blockTypeOptions} /><I label="Quantity" k="quantity" t="number" required min={1} /><I label="Unit Price (GH₵)" k="unitPriceGhs" t="number" step="0.01" required /><S label="Status" k="status" opts={["PENDING", "IN_PROGRESS", "COMPLETED", "CANCELLED"]} /><I label="Due Date" k="dueDate" t="date" /></div><I label="Notes" k="notes" /></>}
     {type === "DELIVERY" && <><div className="grid grid-cols-2 gap-3"><S label="Order" k="orderNumber" opts={[{ v: "", l: "— No linked order —" }, ...orders.map((o: any) => ({ v: o.orderNumber, l: `${o.orderNumber} • ${o.customerName}` }))]} /><I label="Customer" k="customerName" required /><S label="Block Type" k="blockType" opts={blockTypeOptions} /><I label="Quantity" k="quantity" t="number" required min={1} /><I label="Vehicle #" k="vehicleNumber" /><I label="Driver" k="driverName" /><S label="Status" k="status" opts={["SCHEDULED", "IN_TRANSIT", "DELIVERED", "CANCELLED"]} /><I label="Delivery Date" k="deliveryDate" t="date" /></div><I label="Notes" k="notes" /></>}
     {type === "EXPENSE" && <><div className="grid grid-cols-2 gap-3"><I label="Category" k="category" placeholder="Fuel, Cement, Payroll..." required list="blk-exp-cats" /><I label="Amount (GH₵)" k="amountGhs" t="number" step="0.01" required /><S label="Payment" k="paymentMethod" opts={["CASH", "MTN_MOMO", "TELECEL_CASH", "BANK_TRANSFER", "POS_CARD"]} /><I label="Date" k="date" t="date" /></div><I label="Description" k="description" /><datalist id="blk-exp-cats">{["Fuel & Diesel", "Cement Purchase", "Sand & Aggregates", "Payroll", "Machine Repair", "Transport", "Utilities", "Pallets", "Rent", "Miscellaneous"].map((c) => <option key={c} value={c} />)}</datalist></>}
     {type === "SALE" && <>
       <div className="grid grid-cols-2 gap-3">
-        <div className="col-span-2"><label className="block text-[10px] text-slate-400 font-semibold mb-1">Product (from inventory)</label>
+        <div className="col-span-2"><label className="block text-[10px] text-slate-400 font-semibold mb-1">Product (from live stock — finished blocks first)</label>
           <select required value={f.inventoryId ?? ""} onChange={(e) => set("inventoryId", e.target.value)} className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-white text-xs">
             <option value="" disabled>— Select product —</option>
-            {(inventory || []).map((i: any) => <option key={i.id} value={i.id}>{i.name} • {i.quantity} {i.unit} in stock • {i.sellingPriceGhs} GH₵</option>)}
+            {[...(inventory || [])]
+              .sort((a: any, b: any) => {
+                const blk = (x: any) => (/block|brick|paving/i.test(`${x.name} ${x.category}`) ? 0 : 1);
+                return blk(a) - blk(b) || String(a.name).localeCompare(String(b.name));
+              })
+              .map((i: any) => {
+                const out = (i.quantity || 0) <= 0 || i.status === "OUT_OF_STOCK";
+                return (
+                  <option key={i.id} value={i.id} disabled={out}>
+                    {i.name} • {out ? "OUT OF STOCK" : `${Number(i.quantity).toLocaleString()} ${i.unit} available`} • {i.sellingPriceGhs} GH₵
+                  </option>
+                );
+              })}
           </select>
         </div>
         <I label="Quantity" k="quantity" t="number" required min={1} max={selectedItem?.quantity} />
@@ -734,10 +779,31 @@ function BlockFactoryForm({ type, busy, onClose, onSubmit, orders, inventory, bl
     </>}
     {type === "RESTOCK" && <>
       <div className="grid grid-cols-2 gap-3">
-        <div className="col-span-2"><label className="block text-[10px] text-slate-400 font-semibold mb-1">Inventory Item</label>
-          <select required value={f.inventoryId ?? ""} onChange={(e) => { set("inventoryId", e.target.value); const it = (inventory || []).find((x: any) => String(x.id) === e.target.value); if (it) setF((prev: any) => ({ ...prev, inventoryId: e.target.value, unitCostGhs: it.costPriceGhs })); }} className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-white text-xs">
-            <option value="" disabled>— Select item —</option>
-            {(inventory || []).map((i: any) => <option key={i.id} value={i.id}>{i.name} ({i.sku}) • {i.quantity} {i.unit} on hand</option>)}
+        <div className="col-span-2"><label className="block text-[10px] text-slate-400 font-semibold mb-1">Stock To Receive — Block Production Master List</label>
+          <select required value={f.restockTarget ?? ""} onChange={(e) => {
+            const v = e.target.value;
+            let cost: any = "";
+            if (v.startsWith("TYPE:")) {
+              const row = (blockTypes || []).find((t: any) => t.typeKey === v.slice(5));
+              const it = row?.sku ? (inventory || []).find((x: any) => x.sku === row.sku) : null;
+              cost = it?.costPriceGhs ?? "";
+            } else if (v.startsWith("ITEM:")) {
+              const it = (inventory || []).find((x: any) => String(x.id) === v.slice(5));
+              cost = it?.costPriceGhs ?? "";
+            }
+            setF((prev: any) => ({ ...prev, restockTarget: v, unitCostGhs: cost }));
+          }} className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-white text-xs">
+            <option value="" disabled>— Select block type or inventory item —</option>
+            <optgroup label="Block Types (Production Master List)">
+              {(blockTypes || []).filter((t: any) => t.isActive !== false).map((t: any) => {
+                const it = t.sku ? (inventory || []).find((x: any) => x.sku === t.sku) : null;
+                return <option key={`T${t.id ?? t.typeKey}`} value={`TYPE:${t.typeKey}`}>{t.name} ({t.typeKey}) • {it ? `${Number(it.quantity).toLocaleString()} in stock` : "stock item auto-creates"}</option>;
+              })}
+            </optgroup>
+            <optgroup label="Raw Materials & Other Inventory Items">
+              {(inventory || []).map((i: any) => <option key={`I${i.id}`} value={`ITEM:${i.id}`}>{i.name} ({i.sku}) • {i.quantity} {i.unit} on hand</option>)}
+            </optgroup>
+            <option value={ADD_NEW_TYPE}>➕ Add New Block Type…</option>
           </select>
         </div>
         <I label="Quantity Received" k="quantity" t="number" required min={1} />
@@ -745,6 +811,17 @@ function BlockFactoryForm({ type, busy, onClose, onSubmit, orders, inventory, bl
         <I label="Date" k="date" t="date" />
         <S label="Payment" k="paymentMethod" opts={["CASH", "MTN_MOMO", "TELECEL_CASH", "BANK_TRANSFER", "POS_CARD"]} />
       </div>
+      {restockIsNewType && <NewBlockTypePanel f={f} set={set} />}
+      {restockItem && restockQty > 0 && (
+        <div className="p-3 rounded-lg bg-indigo-500/10 border border-indigo-500/30 text-xs text-indigo-200">
+          Stock update: +{restockQty.toLocaleString()} → “{restockItem.name}” ({restockItem.sku}): {Number(restockItem.quantity || 0).toLocaleString()} → {(Number(restockItem.quantity || 0) + restockQty).toLocaleString()} {restockItem.unit}
+        </div>
+      )}
+      {restockTypeKey && !restockTypeItem && (
+        <div className="p-3 rounded-lg bg-indigo-500/10 border border-indigo-500/30 text-xs text-indigo-200">
+          A finished-goods stock item will be auto-created for “{restockTypeRow?.name || restockTypeKey}” and topped up by {restockQty.toLocaleString() || "the received"} units — then available in Inventory, Sales and alerts.
+        </div>
+      )}
       <div className="flex items-center gap-2 p-3 rounded-lg bg-slate-800/70 border border-slate-700 text-xs">
         <input id="recordExpense" type="checkbox" checked={!!f.recordExpense} onChange={(e) => set("recordExpense", e.target.checked)} className="w-4 h-4 accent-indigo-500" />
         <label htmlFor="recordExpense" className="text-slate-300">Book purchase as expense ({restockTotal > 0 ? `GH₵ ${restockTotal.toLocaleString(undefined, { maximumFractionDigits: 2 })}` : "no cost set"}) in Finance</label>
@@ -766,4 +843,43 @@ function BlockFactoryForm({ type, busy, onClose, onSubmit, orders, inventory, bl
     </>}
     <div className="flex justify-end gap-3 pt-3 border-t border-slate-800"><button type="button" onClick={onClose} className="px-4 py-2 bg-slate-800 rounded-lg text-xs text-slate-300">Cancel</button><button disabled={busy} className="px-5 py-2 bg-cyan-600 hover:bg-cyan-500 rounded-lg text-xs font-bold text-white disabled:opacity-50">{busy ? "Saving..." : "Save"}</button></div>
   </form></div></div>;
+}
+
+/** Inline "Add New Block Type" editor — shared by the Production and Restock
+ *  forms. Saves to the block production master list (+ an optional linked
+ *  finished-goods stock item) so the type is reusable in production,
+ *  restocking, inventory, sales, filters and reports. */
+function NewBlockTypePanel({ f, set }: any) {
+  const inp = (k: string, opts: any = {}) => (
+    <input
+      type={opts.t || "text"}
+      value={f[k] ?? ""}
+      onChange={(e) => set(k, opts.t === "number" ? (e.target.value === "" ? "" : Number(e.target.value)) : e.target.value)}
+      placeholder={opts.placeholder}
+      required={opts.required}
+      min={opts.min}
+      step={opts.step}
+      className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-white text-xs"
+    />
+  );
+  return (
+    <div className="p-3 rounded-xl border border-cyan-500/40 bg-cyan-500/5 space-y-3">
+      <div className="text-[11px] font-bold text-cyan-300 uppercase tracking-wide">New Block Type — saved to master list</div>
+      <div className="grid grid-cols-2 gap-3">
+        <div><label className="block text-[10px] text-slate-400 font-semibold mb-1">Type / Name</label>{inp("newTypeName", { placeholder: "e.g. 8-Inch Hollow Blocks", required: true })}</div>
+        <div><label className="block text-[10px] text-slate-400 font-semibold mb-1">Dimensions / Specs</label>{inp("newTypeDims", { placeholder: "8in x 8in x 16in" })}</div>
+        <div><label className="block text-[10px] text-slate-400 font-semibold mb-1">Style</label>
+          <select value={f.newTypeStyle ?? "SOLID"} onChange={(e) => set("newTypeStyle", e.target.value)} className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-white text-xs">
+            {["SOLID", "HOLLOW", "PAVING", "INTERLOCKING", "OTHER"].map((o) => <option key={o} value={o}>{o}</option>)}
+          </select>
+        </div>
+        <div><label className="block text-[10px] text-slate-400 font-semibold mb-1">Default Unit Price (GH₵)</label>{inp("newTypePrice", { t: "number", step: "0.01", min: 0, placeholder: "optional" })}</div>
+      </div>
+      <label className="flex items-center gap-2 text-[11px] text-slate-300 cursor-pointer">
+        <input type="checkbox" checked={f.newTypeInventory !== false} onChange={(e) => set("newTypeInventory", e.target.checked)} className="accent-cyan-500 w-3.5 h-3.5" />
+        Also add to inventory &amp; sales catalog — production, restocking and sales then track stock for this type automatically
+      </label>
+      <p className="text-[10px] text-slate-500">The type is stored in the block production master list and becomes selectable in future production, restocking, orders, deliveries, filters and reports.</p>
+    </div>
+  );
 }

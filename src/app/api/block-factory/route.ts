@@ -11,6 +11,7 @@ import {
   businesses,
 } from "@/db/schema";
 import { and, eq } from "drizzle-orm";
+import { computeStockStatus, ensureInventoryItem } from "@/lib/stock";
 
 // Original factory block types — master list seeds with exactly these keys so
 // all existing production records, orders and filters stay unchanged.
@@ -20,6 +21,106 @@ const DEFAULT_BLOCK_TYPES = [
   { typeKey: "5-INCH-SOLID", name: "5-Inch Solid Blocks", dimensions: "5in x 6in x 16in", style: "SOLID" },
   { typeKey: "PAVING-BRICKS", name: "Paving Bricks", dimensions: "4in x 8in pavers", style: "PAVING" },
 ];
+
+// Fallback selling prices for the factory's original types — used only when a
+// master type carries no price of its own and a stock item must be created.
+const LEGACY_PRICE_HINTS: Record<string, number> = {
+  "6-INCH-SOLID": 14.5,
+  "6-INCH-HOLLOW": 12.0,
+  "5-INCH-SOLID": 11.0,
+  "PAVING-BRICKS": 6.0,
+  "5-INCH-HOLLOW": 10.0,
+  "4-INCH-SOLID": 9.0,
+};
+
+/**
+ * Canonical Production/Restock → Stock link.
+ *
+ * Every block type in the production master list maps to exactly ONE
+ * finished-goods inventory item, resolved in strict priority:
+ *   1. the SKU stored on the master type row (authoritative link), else
+ *   2. an item whose SKU follows the BLK-{typeKey} convention, else
+ *   3. a word-exact token match on the master type's name
+ *      (links e.g. the seeded "6-Inch Solid Construction Blocks (Grade A)"
+ *      item to 6-INCH-SOLID while NEVER mixing solid/hollow/paving stock —
+ *      the old prefix heuristic credited hollow production to solid stock).
+ *
+ * When `autoCreate` is on and nothing matches, the finished-goods item is
+ * created on the spot so produced/restocked stock can never be lost. The
+ * resolved SKU is written back onto the master type row, making the
+ * Production → Stock → Sales link permanent and visible across the app.
+ */
+async function resolveBlockTypeItem(
+  businessId: number,
+  blockType: string,
+  opts: { autoCreate?: boolean; masterTypeRow?: any } = {},
+) {
+  const inv = await db.select().from(inventoryItems).where(eq(inventoryItems.businessId, businessId));
+  let masterType = opts.masterTypeRow;
+  if (!masterType) {
+    const [row] = await db
+      .select()
+      .from(blockTypes)
+      .where(and(eq(blockTypes.businessId, businessId), eq(blockTypes.typeKey, blockType)))
+      .limit(1);
+    masterType = row;
+  }
+
+  const upperKey = String(blockType).toUpperCase();
+  let item: any =
+    (masterType?.sku
+      ? inv.find((i: any) => (i.sku || "").toUpperCase() === String(masterType.sku).toUpperCase())
+      : undefined) ||
+    inv.find((i: any) => (i.sku || "").toUpperCase() === `BLK-${upperKey}`) ||
+    null;
+
+  if (!item && masterType?.name) {
+    // Word-exact token match: every token of the type name must appear as a
+    // whole word in the item name (never a substring → no cross-type leaks).
+    const tokens = String(masterType.name)
+      .toUpperCase()
+      .replace(/[^A-Z0-9]+/g, " ")
+      .split(" ")
+      .filter(Boolean);
+    item =
+      inv.find((i: any) => {
+        const words = String(i.name || "")
+          .toUpperCase()
+          .replace(/[^A-Z0-9]+/g, " ")
+          .split(" ")
+          .filter(Boolean);
+        return tokens.length > 0 && tokens.every((t) => words.includes(t));
+      }) || null;
+  }
+
+  if (!item && opts.autoCreate) {
+    const label =
+      masterType?.name ||
+      String(blockType)
+        .split("-")
+        .map((w) => w.charAt(0) + w.slice(1).toLowerCase())
+        .join(" ") + " Blocks";
+    const price = Number(masterType?.defaultUnitPriceGhs) || LEGACY_PRICE_HINTS[upperKey] || 0;
+    item = await ensureInventoryItem({
+      businessId,
+      sku: `BLK-${upperKey}`,
+      name: label,
+      category: "Concrete Blocks",
+      unit: "Units",
+      costPriceGhs: price ? Math.round(price * 0.66 * 100) / 100 : 0,
+      sellingPriceGhs: price,
+      minStockThreshold: 100,
+    });
+  }
+
+  // Persist the resolved link on the master type (self-healing).
+  if (item && masterType && String(masterType.sku || "") !== String(item.sku)) {
+    await db.update(blockTypes).set({ sku: item.sku }).where(eq(blockTypes.id, masterType.id));
+    masterType.sku = item.sku;
+  }
+
+  return { item, masterType };
+}
 
 export async function GET(request: NextRequest) {
   try {
@@ -44,6 +145,14 @@ export async function GET(request: NextRequest) {
       for (const t of DEFAULT_BLOCK_TYPES) {
         const [row] = await db.insert(blockTypes).values({ businessId, ...t }).returning();
         types.push(row);
+      }
+    }
+
+    // Self-heal master-list → inventory SKU links so Production, Restock and
+    // Sales always credit one canonical stock row per block type.
+    for (const t of types) {
+      if (!t.sku) {
+        await resolveBlockTypeItem(businessId, t.typeKey, { masterTypeRow: t });
       }
     }
 
@@ -116,30 +225,23 @@ export async function POST(request: NextRequest) {
 
       const unitPrice = Number(data.defaultUnitPriceGhs) || 0;
 
-      // Optionally register a finished-goods inventory item so the new type is
-      // tracked in stock, sellable in Sales, and visible in reports.
+      // Optionally register (or reuse) a finished-goods inventory item so the
+      // new type is tracked in stock, sellable in Sales, and visible in
+      // reports. If a matching item already exists it is linked, never
+      // duplicated.
       let linkedSku: string | null = null;
       if (data.createInventoryItem !== false) {
-        const baseSku = `BLK-${typeKey}`;
-        const taken = new Set(
-          (await db.select({ sku: inventoryItems.sku }).from(inventoryItems)).map((r: any) => r.sku),
-        );
-        let sku = baseSku;
-        let n = 2;
-        while (taken.has(sku)) sku = `${baseSku}-${n++}`;
-        await db.insert(inventoryItems).values({
-          name: rawName,
-          sku,
+        const item = await ensureInventoryItem({
           businessId,
+          sku: `BLK-${typeKey}`,
+          name: rawName,
           category: "Concrete Blocks",
-          quantity: 0,
           unit: "Units",
           costPriceGhs: unitPrice ? Math.round(unitPrice * 0.66 * 100) / 100 : 0,
           sellingPriceGhs: unitPrice,
           minStockThreshold: 100,
-          status: "OUT_OF_STOCK",
         });
-        linkedSku = sku;
+        linkedSku = item.sku;
       }
 
       const [row] = await db.insert(blockTypes).values({
@@ -174,26 +276,29 @@ export async function POST(request: NextRequest) {
         recordedDate: data.recordedDate || today,
       }).returning();
 
-      // Increase finished block inventory: prefer the master list SKU link for
-      // the block type, then fall back to the original name-prefix heuristic.
-      const inv = await db.select().from(inventoryItems).where(eq(inventoryItems.businessId, businessId));
-      const [masterType] = await db
-        .select()
-        .from(blockTypes)
-        .where(and(eq(blockTypes.businessId, businessId), eq(blockTypes.typeKey, blockType)))
-        .limit(1);
-      const target =
-        (masterType?.sku ? inv.find((i: any) => i.sku === masterType.sku) : undefined) ||
-        inv.find((i: any) => i.sku?.includes("BLK") && i.name?.toUpperCase().includes(blockType.split("-")[0]));
-      if (target) {
-        const newQty = (target.quantity || 0) + goodBlocks;
-        await db.update(inventoryItems).set({
-          quantity: newQty,
-          status: newQty <= 0 ? "OUT_OF_STOCK" : newQty <= target.minStockThreshold ? "LOW_STOCK" : "IN_STOCK",
-        }).where(eq(inventoryItems.id, target.id));
+      // Production → Stock: ALWAYS credit the canonical finished-goods item
+      // for this exact block type (auto-created on first use), so every good
+      // block lands in stock and instantly appears in Sales, low-stock
+      // alerts, dashboards and valuation reports.
+      let stock: any = null;
+      if (goodBlocks > 0) {
+        const { item } = await resolveBlockTypeItem(businessId, blockType, { autoCreate: true });
+        const newQty = (item.quantity || 0) + goodBlocks;
+        const [updated] = await db
+          .update(inventoryItems)
+          .set({ quantity: newQty, status: computeStockStatus(newQty, item.minStockThreshold || 0) })
+          .where(eq(inventoryItems.id, item.id))
+          .returning();
+        stock = {
+          sku: updated.sku,
+          name: updated.name,
+          added: goodBlocks,
+          quantity: updated.quantity,
+          status: updated.status,
+        };
       }
 
-      return NextResponse.json({ success: true, item: row });
+      return NextResponse.json({ success: true, item: row, stock });
     }
 
     if (entity === "ORDER") {
@@ -295,34 +400,54 @@ export async function POST(request: NextRequest) {
     }
 
     // ── RESTOCK (receive purchased materials/finished goods) ───────
-    // Increments the inventory item, refreshes its stock status and — when a
-    // cost is provided — books the purchase as an EXPENSE transaction so the
-    // finance module, command center and reports all update automatically.
+    // Accepts EITHER a blockType from the production master list (resolving —
+    // and when needed auto-creating — its finished-goods stock item) OR a
+    // direct inventoryId for raw materials/supplies. Increments stock,
+    // refreshes status + cost price, and — when a cost is provided — books
+    // the purchase as an EXPENSE transaction so Finance, dashboards and
+    // reports all update automatically.
     if (entity === "RESTOCK") {
-      const inventoryId = Number(data.inventoryId);
-      if (!inventoryId) {
-        return NextResponse.json({ success: false, error: "inventoryId is required" }, { status: 400 });
-      }
       const qty = Number(data.quantity) || 0;
       if (qty <= 0) {
         return NextResponse.json({ success: false, error: "quantity must be greater than 0" }, { status: 400 });
       }
-      const [item] = await db.select().from(inventoryItems).where(eq(inventoryItems.id, inventoryId));
-      if (!item || item.businessId !== businessId) {
-        return NextResponse.json({ success: false, error: "Inventory item not found for this branch" }, { status: 404 });
+
+      let item: any = null;
+      let blockTypeUsed: string | null = null;
+      if (data.blockType) {
+        blockTypeUsed = String(data.blockType);
+        const resolved = await resolveBlockTypeItem(businessId, blockTypeUsed, { autoCreate: true });
+        item = resolved.item;
+      } else {
+        const inventoryId = Number(data.inventoryId);
+        if (!inventoryId) {
+          return NextResponse.json(
+            { success: false, error: "Select a block type from the master list or an inventory item" },
+            { status: 400 },
+          );
+        }
+        const [found] = await db.select().from(inventoryItems).where(eq(inventoryItems.id, inventoryId));
+        if (!found || found.businessId !== businessId) {
+          return NextResponse.json({ success: false, error: "Inventory item not found for this branch" }, { status: 404 });
+        }
+        item = found;
       }
 
+      const unitCost = Number(data.unitCostGhs) || 0;
       const newQty = (item.quantity || 0) + qty;
-      const newStatus =
-        newQty <= 0 ? "OUT_OF_STOCK" : newQty <= item.minStockThreshold ? "LOW_STOCK" : "IN_STOCK";
+      const set: any = {
+        quantity: newQty,
+        status: computeStockStatus(newQty, item.minStockThreshold || 0),
+      };
+      if (unitCost > 0) set.costPriceGhs = unitCost;
       const [updated] = await db
         .update(inventoryItems)
-        .set({ quantity: newQty, status: newStatus })
-        .where(eq(inventoryItems.id, inventoryId))
+        .set(set)
+        .where(eq(inventoryItems.id, item.id))
         .returning();
 
       let expenseRow = null;
-      const totalCost = Number(data.totalCostGhs) || 0;
+      const totalCost = Number(data.totalCostGhs) || (unitCost > 0 ? qty * unitCost : 0);
       if (data.recordExpense && totalCost > 0) {
         const trxNum = `TRX-${new Date().getFullYear()}-${Date.now().toString().slice(-6)}`;
         [expenseRow] = await db
@@ -333,10 +458,12 @@ export async function POST(request: NextRequest) {
             branchCode,
             branchName,
             type: "EXPENSE",
-            category: data.category || "Stock Purchase",
+            category: data.category || (blockTypeUsed ? "Stock Purchase (Blocks)" : "Stock Purchase"),
             amountGhs: totalCost,
             paymentMethod: data.paymentMethod || "CASH",
-            description: data.description || `Restock: ${qty}× ${item.name} (${item.sku})`,
+            description:
+              data.description ||
+              `Restock: ${qty}× ${item.name} (${item.sku})${blockTypeUsed ? ` — master list type ${blockTypeUsed}` : ""}`,
             date: data.date || today,
             createdAt: new Date(),
             status: "COMPLETED",
@@ -347,7 +474,7 @@ export async function POST(request: NextRequest) {
           .returning();
       }
 
-      return NextResponse.json({ success: true, item: updated, expense: expenseRow });
+      return NextResponse.json({ success: true, item: updated, expense: expenseRow, blockType: blockTypeUsed });
     }
 
     return NextResponse.json({ success: false, error: "Unknown entity" }, { status: 400 });
