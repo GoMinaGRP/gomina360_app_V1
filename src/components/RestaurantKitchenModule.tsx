@@ -80,7 +80,7 @@ export default function RestaurantKitchenModule({
     try {
       const [rRes, lRes, cRes] = await Promise.all([
         fetch(`/api/restaurant?businessId=${bizId}`),
-        fetch("/api/logs/FOOD-01"),
+        fetch(`/api/logs/${businessInfo?.code || "FOOD-01"}`),
         fetch(`/api/checklists?businessId=${bizId}`),
       ]);
       const rD = await rRes.json();
@@ -252,7 +252,7 @@ export default function RestaurantKitchenModule({
         });
         d = await res.json();
       } else if (entity === "SHIFT_LOG") {
-        const res = await fetch("/api/logs/FOOD-01", {
+        const res = await fetch(`/api/logs/${businessInfo?.code || "FOOD-01"}`, {
           method: "POST", headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             totalOrders: Number(data.totalOrders) || 0,

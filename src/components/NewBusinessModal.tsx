@@ -27,6 +27,7 @@ export default function NewBusinessModal({
   const [initialCapitalGhs, setInitialCapitalGhs] = useState(250000);
   const [monthlyTargetRevenueGhs, setMonthlyTargetRevenueGhs] = useState(120000);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [error, setError] = useState("");
 
   if (!isOpen) return null;
 
@@ -56,12 +57,15 @@ export default function NewBusinessModal({
 
       const d = await res.json().catch(() => null);
       if (res.ok && d?.success) {
+        setError("");
         onBusinessCreated(d.business);
         onClose();
       } else {
+        setError(d?.error || "Failed to create business unit. Please try again.");
         console.error("Create business failed:", d?.error);
       }
-    } catch (err) {
+    } catch (err: any) {
+      setError(err?.message || "Network error while creating the business unit.");
       console.error("Error creating business:", err);
     } finally {
       setIsSubmitting(false);
@@ -94,6 +98,11 @@ export default function NewBusinessModal({
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-3">
+          {error && (
+            <div className="bg-rose-500/10 border border-rose-500/30 text-rose-300 p-2.5 rounded-lg text-xs">
+              {error}
+            </div>
+          )}
           <div>
             <label className="block text-xs font-semibold text-slate-400 mb-1">
               Business Name
@@ -188,10 +197,11 @@ export default function NewBusinessModal({
           </div>
 
           <div className="rounded-xl bg-emerald-500/10 border border-emerald-500/30 p-3 text-[11px] text-emerald-200/90 leading-relaxed">
-            <span className="font-bold text-emerald-300">Auto-provisioned on creation:</span> a complete{" "}
-            {category} dashboard, starter stock kit funded from initial capital, specialized daily-checklist
-            templates, and live links into Inventory, Sales, Finance, Expenses, Activities, Alerts, Checklists
-            and enterprise Reports — ready the moment the unit opens.
+            <span className="font-bold text-emerald-300">Auto-provisioned on creation:</span> the exact same
+            complete dashboard and features as the original {category} unit — full operations module, starter
+            stock kit funded from initial capital, specialized daily-checklist templates, and live links into
+            Inventory, Sales, Finance, Expenses, Activities, Alerts, Checklists and enterprise Reports — ready
+            the moment the unit opens.
           </div>
 
           <div className="flex justify-end space-x-3 pt-3 border-t border-slate-800">

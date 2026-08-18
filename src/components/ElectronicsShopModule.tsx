@@ -86,7 +86,7 @@ export default function ElectronicsShopModule({
     try {
       const [eRes, lRes] = await Promise.all([
         fetch(`/api/electronics?businessId=${bizId}`),
-        fetch("/api/logs/TECH-01"),
+        fetch(`/api/logs/${businessInfo?.code || "TECH-01"}`),
       ]);
       const eD = await eRes.json();
       const lD = await lRes.json();
@@ -305,7 +305,7 @@ export default function ElectronicsShopModule({
         d = await res.json();
       } else if (entity === "LOG") {
         // Existing electronics ops log (serial registry) — preserved from the shared view
-        const res = await fetch("/api/logs/TECH-01", {
+        const res = await fetch(`/api/logs/${businessInfo?.code || "TECH-01"}`, {
           method: "POST", headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             serialNumber: data.serialNumber, productName: data.productName, brand: data.brand,

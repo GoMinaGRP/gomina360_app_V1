@@ -22,33 +22,48 @@ export async function GET(
     const { businessCode } = await params;
     const upperCode = businessCode.toUpperCase();
 
+    // Resolve the requesting unit first: every branch (original or newly
+    // created, e.g. WASH-02) reads ONLY its own operations logs — never the
+    // shared table of another same-type unit.
+    const [biz] = await db
+      .select()
+      .from(businesses)
+      .where(eq(businesses.code, upperCode));
+
+    if (!biz) {
+      return NextResponse.json(
+        { success: false, error: `Unknown business code: ${upperCode}` },
+        { status: 404 }
+      );
+    }
+
     if (upperCode.startsWith("POULTRY")) {
-      const rows = await db.select().from(poultryLogs).orderBy(desc(poultryLogs.id));
-      return NextResponse.json({ success: true, logs: rows });
+      const rows = await db.select().from(poultryLogs).where(eq(poultryLogs.businessId, biz.id)).orderBy(desc(poultryLogs.id));
+      return NextResponse.json({ success: true, businessId: biz.id, logs: rows });
     }
     if (upperCode.startsWith("BLOCK")) {
-      const rows = await db.select().from(blockFactoryLogs).orderBy(desc(blockFactoryLogs.id));
-      return NextResponse.json({ success: true, logs: rows });
+      const rows = await db.select().from(blockFactoryLogs).where(eq(blockFactoryLogs.businessId, biz.id)).orderBy(desc(blockFactoryLogs.id));
+      return NextResponse.json({ success: true, businessId: biz.id, logs: rows });
     }
     if (upperCode.startsWith("AQUA")) {
-      const rows = await db.select().from(aquacultureLogs).orderBy(desc(aquacultureLogs.id));
-      return NextResponse.json({ success: true, logs: rows });
+      const rows = await db.select().from(aquacultureLogs).where(eq(aquacultureLogs.businessId, biz.id)).orderBy(desc(aquacultureLogs.id));
+      return NextResponse.json({ success: true, businessId: biz.id, logs: rows });
     }
     if (upperCode.startsWith("LIVESTOCK")) {
-      const rows = await db.select().from(livestockLogs).orderBy(desc(livestockLogs.id));
-      return NextResponse.json({ success: true, logs: rows });
+      const rows = await db.select().from(livestockLogs).where(eq(livestockLogs.businessId, biz.id)).orderBy(desc(livestockLogs.id));
+      return NextResponse.json({ success: true, businessId: biz.id, logs: rows });
     }
     if (upperCode.startsWith("FOOD")) {
-      const rows = await db.select().from(restaurantLogs).orderBy(desc(restaurantLogs.id));
-      return NextResponse.json({ success: true, logs: rows });
+      const rows = await db.select().from(restaurantLogs).where(eq(restaurantLogs.businessId, biz.id)).orderBy(desc(restaurantLogs.id));
+      return NextResponse.json({ success: true, businessId: biz.id, logs: rows });
     }
     if (upperCode.startsWith("TECH")) {
-      const rows = await db.select().from(electronicsLogs).orderBy(desc(electronicsLogs.id));
-      return NextResponse.json({ success: true, logs: rows });
+      const rows = await db.select().from(electronicsLogs).where(eq(electronicsLogs.businessId, biz.id)).orderBy(desc(electronicsLogs.id));
+      return NextResponse.json({ success: true, businessId: biz.id, logs: rows });
     }
     if (upperCode.startsWith("WASH")) {
-      const rows = await db.select().from(carWashLogs).orderBy(desc(carWashLogs.id));
-      return NextResponse.json({ success: true, logs: rows });
+      const rows = await db.select().from(carWashLogs).where(eq(carWashLogs.businessId, biz.id)).orderBy(desc(carWashLogs.id));
+      return NextResponse.json({ success: true, businessId: biz.id, logs: rows });
     }
 
     return NextResponse.json(

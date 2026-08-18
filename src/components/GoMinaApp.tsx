@@ -192,16 +192,33 @@ export default function GoMinaApp() {
       const data = await res.json();
       if (data.success) {
         const upper = businessCode.toUpperCase();
+        // Merge by businessId: replace ONLY the refreshed unit's rows inside
+        // its type bucket, leaving every other same-type unit's logs intact
+        // (buckets are shared per type, e.g. WASH-01 and WASH-02 → carWash).
+        const bucket = upper.startsWith("POULTRY")
+          ? "poultry"
+          : upper.startsWith("BLOCK")
+          ? "blockFactory"
+          : upper.startsWith("AQUA")
+          ? "aquaculture"
+          : upper.startsWith("LIVESTOCK")
+          ? "livestock"
+          : upper.startsWith("FOOD")
+          ? "restaurant"
+          : upper.startsWith("TECH")
+          ? "electronics"
+          : upper.startsWith("WASH")
+          ? "carWash"
+          : null;
         setSpecializedLogs((prev) => {
-          const next = { ...prev };
-          if (upper.startsWith("POULTRY")) next.poultry = data.logs;
-          else if (upper.startsWith("BLOCK")) next.blockFactory = data.logs;
-          else if (upper.startsWith("AQUA")) next.aquaculture = data.logs;
-          else if (upper.startsWith("LIVESTOCK")) next.livestock = data.logs;
-          else if (upper.startsWith("FOOD")) next.restaurant = data.logs;
-          else if (upper.startsWith("TECH")) next.electronics = data.logs;
-          else if (upper.startsWith("WASH")) next.carWash = data.logs;
-          return next;
+          if (!bucket) return prev;
+          return {
+            ...prev,
+            [bucket]: [
+              ...(prev[bucket] || []).filter((r: any) => r.businessId !== data.businessId),
+              ...(data.logs || []),
+            ],
+          };
         });
       }
       setOfflineQueueCount(getOfflineQueue().length);
@@ -223,14 +240,19 @@ export default function GoMinaApp() {
       const bizInfo = businesses.find((b) => b.id === currentUser?.assignedBusinessId);
       const bizMetric = liveMetrics.find((m) => m.businessId === bizInfo?.id);
 
+      // Operations logs of the worker's OWN branch only — prefix-based so any
+      // unit of the same type (original or created later) resolves correctly.
+      const ownLogs = (bucket: any[]) =>
+        bucket.filter((l: any) => !l.businessId || l.businessId === bizInfo?.id);
+      const upperBiz = (bizCode || "").toUpperCase();
       let logs: any[] = [];
-      if (bizCode === "POULTRY-01") logs = specializedLogs.poultry || [];
-      else if (bizCode === "BLOCK-01") logs = specializedLogs.blockFactory || [];
-      else if (bizCode === "AQUA-01") logs = specializedLogs.aquaculture || [];
-      else if (bizCode === "LIVESTOCK-01") logs = specializedLogs.livestock || [];
-      else if (bizCode === "FOOD-01") logs = specializedLogs.restaurant || [];
-      else if (bizCode === "TECH-01") logs = specializedLogs.electronics || [];
-      else if (bizCode === "WASH-01") logs = specializedLogs.carWash || [];
+      if (upperBiz.startsWith("POULTRY")) logs = ownLogs(specializedLogs.poultry || []);
+      else if (upperBiz.startsWith("BLOCK")) logs = ownLogs(specializedLogs.blockFactory || []);
+      else if (upperBiz.startsWith("AQUA")) logs = ownLogs(specializedLogs.aquaculture || []);
+      else if (upperBiz.startsWith("LIVESTOCK")) logs = ownLogs(specializedLogs.livestock || []);
+      else if (upperBiz.startsWith("FOOD")) logs = ownLogs(specializedLogs.restaurant || []);
+      else if (upperBiz.startsWith("TECH")) logs = ownLogs(specializedLogs.electronics || []);
+      else if (upperBiz.startsWith("WASH")) logs = ownLogs(specializedLogs.carWash || []);
 
       return (
         <WorkerDashboard
@@ -406,22 +428,33 @@ export default function GoMinaApp() {
       );
     }
 
-    // 7 Specialized Business Views
-    const bizCodes = [
-      "POULTRY-01",
-      "BLOCK-01",
-      "AQUA-01",
-      "LIVESTOCK-01",
-      "FOOD-01",
-      "TECH-01",
-      "WASH-01",
-    ];
-    if (bizCodes.includes(activeTab)) {
-      const bizInfo = businesses.find((b) => b.code === activeTab);
+    // Specialized Business Views — EVERY business unit mounts the EXACT same
+    // complete module as the original business of its type. Dispatch is driven
+    // by the business category (code prefix as fallback), so a unit created
+    // later via "New Branch / Unit" (POULTRY-02, BLOCK-02, WASH-02, …) renders
+    // the identical flagship dashboard and features as POULTRY-01 / BLOCK-01 /
+    // WASH-01 — wired entirely into its own scoped data.
+    const MODULE_BY_CATEGORY: Record<string, string> = {
+      "Poultry Farm": "POULTRY",
+      "Block Factory": "BLOCK",
+      "Electronic Shop": "TECH",
+      "Restaurant & Food": "FOOD",
+      Aquaculture: "AQUA",
+      Livestock: "LIVESTOCK",
+      "Car Wash": "WASH",
+    };
+    const KNOWN_PREFIXES = ["POULTRY", "BLOCK", "TECH", "FOOD", "AQUA", "LIVESTOCK", "WASH"];
+    const tabBiz = businesses.find((b) => b.code === activeTab);
+    if (tabBiz) {
+      const bizInfo = tabBiz;
       const bizMetric = liveMetrics.find((m) => m.businessId === bizInfo?.id);
+      const codePrefix = String(bizInfo.code || "").split("-")[0]?.toUpperCase();
+      const moduleKey: string =
+        MODULE_BY_CATEGORY[bizInfo.category] ||
+        (KNOWN_PREFIXES.includes(codePrefix) ? codePrefix : "GENERIC");
 
       // Poultry Farm gets a full dedicated management module
-      if (activeTab === "POULTRY-01") {
+      if (moduleKey === "POULTRY") {
         return (
           <PoultryFarmModule
             currentUser={currentUser}
@@ -440,7 +473,7 @@ export default function GoMinaApp() {
       }
 
       // Block Factory gets a full dedicated real-time management dashboard
-      if (activeTab === "BLOCK-01") {
+      if (moduleKey === "BLOCK") {
         return (
           <BlockFactoryModule
             currentUser={currentUser}
@@ -457,7 +490,7 @@ export default function GoMinaApp() {
       }
 
       // Electronics shop gets its dedicated management dashboard
-      if (activeTab === "TECH-01") {
+      if (moduleKey === "TECH") {
         return (
           <ElectronicsShopModule
             currentUser={currentUser}
@@ -476,7 +509,7 @@ export default function GoMinaApp() {
       }
 
       // Restaurant & Kitchen gets its dedicated management dashboard
-      if (activeTab === "FOOD-01") {
+      if (moduleKey === "FOOD") {
         return (
           <RestaurantKitchenModule
             currentUser={currentUser}
@@ -495,7 +528,7 @@ export default function GoMinaApp() {
       }
 
       // Aquaculture / Fish Farm gets a dedicated real-time management dashboard
-      if (activeTab === "AQUA-01") {
+      if (moduleKey === "AQUA") {
         return (
           <AquacultureModule
             currentUser={currentUser}
@@ -511,22 +544,48 @@ export default function GoMinaApp() {
         );
       }
 
-      // Note: Poultry and Aquaculture now have dedicated real-time modules.
-      let logs: any[] = [];
-      if (activeTab === "LIVESTOCK-01") logs = specializedLogs.livestock || [];
-      else if (activeTab === "WASH-01") logs = specializedLogs.carWash || [];
+      // Livestock & Car Wash units get the specialized ops-log dashboards.
+      if (moduleKey === "LIVESTOCK" || moduleKey === "WASH") {
+        const bucket =
+          moduleKey === "LIVESTOCK"
+            ? specializedLogs.livestock || []
+            : specializedLogs.carWash || [];
+        // Only THIS unit's operations logs (bucket is shared per type).
+        const logs = bucket.filter(
+          (l: any) => !l.businessId || l.businessId === bizInfo.id
+        );
+        return (
+          <SpecializedBusinessView
+            businessCode={bizInfo.code}
+            businessInfo={bizInfo}
+            businessMetrics={bizMetric}
+            specializedLogs={logs}
+            currentCurrency={currentCurrency}
+            isOnline={isOnline}
+            onRefreshLogs={() => handleRefreshLogsForBusiness(bizInfo.code)}
+            currentUser={currentUser}
+            employees={employees}
+          />
+        );
+      }
 
+      // Any other category: complete auto-provisioned enterprise dashboard —
+      // wired into sales, inventory, finance, activities, alerts, checklists
+      // and reports; never a blank or plain view.
       return (
-        <SpecializedBusinessView
-          businessCode={activeTab}
-          businessInfo={bizInfo}
-          businessMetrics={bizMetric}
-          specializedLogs={logs}
-          currentCurrency={currentCurrency}
-          isOnline={isOnline}
-          onRefreshLogs={() => handleRefreshLogsForBusiness(activeTab)}
+        <BusinessDashboardModule
           currentUser={currentUser}
+          businessInfo={bizInfo}
+          businessMetrics={{ ...bizMetric, monthlyTargetRevenueGhs: bizInfo.monthlyTargetRevenueGhs }}
+          inventory={inventory}
+          transactions={transactions}
+          assets={assets}
           employees={employees}
+          customers={customers}
+          businesses={businesses}
+          currentCurrency={currentCurrency}
+          onRefreshData={refreshAllData}
+          onSelectTab={setActiveTab}
         />
       );
     }
@@ -594,31 +653,8 @@ export default function GoMinaApp() {
       );
     }
 
-    // ANY other business code: auto-provisioned enterprise unit (created via
-    // "New Branch / Unit"). Every new unit gets the complete category-aware
-    // dashboard wired into sales, inventory, finance, activities, alerts,
-    // checklists and reports — never a blank or plain view.
-    const dynamicBiz = businesses.find((b) => b.code === activeTab);
-    if (dynamicBiz) {
-      const dynMetric = liveMetrics.find((m) => m.businessId === dynamicBiz.id);
-      return (
-        <BusinessDashboardModule
-          currentUser={currentUser}
-          businessInfo={dynamicBiz}
-          businessMetrics={{ ...dynMetric, monthlyTargetRevenueGhs: dynamicBiz.monthlyTargetRevenueGhs }}
-          inventory={inventory}
-          transactions={transactions}
-          assets={assets}
-          employees={employees}
-          customers={customers}
-          businesses={businesses}
-          currentCurrency={currentCurrency}
-          onRefreshData={refreshAllData}
-          onSelectTab={setActiveTab}
-        />
-      );
-    }
-
+    // Every known business code was already dispatched above (each unit mounts
+    // the full module of its type, or the complete generic dashboard).
     return null;
   };
 

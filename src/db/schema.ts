@@ -7,6 +7,7 @@ import {
   boolean,
   timestamp,
   jsonb,
+  uniqueIndex,
 } from "drizzle-orm/pg-core";
 
 // 1. Users & Role-Based Access Control
@@ -171,7 +172,11 @@ export const assetAuditLogs = pgTable("asset_audit_logs", {
 export const inventoryItems = pgTable("inventory_items", {
   id: serial("id").primaryKey(),
   name: text("name").notNull(),
-  sku: text("sku").notNull().unique(),
+  // SKU is unique PER BUSINESS (composite below) — every enterprise unit of a
+  // type owns the exact same canonical SKUs as the original (POUL-EGG-L01,
+  // BLK-…, AQUA-…), so a cloned unit's production/harvest stock-in can never
+  // collide with another unit's rows.
+  sku: text("sku").notNull(),
   businessId: integer("business_id").notNull(),
   category: text("category").notNull(),
   quantity: doublePrecision("quantity").notNull(),
@@ -181,7 +186,9 @@ export const inventoryItems = pgTable("inventory_items", {
   minStockThreshold: doublePrecision("min_stock_threshold").notNull(),
   status: text("status").default("IN_STOCK"), // 'IN_STOCK', 'LOW_STOCK', 'OUT_OF_STOCK'
   expiryDate: text("expiry_date"), // perishable stock safety tracking (used by Restaurant & Kitchen)
-});
+}, (t) => [
+  uniqueIndex("inventory_items_business_sku_unique").on(t.businessId, t.sku),
+]);
 
 // 8b. Inventory Downloads audit trail
 export const inventoryDownloads = pgTable("inventory_downloads", {

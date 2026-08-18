@@ -187,6 +187,14 @@ export default function UniversalExportCenter({ activeModule, currentUser, busin
     const scoped = (rows: any[]) =>
       businessId ? rows.filter((r) => r.businessId === businessId || r.assignedBusinessId === businessId) : rows;
 
+    // Business-type dispatch: any unit of a type (original OR created later,
+    // e.g. POULTRY-02 / BLOCK-02 / WASH-02) exports through the EXACT same
+    // report builder as the original business of that type.
+    const moduleBusiness = businesses.find((b) => b.code === moduleKey);
+    const bizPrefix = moduleBusiness
+      ? String(moduleBusiness.code || "").split("-")[0]?.toUpperCase()
+      : "";
+
     if (moduleKey === "COMMAND_CENTER") {
       records = data.metrics
         .filter((metric) => !businessId || metric.businessId === businessId)
@@ -206,7 +214,7 @@ export default function UniversalExportCenter({ activeModule, currentUser, busin
             assets: data.assets.filter((a) => a.businessId === metric.businessId).length,
           };
         });
-    } else if (moduleKey === "POULTRY-01") {
+    } else if (moduleBusiness && bizPrefix === "POULTRY") {
       const res = await fetch(`/api/poultry?businessId=${businessId || activeBusiness?.id}`);
       const p = await res.json();
       const clRes = await fetch(`/api/checklists?businessId=${businessId || activeBusiness?.id}`);
@@ -221,7 +229,7 @@ export default function UniversalExportCenter({ activeModule, currentUser, busin
         ...addSection("Inventory", scoped(data.inventory)),
         ...addSection("Finance", scoped(data.transactions)),
       ];
-    } else if (moduleKey === "BLOCK-01") {
+    } else if (moduleBusiness && bizPrefix === "BLOCK") {
       const res = await fetch(`/api/block-factory?businessId=${businessId || activeBusiness?.id}`);
       const p = await res.json();
       const clRes = await fetch(`/api/checklists?businessId=${businessId || activeBusiness?.id}`);
@@ -235,7 +243,7 @@ export default function UniversalExportCenter({ activeModule, currentUser, busin
         ...addSection("Finance", scoped(data.transactions)),
         ...addSection("Assets", scoped(data.assets)),
       ];
-    } else if (moduleKey === "TECH-01") {
+    } else if (moduleBusiness && bizPrefix === "TECH") {
       const res = await fetch(`/api/electronics?businessId=${businessId || activeBusiness?.id}`);
       const p = await res.json();
       const clRes = await fetch(`/api/checklists?businessId=${businessId || activeBusiness?.id}`);
@@ -251,7 +259,7 @@ export default function UniversalExportCenter({ activeModule, currentUser, busin
         ...addSection("Assets", scoped(data.assets)),
         ...addSection("Employees", scoped(data.employees)),
       ];
-    } else if (moduleKey === "FOOD-01") {
+    } else if (moduleBusiness && bizPrefix === "FOOD") {
       const res = await fetch(`/api/restaurant?businessId=${businessId || activeBusiness?.id}`);
       const p = await res.json();
       const clRes = await fetch(`/api/checklists?businessId=${businessId || activeBusiness?.id}`);
@@ -267,15 +275,18 @@ export default function UniversalExportCenter({ activeModule, currentUser, busin
         ...addSection("Customers", scoped(data.customers)),
         ...addSection("Employees", scoped(data.employees)),
       ];
-    } else if (BUSINESS_MODULES.has(moduleKey)) {
+    } else if (moduleBusiness && ["AQUA", "LIVESTOCK", "WASH"].includes(bizPrefix)) {
       const logMap: Record<string, string> = {
-        "AQUA-01": "aquaculture",
-        "LIVESTOCK-01": "livestock",
-        "FOOD-01": "restaurant",
-        "TECH-01": "electronics",
-        "WASH-01": "carWash",
+        AQUA: "aquaculture",
+        LIVESTOCK: "livestock",
+        WASH: "carWash",
       };
-      const logs = data.specializedLogs[logMap[moduleKey]] || [];
+      // Only this unit's own operations logs — the type bucket is shared
+      // across units of the same type (e.g. WASH-01 and WASH-02).
+      const scopeId = businessId || moduleBusiness.id;
+      const logs = (data.specializedLogs[logMap[bizPrefix]] || []).filter(
+        (l: any) => !l.businessId || l.businessId === scopeId
+      );
       const clRes = await fetch(`/api/checklists?businessId=${businessId || activeBusiness?.id}`);
       const cl = await clRes.json();
       records = [
