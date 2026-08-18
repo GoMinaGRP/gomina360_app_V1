@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
 import { universalExports, users, businesses } from "@/db/schema";
 import { desc, eq } from "drizzle-orm";
+import { getSessionInfo, UNAUTHENTICATED } from "@/lib/auth";
 
 async function getUser(userId: number) {
   const [user] = await db.select().from(users).where(eq(users.id, userId));
@@ -18,6 +19,8 @@ function isExecutive(role?: string | null) {
  */
 export async function GET(request: NextRequest) {
   try {
+    const __authSession = await getSessionInfo(request);
+    if (!__authSession) return UNAUTHENTICATED();
     const { searchParams } = new URL(request.url);
     const userId = Number(searchParams.get("userId"));
     if (!userId) {
@@ -49,6 +52,8 @@ export async function GET(request: NextRequest) {
  */
 export async function POST(request: NextRequest) {
   try {
+    const __authSession = await getSessionInfo(request);
+    if (!__authSession) return UNAUTHENTICATED();
     const body = await request.json();
     const {
       exportId,
@@ -154,6 +159,8 @@ export async function POST(request: NextRequest) {
  */
 export async function PATCH(request: NextRequest) {
   try {
+    const __authSession = await getSessionInfo(request);
+    if (!__authSession) return UNAUTHENTICATED();
     const body = await request.json();
     const { id, action, actorUserId, qrCodeData, qrCodePayload, recordCount } = body;
     if (!id || !action || !actorUserId) {

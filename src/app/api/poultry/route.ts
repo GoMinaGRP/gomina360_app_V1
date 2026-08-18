@@ -13,6 +13,7 @@ import {
 } from "@/db/schema";
 import { eq, desc, and } from "drizzle-orm";
 import { stockIn, stockOut, ensureInventoryItem } from "@/lib/stock";
+import { getSessionInfo, canAccessBusiness, UNAUTHENTICATED, FORBIDDEN } from "@/lib/auth";
 
 // Canonical sellable products for the poultry branch — production stocks these
 // in, sales deduct them, and they appear in every stock picker automatically.
@@ -63,6 +64,8 @@ function slugify(name: string): string {
  */
 export async function GET(request: NextRequest) {
   try {
+    const session = await getSessionInfo(request);
+    if (!session) return UNAUTHENTICATED();
     const { searchParams } = new URL(request.url);
     const businessIdParam = searchParams.get("businessId");
     const bizId = businessIdParam ? Number(businessIdParam) : null;
@@ -165,6 +168,12 @@ export async function POST(request: NextRequest) {
         { success: false, error: "businessId is required" },
         { status: 400 }
       );
+    }
+
+    const session = await getSessionInfo(request);
+    if (!session) return UNAUTHENTICATED();
+    if (!(await canAccessBusiness(session.user, businessId))) {
+      return FORBIDDEN("You do not have access to that business.");
     }
 
     // Resolve branch details from the business record
@@ -648,6 +657,8 @@ export async function POST(request: NextRequest) {
  */
 export async function PATCH(request: NextRequest) {
   try {
+    const session = await getSessionInfo(request);
+    if (!session) return UNAUTHENTICATED();
     const body = await request.json();
     const { entity, id, data } = body;
 

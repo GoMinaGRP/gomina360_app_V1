@@ -8,10 +8,18 @@ import {
   provisionBusiness,
 } from "@/lib/businessProvisioning";
 import { resolveOwnerActor } from "@/lib/recordPermissions";
+import { getSessionInfo, accessibleBusinessIds, requireOwner, UNAUTHENTICATED, FORBIDDEN } from "@/lib/auth";
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
-    const rows = await db.select().from(businesses).orderBy(businesses.id);
+    // Session-scoped listing: each user only ever receives the businesses
+    // they are assigned / granted access to.
+    const session = await getSessionInfo(request);
+    if (!session) return UNAUTHENTICATED();
+    const allowed = await accessibleBusinessIds(session.user);
+    const rows = (await db.select().from(businesses).orderBy(businesses.id)).filter(
+      (b) => allowed === null || allowed.includes(b.id)
+    );
     return NextResponse.json({ success: true, businesses: rows });
   } catch (error: any) {
     return NextResponse.json(
@@ -30,15 +38,10 @@ export async function GET() {
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    // Spoof-proof enforcement: the actor is resolved from the DB by id —
-    // only a real OWNER account may add new business units.
-    const actor = await resolveOwnerActor(body.actorUserId ?? body.requestingUserId);
-    if (!actor) {
-      return NextResponse.json(
-        { success: false, error: "Only the OWNER can add new business units." },
-        { status: 403 }
-      );
-    }
+    // Session-verified OWNER gate (credentials from the secure login cookie —
+    // request bodies cannot impersonate).
+    const actor = await requireOwner(request);
+    if (!actor) return FORBIDDEN("Only the OWNER can add new business units.");
     const {
       name,
       code,

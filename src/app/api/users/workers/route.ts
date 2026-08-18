@@ -2,10 +2,13 @@ import { NextResponse } from "next/server";
 import { db } from "@/db";
 import { users } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
+import { getSessionInfo, UNAUTHENTICATED } from "@/lib/auth";
 
 // BRANCH_MANAGER: List all WORKER accounts within their branch
 export async function GET(request: Request) {
   try {
+    const __authSession = await getSessionInfo(request);
+    if (!__authSession) return UNAUTHENTICATED();
     const { searchParams } = new URL(request.url);
     const managerId = searchParams.get("managerId");
     const businessId = searchParams.get("businessId");
@@ -40,6 +43,8 @@ export async function GET(request: Request) {
 // BRANCH_MANAGER: Create a new WORKER account in their branch
 export async function POST(request: Request) {
   try {
+    const __authSession = await getSessionInfo(request);
+    if (!__authSession) return UNAUTHENTICATED();
     const body = await request.json();
     const {
       name,
@@ -103,6 +108,8 @@ export async function POST(request: Request) {
 // BRANCH_MANAGER: Enable/disable, update permissions, or delete a WORKER
 export async function PATCH(request: Request) {
   try {
+    const __authSession = await getSessionInfo(request);
+    if (!__authSession) return UNAUTHENTICATED();
     const body = await request.json();
     const { workerId, action, canRecordSales, canRecordExpenses, canManageStock } = body;
 
@@ -162,6 +169,8 @@ export async function PATCH(request: Request) {
 // BRANCH_MANAGER: Delete a WORKER from their branch
 export async function DELETE(request: Request) {
   try {
+    const __authSession = await getSessionInfo(request);
+    if (!__authSession) return UNAUTHENTICATED();
     const { searchParams } = new URL(request.url);
     const workerId = searchParams.get("workerId");
 

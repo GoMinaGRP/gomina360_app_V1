@@ -56,7 +56,7 @@ import {
   reprovisionForTypeChange,
   provisionBusiness,
 } from "@/lib/businessProvisioning";
-import { resolveOwnerActor } from "@/lib/recordPermissions";
+import { requireOwner, FORBIDDEN } from "@/lib/auth";
 
 const VALID_CATEGORIES = [
   "Poultry Farm",
@@ -137,10 +137,13 @@ async function relatedCounts(businessId: number) {
 
 /** GET /api/businesses/[id] — single business + related-record counts. */
 export async function GET(
-  _request: Request,
+  request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    // Impact preview reveals internal record counts — OWNER only.
+    const ownerGate = await requireOwner(request);
+    if (!ownerGate) return FORBIDDEN("Only the OWNER can inspect business record counts.");
     const { id } = await params;
     const businessId = parseInt(id, 10);
     if (!Number.isFinite(businessId)) {
@@ -178,15 +181,9 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
 
     const body = await request.json();
 
-    // Spoof-proof enforcement: the actor is resolved from the DB by id —
-    // only a real OWNER account may mutate business units.
-    const actor = await resolveOwnerActor(body.actorUserId ?? body.requestingUserId);
-    if (!actor) {
-      return NextResponse.json(
-        { success: false, error: "Only the OWNER can update businesses." },
-        { status: 403 }
-      );
-    }
+    // Session-verified OWNER gate (secure login cookie — no spoofing).
+    const actor = await requireOwner(request);
+    if (!actor) return FORBIDDEN("Only the OWNER can update businesses.");
 
     const updates: Record<string, any> = {};
 
@@ -320,14 +317,9 @@ export async function DELETE(request: Request, { params }: { params: Promise<{ i
     } catch {
       body = {};
     }
-    // Spoof-proof enforcement — DB-resolved actor must be the OWNER.
-    const actor = await resolveOwnerActor(body.actorUserId ?? body.requestingUserId);
-    if (!actor) {
-      return NextResponse.json(
-        { success: false, error: "Only the OWNER can delete businesses." },
-        { status: 403 }
-      );
-    }
+    // Session-verified OWNER gate (secure login cookie — no spoofing).
+    const actor = await requireOwner(request);
+    if (!actor) return FORBIDDEN("Only the OWNER can delete businesses.");
     // Mandatory confirmation gate — the caller must echo the exact unit code.
     if (body.confirmCode !== biz.code) {
       return NextResponse.json(
@@ -467,14 +459,9 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       body = {};
     }
 
-    // Spoof-proof enforcement — DB-resolved actor must be the OWNER.
-    const actor = await resolveOwnerActor(body.actorUserId ?? body.requestingUserId);
-    if (!actor) {
-      return NextResponse.json(
-        { success: false, error: "Only the OWNER can reset a business." },
-        { status: 403 }
-      );
-    }
+    // Session-verified OWNER gate (secure login cookie — no spoofing).
+    const actor = await requireOwner(request);
+    if (!actor) return FORBIDDEN("Only the OWNER can reset a business.");
 
     // Mandatory confirmation gate — the caller must echo the exact unit code.
     if (body.confirmCode !== biz.code) {

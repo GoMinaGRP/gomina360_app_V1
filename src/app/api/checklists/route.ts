@@ -7,6 +7,7 @@ import {
 } from "@/db/schema";
 import { and, eq } from "drizzle-orm";
 import { tasksForBusiness, type TaskSeed } from "@/lib/checklistDefaults";
+import { getSessionInfo, UNAUTHENTICATED } from "@/lib/auth";
 
 // Roles allowed to manage checklist templates and generate daily checklists.
 const MANAGE_ROLES = ["OWNER", "GENERAL_MANAGER", "BRANCH_MANAGER"];
@@ -41,6 +42,8 @@ async function ensureTemplates(businessId: number, branchCode: string | null, bi
 
 export async function GET(request: NextRequest) {
   try {
+    const __authSession = await getSessionInfo(request);
+    if (!__authSession) return UNAUTHENTICATED();
     const { searchParams } = new URL(request.url);
     const businessId = Number(searchParams.get("businessId"));
     if (!businessId) {
@@ -70,6 +73,8 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
+    const __authSession = await getSessionInfo(request);
+    if (!__authSession) return UNAUTHENTICATED();
     const body = await request.json();
     const { entity, data } = body;
     const businessId = Number(data?.businessId);
@@ -178,6 +183,8 @@ export async function POST(request: NextRequest) {
 
 export async function PATCH(request: NextRequest) {
   try {
+    const __authSession = await getSessionInfo(request);
+    if (!__authSession) return UNAUTHENTICATED();
     const body = await request.json();
     const { entity, id, data } = body;
     if (!entity || !id) {
@@ -249,6 +256,8 @@ export async function PATCH(request: NextRequest) {
 
 export async function DELETE(request: NextRequest) {
   try {
+    const __authSession = await getSessionInfo(request);
+    if (!__authSession) return UNAUTHENTICATED();
     const { searchParams } = new URL(request.url);
     const id = Number(searchParams.get("id"));
     const role = String(searchParams.get("role") || "").toUpperCase();

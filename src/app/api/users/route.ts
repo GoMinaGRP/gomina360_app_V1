@@ -1,44 +1,56 @@
 import { NextResponse } from "next/server";
 import { db } from "@/db";
-import { users } from "@/db/schema";
-import { desc, eq } from "drizzle-orm";
+import { users, userSessions, userBusinessAccess } from "@/db/schema";
+import { desc, eq, inArray } from "drizzle-orm";
+import {
+  getSessionInfo,
+  accessibleBusinessIds,
+  usersAccessMap,
+  setUserPassword,
+  replaceUserAccess,
+  FORBIDDEN,
+  UNAUTHENTICATED,
+} from "@/lib/auth";
+import crypto from "crypto";
+
+const stripSecret = (u: any) => {
+  const {
+    passwordHash, failedLoginAttempts, lockedUntil, passwordChangedAt, ...safe
+  } = u;
+  return { ...safe, hasPassword: Boolean(u.passwordHash) };
+};
+
+const ROLE_LEVEL: Record<string, number> = {
+  OWNER: 4,
+  GENERAL_MANAGER: 3,
+  BRANCH_MANAGER: 2,
+  SUPERVISOR: 2,
+  ACCOUNTANT: 2,
+  WORKER: 1,
+};
 
 export async function GET(request: Request) {
   try {
-    const { searchParams } = new URL(request.url);
-    const roleFilter = searchParams.get("role");
-    const businessIdFilter = searchParams.get("businessId");
+    const session = await getSessionInfo(request);
+    if (!session) return UNAUTHENTICATED();
+    const me = session.user;
+    const isExec = ["OWNER", "GENERAL_MANAGER"].includes(me.role);
+    const allowed = await accessibleBusinessIds(me);
 
-    let query = db.select().from(users).orderBy(desc(users.id));
-
-    // If filtering by role and businessId, apply both
-    if (roleFilter && businessIdFilter) {
-      const rows = await db
-        .select()
-        .from(users)
-        .where(eq(users.assignedBusinessId, Number(businessIdFilter)))
-        .orderBy(desc(users.id));
-      const filtered = rows.filter((u) => u.role === roleFilter);
-      return NextResponse.json({ success: true, users: filtered });
+    let rows = await db.select().from(users).orderBy(desc(users.id));
+    if (!isExec) {
+      rows = rows.filter(
+        (u) =>
+          u.id === me.id ||
+          (u.assignedBusinessId != null && (allowed ?? []).includes(Number(u.assignedBusinessId)))
+      );
     }
 
-    if (roleFilter) {
-      const rows = await query;
-      const filtered = rows.filter((u) => u.role === roleFilter);
-      return NextResponse.json({ success: true, users: filtered });
-    }
-
-    if (businessIdFilter) {
-      const rows = await db
-        .select()
-        .from(users)
-        .where(eq(users.assignedBusinessId, Number(businessIdFilter)))
-        .orderBy(desc(users.id));
-      return NextResponse.json({ success: true, users: rows });
-    }
-
-    const rows = await query;
-    return NextResponse.json({ success: true, users: rows });
+    const accessMap = await usersAccessMap(rows.map((u) => u.id));
+    return NextResponse.json({
+      success: true,
+      users: rows.map((u) => ({ ...stripSecret(u), extraAccessIds: accessMap[u.id] || [] })),
+    });
   } catch (error: any) {
     return NextResponse.json(
       { success: false, error: error.message },
@@ -49,6 +61,10 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
+    const session = await getSessionInfo(request);
+    if (!session) return UNAUTHENTICATED();
+    const me = session.user;
+
     const body = await request.json();
     const {
       name,
@@ -60,11 +76,13 @@ export async function POST(request: Request) {
       region,
       district,
       town,
-      createdByUserId,
       canRecordSales,
       canRecordExpenses,
       canManageStock,
       canExportData,
+      canManageRecords,
+      password,
+      extraAccessIds,
     } = body;
 
     if (!name || !email || !role) {
@@ -72,6 +90,20 @@ export async function POST(request: Request) {
         { success: false, error: "Name, email, and role are required" },
         { status: 400 }
       );
+    }
+
+    const isOwner = me.role === "OWNER";
+    const isBranchManager = me.role === "BRANCH_MANAGER";
+    // Non-OWNER callers (branch managers) may ONLY create WORKER accounts,
+    // and only for a business they themselves can access.
+    if (!isOwner) {
+      if (!isBranchManager || role !== "WORKER") {
+        return FORBIDDEN("Only the OWNER can create user accounts.");
+      }
+      const allowed = await accessibleBusinessIds(me);
+      if (!assignedBusinessId || !(allowed ?? []).includes(Number(assignedBusinessId))) {
+        return FORBIDDEN("You can only create workers for your own business.");
+      }
     }
 
     // WORKER must have an assigned business
@@ -82,11 +114,32 @@ export async function POST(request: Request) {
       );
     }
 
+    // canManageRecords is OWNER-granted only.
+    if (canManageRecords !== undefined && !isOwner) {
+      return FORBIDDEN("Only the OWNER can grant record-management permission.");
+    }
+    // Non-OWNER can never create other elevated roles.
+    if (!isOwner && (!!canManageRecords || ["OWNER", "GENERAL_MANAGER"].includes(role))) {
+      return FORBIDDEN("Insufficient privilege.");
+    }
+
+    const emailNorm = String(email).trim().toLowerCase();
+    const dupe = await db.select({ id: users.id }).from(users).where(eq(users.email, emailNorm));
+    if (dupe.length) {
+      return NextResponse.json(
+        { success: false, error: "A user with this email already exists." },
+        { status: 409 }
+      );
+    }
+
+    // Initial password: explicitly given or generated (returned once).
+    const initialPassword = String(password || "").trim() || `Mina-${crypto.randomBytes(4).toString("hex")}`;
+
     const [newUser] = await db
       .insert(users)
       .values({
         name,
-        email,
+        email: emailNorm,
         role,
         assignedBusinessId: assignedBusinessId ? Number(assignedBusinessId) : null,
         phone: phone || "+233 24 000 0000",
@@ -98,17 +151,31 @@ export async function POST(request: Request) {
         town: town || null,
         isActive: true,
         isWorkerEnabled: role === "WORKER" ? true : undefined,
-        createdByUserId: createdByUserId ? Number(createdByUserId) : null,
+        createdByUserId: me.id,
         canRecordSales: role === "WORKER" ? (canRecordSales ?? true) : undefined,
         canRecordExpenses: role === "WORKER" ? (canRecordExpenses ?? false) : undefined,
         canManageStock: role === "WORKER" ? (canManageStock ?? false) : undefined,
         canExportData: ["OWNER", "GENERAL_MANAGER"].includes(role)
           ? true
           : Boolean(canExportData ?? false),
+        canManageRecords: isOwner ? Boolean(canManageRecords ?? false) : false,
       })
       .returning();
 
-    return NextResponse.json({ success: true, user: newUser });
+    await setUserPassword(newUser.id, initialPassword);
+    if (isOwner && Array.isArray(extraAccessIds) && extraAccessIds.length) {
+      await replaceUserAccess(
+        newUser.id,
+        extraAccessIds.map(Number).filter((n) => Number.isFinite(n)),
+        me.id
+      );
+    }
+
+    return NextResponse.json({
+      success: true,
+      user: stripSecret(newUser),
+      initialPassword,
+    });
   } catch (error: any) {
     return NextResponse.json(
       { success: false, error: error.message },
@@ -119,10 +186,13 @@ export async function POST(request: Request) {
 
 export async function PATCH(request: Request) {
   try {
+    const session = await getSessionInfo(request);
+    if (!session) return UNAUTHENTICATED();
+    const me = session.user;
+
     const body = await request.json();
     const {
       userId,
-      requestingUserRole,
       name,
       email,
       phone,
@@ -138,6 +208,8 @@ export async function PATCH(request: Request) {
       canManageStock,
       canExportData,
       canManageRecords,
+      newPassword,
+      extraAccessIds,
     } = body;
 
     if (!userId) {
@@ -149,28 +221,64 @@ export async function PATCH(request: Request) {
       return NextResponse.json({ success: false, error: "User not found" }, { status: 404 });
     }
 
-    // Security check: GENERAL_MANAGER cannot modify OWNER accounts or OWNER permissions
-    if (requestingUserRole === "GENERAL_MANAGER" && targetUser.role === "OWNER") {
-      return NextResponse.json(
-        { success: false, error: "GENERAL_MANAGER is unauthorized to modify the OWNER account or permissions" },
-        { status: 403 }
-      );
+    const isOwner = me.role === "OWNER";
+    const isGM = me.role === "GENERAL_MANAGER";
+    const isBM = me.role === "BRANCH_MANAGER";
+
+    if (!isOwner) {
+      // Nobody but the OWNER may touch OWNER accounts.
+      if (targetUser.role === "OWNER") {
+        return FORBIDDEN("Only the OWNER can modify the OWNER account.");
+      }
+      // GM restrictions: no elevation, no record-permission, no password resets.
+      if (isGM) {
+        if (canManageRecords !== undefined) {
+          return FORBIDDEN("Only the OWNER can grant or remove record-management permission.");
+        }
+        if (role !== undefined && !["BRANCH_MANAGER", "SUPERVISOR", "ACCOUNTANT", "WORKER"].includes(role)) {
+          return FORBIDDEN("GENERAL_MANAGER cannot assign elevated roles.");
+        }
+        if (newPassword !== undefined) {
+          return FORBIDDEN("Only the OWNER can reset passwords.");
+        }
+        if (Array.isArray(extraAccessIds)) {
+          return FORBIDDEN("Only the OWNER can change business access grants.");
+        }
+      } else if (isBM) {
+        // Branch managers may only toggle their own workers' day-to-day flags.
+        const allowed = await accessibleBusinessIds(me);
+        const allowedFields = [
+          "userId", "canRecordSales", "canRecordExpenses", "canManageStock", "canExportData", "isWorkerEnabled",
+        ];
+        const touched = Object.keys(body).filter((k) => !allowedFields.includes(k));
+        if (
+          targetUser.role !== "WORKER" ||
+          targetUser.assignedBusinessId == null ||
+          !(allowed ?? []).includes(Number(targetUser.assignedBusinessId)) ||
+          touched.length > 0
+        ) {
+          return FORBIDDEN("Insufficient privilege.");
+        }
+      } else {
+        return FORBIDDEN("Insufficient privilege.");
+      }
     }
 
-    // Only the OWNER can grant or revoke shared-record management/deletion
-    // permission (Transactions & MoMo, Suppliers & Vendors, Employees & Payroll).
-    if (canManageRecords !== undefined && requestingUserRole !== "OWNER") {
-      return NextResponse.json(
-        { success: false, error: "Only the OWNER can grant or remove record-management permission." },
-        { status: 403 }
-      );
+    // OWNER safety: the OWNER account cannot be deactivated or demoted.
+    if (targetUser.role === "OWNER" && isOwner) {
+      if ((isActive !== undefined && !isActive) || (role !== undefined && role !== "OWNER")) {
+        return NextResponse.json(
+          { success: false, error: "The OWNER account must remain an active OWNER." },
+          { status: 400 }
+        );
+      }
     }
 
     const [updatedUser] = await db
       .update(users)
       .set({
         name: name !== undefined ? name : targetUser.name,
-        email: email !== undefined ? email : targetUser.email,
+        email: email !== undefined ? String(email).trim().toLowerCase() : targetUser.email,
         phone: phone !== undefined ? phone : targetUser.phone,
         role: role !== undefined ? role : targetUser.role,
         assignedBusinessId: assignedBusinessId !== undefined ? (assignedBusinessId ? Number(assignedBusinessId) : null) : targetUser.assignedBusinessId,
@@ -188,7 +296,25 @@ export async function PATCH(request: Request) {
       .where(eq(users.id, Number(userId)))
       .returning();
 
-    return NextResponse.json({ success: true, user: updatedUser });
+    if (isOwner && typeof newPassword === "string" && newPassword.trim().length >= 4) {
+      await setUserPassword(targetUser.id, newPassword.trim());
+      // Existing sessions of that account are revoked so the new password takes hold.
+      await db.delete(userSessions).where(eq(userSessions.userId, targetUser.id));
+    }
+
+    if (isOwner && Array.isArray(extraAccessIds)) {
+      await replaceUserAccess(
+        targetUser.id,
+        extraAccessIds.map(Number).filter((n) => Number.isFinite(n)),
+        me.id
+      );
+    }
+
+    const accessMap = await usersAccessMap([updatedUser.id]);
+    return NextResponse.json({
+      success: true,
+      user: { ...stripSecret(updatedUser), extraAccessIds: accessMap[updatedUser.id] || [] },
+    });
   } catch (error: any) {
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });
   }
@@ -196,28 +322,33 @@ export async function PATCH(request: Request) {
 
 export async function DELETE(request: Request) {
   try {
-    const { searchParams } = new URL(request.url);
-    const userId = searchParams.get("userId");
-    const requestingUserRole = searchParams.get("requestingUserRole");
+    const session = await getSessionInfo(request);
+    if (!session) return UNAUTHENTICATED();
+    const me = session.user;
 
+    const { searchParams } = new URL(request.url);
+    const userId = Number(searchParams.get("userId"));
     if (!userId) {
       return NextResponse.json({ success: false, error: "userId is required" }, { status: 400 });
     }
 
-    const [targetUser] = await db.select().from(users).where(eq(users.id, Number(userId)));
+    const [targetUser] = await db.select().from(users).where(eq(users.id, userId));
     if (!targetUser) {
       return NextResponse.json({ success: false, error: "User not found" }, { status: 404 });
     }
-
-    // Security check: GENERAL_MANAGER cannot delete OWNER accounts
-    if (requestingUserRole === "GENERAL_MANAGER" && targetUser.role === "OWNER") {
-      return NextResponse.json(
-        { success: false, error: "GENERAL_MANAGER cannot delete OWNER accounts" },
-        { status: 403 }
-      );
+    if (targetUser.role === "OWNER") {
+      return FORBIDDEN("The OWNER account cannot be deleted.");
+    }
+    if (me.role !== "OWNER") {
+      return FORBIDDEN("Only the OWNER can delete user accounts.");
+    }
+    if (targetUser.id === me.id) {
+      return FORBIDDEN("You cannot delete your own account.");
     }
 
-    await db.delete(users).where(eq(users.id, Number(userId)));
+    await db.delete(userSessions).where(eq(userSessions.userId, userId));
+    await db.delete(userBusinessAccess).where(eq(userBusinessAccess.userId, userId));
+    await db.delete(users).where(eq(users.id, userId));
     return NextResponse.json({ success: true, deleted: true });
   } catch (error: any) {
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });

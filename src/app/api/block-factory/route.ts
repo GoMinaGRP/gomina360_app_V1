@@ -12,6 +12,7 @@ import {
 } from "@/db/schema";
 import { and, eq } from "drizzle-orm";
 import { computeStockStatus, ensureInventoryItem } from "@/lib/stock";
+import { getSessionInfo, UNAUTHENTICATED } from "@/lib/auth";
 
 // Original factory block types — master list seeds with exactly these keys so
 // all existing production records, orders and filters stay unchanged.
@@ -124,6 +125,8 @@ async function resolveBlockTypeItem(
 
 export async function GET(request: NextRequest) {
   try {
+    const __authSession = await getSessionInfo(request);
+    if (!__authSession) return UNAUTHENTICATED();
     const { searchParams } = new URL(request.url);
     const businessId = Number(searchParams.get("businessId"));
     if (!businessId) {
@@ -172,6 +175,8 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
+    const __authSession = await getSessionInfo(request);
+    if (!__authSession) return UNAUTHENTICATED();
     const body = await request.json();
     const { entity, data } = body;
     const businessId = Number(data?.businessId);
@@ -489,6 +494,8 @@ export async function POST(request: NextRequest) {
  */
 export async function PATCH(request: NextRequest) {
   try {
+    const __authSession = await getSessionInfo(request);
+    if (!__authSession) return UNAUTHENTICATED();
     const body = await request.json();
     const { entity, id, data } = body;
 

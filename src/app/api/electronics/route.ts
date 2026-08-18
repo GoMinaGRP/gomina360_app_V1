@@ -11,6 +11,7 @@ import {
 } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { computeStockStatus } from "@/lib/stock";
+import { getSessionInfo, UNAUTHENTICATED } from "@/lib/auth";
 
 /**
  * Complete a delivered electronics order as a real sale:
@@ -67,6 +68,8 @@ async function fulfillElectronicsOrder(order: any, businessId: number, branchCod
 
 export async function GET(request: NextRequest) {
   try {
+    const __authSession = await getSessionInfo(request);
+    if (!__authSession) return UNAUTHENTICATED();
     const { searchParams } = new URL(request.url);
     const businessId = Number(searchParams.get("businessId"));
     if (!businessId) {
@@ -93,6 +96,8 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
+    const __authSession = await getSessionInfo(request);
+    if (!__authSession) return UNAUTHENTICATED();
     const body = await request.json();
     const { entity, data } = body;
     const businessId = Number(data?.businessId);
@@ -303,6 +308,8 @@ export async function POST(request: NextRequest) {
 
 export async function PATCH(request: NextRequest) {
   try {
+    const __authSession = await getSessionInfo(request);
+    if (!__authSession) return UNAUTHENTICATED();
     const body = await request.json();
     const { entity, id, data } = body;
     if (!entity || !id) {

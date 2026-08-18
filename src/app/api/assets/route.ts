@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { db } from "@/db";
 import { assets, assetAuditLogs, businesses } from "@/db/schema";
 import { eq } from "drizzle-orm";
+import { getSessionInfo, UNAUTHENTICATED } from "@/lib/auth";
 
 async function hasApprovedPermission(
   assetId: number,
@@ -23,6 +24,8 @@ async function hasApprovedPermission(
 
 export async function PATCH(request: Request) {
   try {
+    const __authSession = await getSessionInfo(request);
+    if (!__authSession) return UNAUTHENTICATED();
     const body = await request.json();
     const { assetId, actorUserId, actorName, actorRole, approvedAuditId, updates } = body;
 
@@ -94,6 +97,8 @@ export async function PATCH(request: Request) {
 
 export async function DELETE(request: Request) {
   try {
+    const __authSession = await getSessionInfo(request);
+    if (!__authSession) return UNAUTHENTICATED();
     const { searchParams } = new URL(request.url);
     const assetId = Number(searchParams.get("assetId"));
     const actorUserId = searchParams.get("actorUserId");

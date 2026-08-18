@@ -34,6 +34,35 @@ export const users = pgTable("users", {
   // (Transactions & MoMo, Suppliers & Vendors, Employees & Payroll). The OWNER
   // always retains full control; managers act only while this flag is granted.
   canManageRecords: boolean("can_manage_records").default(false),
+  // ── Secure login ──────────────────────────────────────────────────────
+  // scrypt password hash (format "scrypt:<salt_hex>:<hash_hex>"); null until
+  // the OWNER sets a password for the account.
+  passwordHash: text("password_hash"),
+  passwordChangedAt: timestamp("password_changed_at"),
+  failedLoginAttempts: integer("failed_login_attempts").default(0),
+  lockedUntil: timestamp("locked_until"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+// Server-side login sessions. Only the SHA-256 hash of the bearer token is
+// stored, so a database leak never exposes usable tokens.
+export const userSessions = pgTable("user_sessions", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").notNull(),
+  tokenHash: text("token_hash").notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+  expiresAt: timestamp("expires_at").notNull(),
+  lastSeenAt: timestamp("last_seen_at").defaultNow(),
+});
+
+// OWNER-granted business access (in addition to the user's primary
+// assigned_business_id). Effective access = assignment ∪ these grants;
+// the OWNER implicitly accesses everything.
+export const userBusinessAccess = pgTable("user_business_access", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").notNull(),
+  businessId: integer("business_id").notNull(),
+  createdByUserId: integer("created_by_user_id"),
   createdAt: timestamp("created_at").defaultNow(),
 });
 

@@ -10,6 +10,7 @@ import {
   businesses,
 } from "@/db/schema";
 import { eq } from "drizzle-orm";
+import { getSessionInfo, UNAUTHENTICATED } from "@/lib/auth";
 
 // Menu seeded on first load with the kitchen's known signature dishes so the
 // master list matches the operations log's most popular dishes.
@@ -101,6 +102,8 @@ async function bookExpense(businessId: number, biz: any, branchCode: string | nu
 
 export async function GET(request: NextRequest) {
   try {
+    const __authSession = await getSessionInfo(request);
+    if (!__authSession) return UNAUTHENTICATED();
     const { searchParams } = new URL(request.url);
     const businessId = Number(searchParams.get("businessId"));
     if (!businessId) {
@@ -128,6 +131,8 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
+    const __authSession = await getSessionInfo(request);
+    if (!__authSession) return UNAUTHENTICATED();
     const body = await request.json();
     const { entity, data } = body;
     const businessId = Number(data?.businessId);
@@ -269,6 +274,8 @@ export async function POST(request: NextRequest) {
 
 export async function PATCH(request: NextRequest) {
   try {
+    const __authSession = await getSessionInfo(request);
+    if (!__authSession) return UNAUTHENTICATED();
     const body = await request.json();
     const { entity, id, data } = body;
     if (!entity || !id) {

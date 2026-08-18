@@ -12,6 +12,7 @@ import {
 } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
 import { stockIn, stockOut } from "@/lib/stock";
+import { getSessionInfo, UNAUTHENTICATED } from "@/lib/auth";
 
 // Species → canonical sellable product in Inventory (sold by the Kg).
 const AQUA_PRODUCTS: Record<string, { sku: string; name: string; unit: string; costPriceGhs: number; sellingPriceGhs: number; minStockThreshold: number }> = {
@@ -27,6 +28,8 @@ const aquaProductFor = (species: string) =>
 
 export async function GET(request: NextRequest) {
   try {
+    const __authSession = await getSessionInfo(request);
+    if (!__authSession) return UNAUTHENTICATED();
     const { searchParams } = new URL(request.url);
     const businessId = Number(searchParams.get("businessId"));
     if (!businessId) {
@@ -62,6 +65,8 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
+    const __authSession = await getSessionInfo(request);
+    if (!__authSession) return UNAUTHENTICATED();
     const body = await request.json();
     const { entity, data } = body;
     const businessId = Number(data?.businessId);
@@ -297,6 +302,8 @@ export async function POST(request: NextRequest) {
 
 export async function PATCH(request: NextRequest) {
   try {
+    const __authSession = await getSessionInfo(request);
+    if (!__authSession) return UNAUTHENTICATED();
     const body = await request.json();
     const { entity, id, data } = body;
 

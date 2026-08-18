@@ -3,6 +3,7 @@ import { db } from "@/db";
 import { inventoryItems, transactions, businesses } from "@/db/schema";
 import { and, eq } from "drizzle-orm";
 import { computeStockStatus } from "@/lib/stock";
+import { getSessionInfo, UNAUTHENTICATED } from "@/lib/auth";
 
 /**
  * POST /api/branch-unit — operations API for auto-provisioned business units
@@ -14,6 +15,8 @@ import { computeStockStatus } from "@/lib/stock";
  */
 export async function POST(request: NextRequest) {
   try {
+    const __authSession = await getSessionInfo(request);
+    if (!__authSession) return UNAUTHENTICATED();
     const body = await request.json();
     const { entity, data } = body;
     const businessId = Number(data?.businessId);

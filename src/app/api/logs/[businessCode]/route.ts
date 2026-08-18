@@ -13,6 +13,7 @@ import {
 } from "@/db/schema";
 import { eq, desc } from "drizzle-orm";
 import { stockOut } from "@/lib/stock";
+import { getSessionInfo, UNAUTHENTICATED } from "@/lib/auth";
 
 export async function GET(
   request: Request,

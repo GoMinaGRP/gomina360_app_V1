@@ -1,5 +1,6 @@
 import { db } from "@/db";
 import { sql } from "drizzle-orm";
+import { getSessionInfo, UNAUTHENTICATED } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 

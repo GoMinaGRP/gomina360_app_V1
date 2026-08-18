@@ -24,11 +24,25 @@ import {
   checklistEntries,
 } from "@/db/schema";
 import { seedDatabase } from "@/db/seed";
+import { getSessionInfo, accessibleBusinessIds, filterByAccess } from "@/lib/auth";
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
     // Run seed if database is empty
     await seedDatabase();
+
+    // ── Secure login gate ───────────────────────────────────────────────
+    // Every byte of data returned below is scoped to the signed-in user.
+    const session = await getSessionInfo(request);
+    if (!session) {
+      return NextResponse.json(
+        { success: false, error: "Sign in required." },
+        { status: 401 }
+      );
+    }
+    const me = session.user;
+    const allowed = await accessibleBusinessIds(me); // null ⇒ OWNER (all)
+    const isExecutive = me.role === "OWNER" || me.role === "GENERAL_MANAGER";
 
     const allBusinesses = await db.select().from(businesses).orderBy(businesses.id);
     const allMetrics = await db.select().from(businessMetrics);
@@ -55,32 +69,63 @@ export async function GET() {
     const electronics = await db.select().from(electronicsLogs);
     const carWash = await db.select().from(carWashLogs);
 
+    // ── Scope everything to the user's accessible businesses ────────────
+    const scopedBusinesses =
+      allowed === null
+        ? allBusinesses
+        : allBusinesses.filter((b) => allowed.includes(b.id));
+    // Login users visible to this user: executives get the full directory;
+    // managers/workers see only accounts sharing their accessible businesses.
+    // Sensitive auth fields are NEVER exposed.
+    const stripSecret = (u: any) => {
+      const { passwordHash, failedLoginAttempts, lockedUntil, passwordChangedAt, ...safe } = u;
+      return safe;
+    };
+    const scopedUsers = (isExecutive
+      ? allUsers
+      : allUsers.filter(
+          (u) =>
+            u.id === me.id ||
+            (u.assignedBusinessId != null && allowed!.includes(Number(u.assignedBusinessId)))
+        )
+    ).map(stripSecret);
+
+    const scopedScenarios =
+      allowed === null
+        ? allScenarios
+        : allScenarios.filter(
+            (s: any) => s.targetBusinessId != null && allowed.includes(Number(s.targetBusinessId))
+          );
+
     return NextResponse.json({
       success: true,
-      businesses: allBusinesses,
-      metrics: allMetrics,
-      users: allUsers,
-      customers: allCustomers,
-      suppliers: allSuppliers,
-      employees: allEmployees,
-      assets: allAssets,
-      inventory: allInventory,
-      transactions: allTransactions,
-      aiInsights: allAiInsights,
-      scenarios: allScenarios,
+      accessibleBusinessIds: allowed,
+      businesses: scopedBusinesses,
+      metrics: filterByAccess(allMetrics, allowed),
+      users: scopedUsers,
+      customers: allowed === null ? allCustomers : allCustomers.filter(
+        (c: any) => c.businessId == null || allowed.includes(Number(c.businessId))
+      ),
+      suppliers: allSuppliers, // enterprise-shared supplier directory
+      employees: filterByAccess(allEmployees, allowed),
+      assets: filterByAccess(allAssets, allowed),
+      inventory: filterByAccess(allInventory, allowed),
+      transactions: filterByAccess(allTransactions, allowed),
+      aiInsights: filterByAccess(allAiInsights, allowed),
+      scenarios: scopedScenarios,
       integrations: allIntegrations,
       checklists: {
-        templates: allChecklistTemplates,
-        entries: allChecklistEntries,
+        templates: filterByAccess(allChecklistTemplates, allowed),
+        entries: filterByAccess(allChecklistEntries, allowed),
       },
       specializedLogs: {
-        poultry,
-        blockFactory,
-        aquaculture,
-        livestock,
-        restaurant,
-        electronics,
-        carWash,
+        poultry: filterByAccess(poultry, allowed),
+        blockFactory: filterByAccess(blockFactory, allowed),
+        aquaculture: filterByAccess(aquaculture, allowed),
+        livestock: filterByAccess(livestock, allowed),
+        restaurant: filterByAccess(restaurant, allowed),
+        electronics: filterByAccess(electronics, allowed),
+        carWash: filterByAccess(carWash, allowed),
       },
     });
   } catch (error: any) {

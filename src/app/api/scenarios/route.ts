@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { db } from "@/db";
 import { scenarioSimulations, businessMetrics } from "@/db/schema";
 import { desc } from "drizzle-orm";
+import { getSessionInfo, UNAUTHENTICATED } from "@/lib/auth";
 
 export async function GET() {
   try {
@@ -20,6 +21,8 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
+    const __authSession = await getSessionInfo(request);
+    if (!__authSession) return UNAUTHENTICATED();
     const body = await request.json();
     const {
       name,

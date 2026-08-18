@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
 import { salesDocuments, businesses } from "@/db/schema";
 import { eq, desc, and } from "drizzle-orm";
+import { getSessionInfo, UNAUTHENTICATED, FORBIDDEN } from "@/lib/auth";
 
 /**
  * GET /api/sales-documents
@@ -10,6 +11,8 @@ import { eq, desc, and } from "drizzle-orm";
  */
 export async function GET(request: NextRequest) {
   try {
+    const __authSession = await getSessionInfo(request);
+    if (!__authSession) return UNAUTHENTICATED();
     const { searchParams } = new URL(request.url);
     const businessId = searchParams.get("businessId");
     const documentType = searchParams.get("documentType");
@@ -51,6 +54,8 @@ export async function GET(request: NextRequest) {
  */
 export async function POST(request: NextRequest) {
   try {
+    const __authSession = await getSessionInfo(request);
+    if (!__authSession) return UNAUTHENTICATED();
     const body = await request.json();
     const {
       documentType,
@@ -162,6 +167,8 @@ export async function POST(request: NextRequest) {
  */
 export async function PATCH(request: NextRequest) {
   try {
+    const __authSession = await getSessionInfo(request);
+    if (!__authSession) return UNAUTHENTICATED();
     const body = await request.json();
     const { documentId, status, paymentMethod, linkedTransactionId, convertToInvoice, currentUserName, currentUserId } = body;
 

@@ -2,9 +2,12 @@ import { NextResponse } from "next/server";
 import { db } from "@/db";
 import { assets, assetAuditLogs } from "@/db/schema";
 import { eq, desc } from "drizzle-orm";
+import { getSessionInfo, UNAUTHENTICATED } from "@/lib/auth";
 
 export async function GET(request: Request) {
   try {
+    const __authSession = await getSessionInfo(request);
+    if (!__authSession) return UNAUTHENTICATED();
     const { searchParams } = new URL(request.url);
     const assetId = searchParams.get("assetId");
     const status = searchParams.get("status");
@@ -25,6 +28,8 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
+    const __authSession = await getSessionInfo(request);
+    if (!__authSession) return UNAUTHENTICATED();
     const body = await request.json();
     const {
       assetId,
@@ -69,6 +74,8 @@ export async function POST(request: Request) {
 
 export async function PATCH(request: Request) {
   try {
+    const __authSession = await getSessionInfo(request);
+    if (!__authSession) return UNAUTHENTICATED();
     const body = await request.json();
     const { auditId, decision, approvedByUserId, approvedByName } = body;
 

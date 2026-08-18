@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import Navbar from "./Navbar";
+import LoginScreen from "./LoginScreen";
 import Sidebar, { ActiveTab } from "./Sidebar";
 import CommandCenterDashboard from "./CommandCenterDashboard";
 import SpecializedBusinessView from "./SpecializedBusinessView";
@@ -11,6 +12,7 @@ import ScenarioPlannerView from "./ScenarioPlannerView";
 import IntegrationsHubView from "./IntegrationsHubView";
 import NewBusinessModal from "./NewBusinessModal";
 import ManageBusinessesModal from "./ManageBusinessesModal";
+import UserAccessConsole from "./UserAccessConsole";
 import WorkerDashboard from "./WorkerDashboard";
 import BranchManagerWorkerPanel from "./BranchManagerWorkerPanel";
 import BranchManagerSalesView from "./BranchManagerSalesView";
@@ -62,6 +64,7 @@ export default function GoMinaApp() {
   const [offlineQueueCount, setOfflineQueueCount] = useState<number>(0);
   const [isNewBusinessModalOpen, setIsNewBusinessModalOpen] = useState(false);
   const [isManageBizOpen, setIsManageBizOpen] = useState(false);
+  const [isUserAccessOpen, setIsUserAccessOpen] = useState(false);
 
   // Baseline snapshot of the highest transaction id at first load. Any transaction
   // created after this point (a new in-app sale/expense) is layered onto the seeded
@@ -76,10 +79,14 @@ export default function GoMinaApp() {
         setBusinesses(data.businesses || []);
         setMetrics(data.metrics || []);
         setUsersList(data.users || []);
-        if (!currentUser && data.users?.length > 0) {
-          // Default to Kwame Mina (Owner)
-          setCurrentUser(data.users[0]);
-        }
+        // Keep the signed-in user object in sync with freshly fetched rows
+        // (permission changes apply instantly) — never auto-pick users[0]:
+        // identity comes from the secure login session only.
+        setCurrentUser((prev: any) => {
+          if (!prev) return prev;
+          const fresh = (data.users || []).find((u: any) => u.id === prev.id);
+          return fresh ? { ...fresh } : prev;
+        });
         setCustomers(data.customers || []);
         setSuppliers(data.suppliers || []);
         setEmployees(data.employees || []);
@@ -117,11 +124,49 @@ export default function GoMinaApp() {
       setLoading(false);
       setOfflineQueueCount(getOfflineQueue().length);
     }
-  }, [currentUser]);
+  }, []);
+
+  // ── Secure login bootstrap ──────────────────────────────────────────────
+  // Identity comes from the server session (httpOnly cookie). No session →
+  // the app renders the sign-in screen and fetches NOTHING else.
+  const [signedIn, setSignedIn] = useState(false);
 
   useEffect(() => {
-    refreshAllData();
-  }, [refreshAllData]);
+    (async () => {
+      try {
+        const res = await fetch("/api/auth/me");
+        const d = await res.json().catch(() => null);
+        if (res.ok && d?.success) {
+          setCurrentUser(d.user);
+          setSignedIn(true);
+          await refreshAllData();
+        } else {
+          setLoading(false);
+        }
+      } catch {
+        setLoading(false);
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const handleLoginSuccess = async (user: any) => {
+    setError(null);
+    setLoading(true);
+    setCurrentUser(user);
+    setSignedIn(true);
+    baselineMaxTxnId.current = null;
+    await refreshAllData();
+  };
+
+  const handleLogout = async () => {
+    try {
+      await fetch("/api/auth/logout", { method: "POST" });
+    } catch { /* best effort */ }
+    setSignedIn(false);
+    setCurrentUser(null);
+    setActiveTab("COMMAND_CENTER");
+  };
 
   // Live metrics: seeded quarter-to-date baseline + newly recorded transactions
   // + the live sum of registered asset values per business. This keeps every
@@ -426,6 +471,7 @@ export default function GoMinaApp() {
           onSelectTab={setActiveTab}
           onOpenNewBusinessModal={() => setIsNewBusinessModalOpen(true)}
           onOpenManageBusinesses={() => setIsManageBizOpen(true)}
+          onOpenUserAccess={() => setIsUserAccessOpen(true)}
           canManageBusinesses={currentUser?.role === "OWNER"}
           checklists={checklistData}
         />
@@ -679,6 +725,11 @@ export default function GoMinaApp() {
     );
   }
 
+  // No valid session → render ONLY the sign-in screen (no data is fetched).
+  if (!signedIn || !currentUser) {
+    return <LoginScreen onSuccess={handleLoginSuccess} />;
+  }
+
   if (error) {
     return (
       <div className="flex flex-col items-center justify-center min-h-screen bg-slate-950 text-white p-6">
@@ -708,6 +759,7 @@ export default function GoMinaApp() {
         currentUser={currentUser}
         usersList={usersList}
         onUserSelect={setCurrentUser}
+        onLogout={handleLogout}
       />
 
       <div className="flex flex-1 overflow-hidden">
@@ -756,6 +808,14 @@ export default function GoMinaApp() {
 
       {/* OWNER business management console — add / edit / rename / relocate /
           change type / deactivate / permanently delete any branch. */}
+      <UserAccessConsole
+        isOpen={isUserAccessOpen}
+        onClose={() => setIsUserAccessOpen(false)}
+        businesses={businesses}
+        currentUser={currentUser}
+        onChanged={refreshAllData}
+      />
+
       <ManageBusinessesModal
         isOpen={isManageBizOpen}
         onClose={() => setIsManageBizOpen(false)}

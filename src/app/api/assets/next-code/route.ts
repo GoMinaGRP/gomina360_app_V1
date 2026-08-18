@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { db } from "@/db";
 import { assets } from "@/db/schema";
 import { eq } from "drizzle-orm";
+import { getSessionInfo, UNAUTHENTICATED } from "@/lib/auth";
 
 /**
  * Asset Code helper.
@@ -14,6 +15,8 @@ import { eq } from "drizzle-orm";
  */
 export async function GET(request: Request) {
   try {
+    const __authSession = await getSessionInfo(request);
+    if (!__authSession) return UNAUTHENTICATED();
     const { searchParams } = new URL(request.url);
     const check = searchParams.get("check");
     const branchCode = searchParams.get("branchCode");

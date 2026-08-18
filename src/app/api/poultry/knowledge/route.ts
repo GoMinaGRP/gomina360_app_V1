@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { getSessionInfo, UNAUTHENTICATED } from "@/lib/auth";
 
 /**
  * Poultry AI Knowledge Base — Ghana-focused practical farming guidance.
@@ -195,6 +196,8 @@ const KNOWLEDGE_BASE: KnowledgeArticle[] = [
 
 export async function GET(request: NextRequest) {
   try {
+    const __authSession = await getSessionInfo(request);
+    if (!__authSession) return UNAUTHENTICATED();
     const { searchParams } = new URL(request.url);
     const q = (searchParams.get("q") || "").trim().toLowerCase();
     const category = searchParams.get("category");

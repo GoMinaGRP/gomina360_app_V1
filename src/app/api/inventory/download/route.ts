@@ -2,9 +2,12 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/db';
 import { inventoryDownloads } from '@/db/schema';
 import { eq, desc } from 'drizzle-orm';
+import { getSessionInfo, UNAUTHENTICATED } from "@/lib/auth";
 
 export async function POST(request: NextRequest) {
   try {
+    const __authSession = await getSessionInfo(request);
+    if (!__authSession) return UNAUTHENTICATED();
     const body = await request.json();
     const {
       downloadId,
@@ -60,6 +63,8 @@ export async function POST(request: NextRequest) {
 
 export async function GET(request: NextRequest) {
   try {
+    const __authSession = await getSessionInfo(request);
+    if (!__authSession) return UNAUTHENTICATED();
     const { searchParams } = new URL(request.url);
     const limit = parseInt(searchParams.get('limit') || '50');
     const downloaderRole = searchParams.get('downloaderRole');

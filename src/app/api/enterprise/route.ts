@@ -12,10 +12,8 @@ import {
 } from "@/db/schema";
 import { desc, eq } from "drizzle-orm";
 import { computeStockStatus } from "@/lib/stock";
-import {
-  canManageSharedRecords,
-  resolveRecordActor,
-} from "@/lib/recordPermissions";
+import { canManageSharedRecords } from "@/lib/recordPermissions";
+import { getSessionInfo, canAccessBusiness, UNAUTHENTICATED, FORBIDDEN } from "@/lib/auth";
 
 // Which enterprise entity a deletion-log row refers to.
 const MODULE_TABLE: Record<string, any> = {
@@ -30,6 +28,8 @@ const MODULE_TABLE: Record<string, any> = {
  */
 export async function GET(request: Request) {
   try {
+    const session = await getSessionInfo(request);
+    if (!session) return UNAUTHENTICATED();
     const { searchParams } = new URL(request.url);
     if (searchParams.get("deletionLogs") !== "1") {
       return NextResponse.json(
@@ -78,7 +78,9 @@ export async function PATCH(request: Request) {
       );
     }
 
-    const actor = await resolveRecordActor(actorUserId);
+    const session = await getSessionInfo(request);
+    if (!session) return UNAUTHENTICATED();
+    const actor = session.user;
     if (!canManageSharedRecords(actor)) {
       return NextResponse.json(
         {
@@ -182,7 +184,9 @@ export async function DELETE(request: Request) {
       );
     }
 
-    const actor = await resolveRecordActor(actorUserId);
+    const session = await getSessionInfo(request);
+    if (!session) return UNAUTHENTICATED();
+    const actor = session.user;
     if (!canManageSharedRecords(actor)) {
       return NextResponse.json(
         {
@@ -241,6 +245,13 @@ export async function POST(request: Request) {
   try {
     const body = await request.json();
     const { entityType, data } = body;
+
+    const session = await getSessionInfo(request);
+    if (!session) return UNAUTHENTICATED();
+    // Records can only be created against businesses the user can access.
+    if (data?.businessId != null && !(await canAccessBusiness(session.user, data.businessId))) {
+      return FORBIDDEN("You do not have access to that business.");
+    }
 
     // Standardized Ghana location shared by every enterprise entity
     const loc = {

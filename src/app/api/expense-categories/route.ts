@@ -2,12 +2,15 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
 import { expenseCategories } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
+import { getSessionInfo, UNAUTHENTICATED } from "@/lib/auth";
 
 /**
  * GET /api/expense-categories?businessId=1&branchCode=POULTRY-01
  */
 export async function GET(request: NextRequest) {
   try {
+    const __authSession = await getSessionInfo(request);
+    if (!__authSession) return UNAUTHENTICATED();
     const { searchParams } = new URL(request.url);
     const businessId = searchParams.get("businessId");
     const branchCode = searchParams.get("branchCode");
@@ -34,6 +37,8 @@ export async function GET(request: NextRequest) {
  */
 export async function POST(request: NextRequest) {
   try {
+    const __authSession = await getSessionInfo(request);
+    if (!__authSession) return UNAUTHENTICATED();
     const body = await request.json();
     const { businessId, branchCode, name, icon, createdBy } = body;
 

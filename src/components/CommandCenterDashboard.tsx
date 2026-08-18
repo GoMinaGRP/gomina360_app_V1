@@ -19,6 +19,7 @@ import {
   ClipboardCheck,
   Plus,
   Settings2,
+  Users,
 } from "lucide-react";
 import {
   BarChart,
@@ -49,6 +50,7 @@ interface CommandCenterDashboardProps {
   onSelectTab: (tab: ActiveTab) => void;
   onOpenNewBusinessModal: () => void;
   onOpenManageBusinesses?: () => void;
+  onOpenUserAccess?: () => void;
   canManageBusinesses?: boolean;
   checklists?: { templates: any[]; entries: any[] };
 }
@@ -62,6 +64,7 @@ export default function CommandCenterDashboard({
   onSelectTab,
   onOpenNewBusinessModal,
   onOpenManageBusinesses,
+  onOpenUserAccess,
   canManageBusinesses = false,
   checklists,
 }: CommandCenterDashboardProps) {
@@ -314,6 +317,16 @@ export default function CommandCenterDashboard({
             >
               <Plus className="w-4 h-4" />
               <span>New Branch / Unit</span>
+            </button>
+          )}
+          {canManageBusinesses && onOpenUserAccess && (
+            <button
+              onClick={onOpenUserAccess}
+              data-testid="open-user-access"
+              className="flex items-center space-x-1.5 px-3.5 py-2 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white font-bold text-xs sm:text-sm shadow-lg transition"
+            >
+              <Users className="w-4 h-4" />
+              <span>Users &amp; Access</span>
             </button>
           )}
         </div>

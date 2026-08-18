@@ -26,6 +26,8 @@ interface NavbarProps {
   currentUser: any;
   usersList: any[];
   onUserSelect: (user: any) => void;
+  /** Secure session sign-out (replaces the old free role-switcher). */
+  onLogout?: () => void;
 }
 
 export default function Navbar({
@@ -38,6 +40,7 @@ export default function Navbar({
   currentUser,
   usersList,
   onUserSelect,
+  onLogout,
 }: NavbarProps) {
   const [isSyncing, setIsSyncing] = useState(false);
   const [showCurrencyDropdown, setShowCurrencyDropdown] = useState(false);
@@ -182,45 +185,46 @@ export default function Navbar({
             </button>
 
             {showUserDropdown && (
-              <div className="absolute right-0 mt-2 w-64 rounded-xl bg-slate-800 border border-slate-700 shadow-2xl py-2 z-50">
+              <div
+                className="absolute right-0 mt-2 w-72 rounded-xl bg-slate-800 border border-slate-700 shadow-2xl py-2 z-50"
+                data-testid="user-account-menu"
+              >
                 <div className="px-3 py-1.5 border-b border-slate-700/80 mb-1">
                   <div className="text-xs font-semibold text-slate-300">
-                    Switch User / Role
+                    Signed in
                   </div>
                   <div className="text-[10px] text-slate-400">
-                    Test role-based permissions across branches
+                    Session secured by your personal password
                   </div>
                 </div>
-                <div className="max-h-60 overflow-y-auto">
-                  {usersList.map((usr) => (
-                    <button
-                      key={usr.id}
-                      onClick={() => {
-                        onUserSelect(usr);
-                        setShowUserDropdown(false);
-                      }}
-                      className={`w-full text-left px-3 py-2 text-xs flex items-center justify-between hover:bg-slate-700/80 transition ${
-                        currentUser?.id === usr.id
-                          ? "bg-emerald-500/15 border-l-2 border-emerald-400 text-emerald-300 font-semibold"
-                          : "text-slate-200"
-                      }`}
-                    >
-                      <div className="flex items-center space-x-2">
-                        <div className="w-6 h-6 rounded-full bg-slate-700 flex items-center justify-center font-bold text-[10px]">
-                          {usr.name.charAt(0)}
-                        </div>
-                        <div>
-                          <div className="font-medium">{usr.name}</div>
-                          <div className="text-[10px] text-slate-400">
-                            {usr.role}
-                          </div>
-                        </div>
-                      </div>
-                      {currentUser?.id === usr.id && (
-                        <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-                      )}
-                    </button>
-                  ))}
+                <div className="px-3 py-2 flex items-center space-x-3 border-b border-slate-700/60 mb-1">
+                  <div className="w-10 h-10 rounded-full bg-emerald-500/25 border border-emerald-400/40 flex items-center justify-center font-black text-emerald-300">
+                    {currentUser?.name ? currentUser.name.charAt(0) : "?"}
+                  </div>
+                  <div className="min-w-0">
+                    <div className="text-sm font-bold text-white truncate">
+                      {currentUser?.name}
+                    </div>
+                    <div className="text-[10px] text-emerald-400 font-bold">
+                      {currentUser?.role}
+                    </div>
+                    <div className="text-[10px] text-slate-400 truncate">
+                      {currentUser?.email}
+                    </div>
+                  </div>
+                </div>
+                <div className="px-3 py-1 space-y-1">
+                  <button
+                    onClick={() => {
+                      setShowUserDropdown(false);
+                      onLogout?.();
+                    }}
+                    data-testid="logout-btn"
+                    className="w-full text-left px-3 py-2 rounded-lg text-xs font-semibold bg-slate-700/70 hover:bg-rose-500/20 text-slate-200 hover:text-rose-300 transition flex items-center justify-between"
+                  >
+                    <span>Sign out / Switch account</span>
+                    <User className="w-3.5 h-3.5" />
+                  </button>
                 </div>
               </div>
             )}

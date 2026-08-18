@@ -4,17 +4,25 @@ import { transactions, businesses, recordDeletionLogs } from "@/db/schema";
 import { eq, desc } from "drizzle-orm";
 import {
   canManageSharedRecords,
-  resolveRecordActor,
 } from "@/lib/recordPermissions";
+import { getSessionInfo, canAccessBusiness, FORBIDDEN, UNAUTHENTICATED } from "@/lib/auth";
 
 export async function GET(request: Request) {
   try {
+    // Session-scoped: users only ever receive transactions of businesses
+    // they are assigned / granted access to.
+    const session = await getSessionInfo(request);
+    if (!session) return UNAUTHENTICATED();
+
     const { searchParams } = new URL(request.url);
     const businessIdParam = searchParams.get("businessId");
 
     if (businessIdParam && businessIdParam !== "ALL") {
       const bId = parseInt(businessIdParam, 10);
       if (!isNaN(bId)) {
+        if (!(await canAccessBusiness(session.user, bId))) {
+          return FORBIDDEN("You do not have access to that business.");
+        }
         const results = await db
           .select()
           .from(transactions)
@@ -28,7 +36,14 @@ export async function GET(request: Request) {
       .select()
       .from(transactions)
       .orderBy(desc(transactions.id));
-    return NextResponse.json({ success: true, transactions: allTrx });
+    if (session.user.role === "OWNER") {
+      return NextResponse.json({ success: true, transactions: allTrx });
+    }
+    const { accessibleBusinessIds } = await import("@/lib/auth");
+    const allowed = await accessibleBusinessIds(session.user);
+    const scoped =
+      allowed === null ? allTrx : allTrx.filter((t) => allowed.includes(t.businessId));
+    return NextResponse.json({ success: true, transactions: scoped });
   } catch (error: any) {
     return NextResponse.json(
       { success: false, error: error.message },
@@ -56,6 +71,14 @@ export async function POST(request: Request) {
       branchCode,
       branchName,
     } = body;
+
+    // Session identity is authoritative for attribution, and the user must
+    // have access to the business the record belongs to.
+    const session = await getSessionInfo(request);
+    if (!session) return UNAUTHENTICATED();
+    if (!(await canAccessBusiness(session.user, businessId))) {
+      return FORBIDDEN("You do not have access to record against that business.");
+    }
 
     const now = new Date();
     const trxNum = `TRX-${now.getFullYear()}-${now.getTime().toString().slice(-6)}`;
@@ -92,9 +115,9 @@ export async function POST(request: Request) {
         date: dateStr,
         createdAt: now,
         status: status || "COMPLETED",
-        recordedBy: recordedBy || "Command Center User",
-        recordedByRole: recordedByRole || null,
-        recordedByUserId: recordedByUserId ? Number(recordedByUserId) : null,
+        recordedBy: session.user.name || recordedBy || "Command Center User",
+        recordedByRole: session.user.role || recordedByRole || null,
+        recordedByUserId: session.user.id,
         receiptImage: body?.receiptImage || null,
         receiptImages: body?.receiptImages || null,
       })
@@ -127,7 +150,9 @@ export async function PATCH(request: Request) {
       );
     }
 
-    const actor = await resolveRecordActor(actorUserId);
+    const editSession = await getSessionInfo(request);
+    if (!editSession) return UNAUTHENTICATED();
+    const actor = editSession.user;
     if (!canManageSharedRecords(actor)) {
       return NextResponse.json(
         {
@@ -214,7 +239,9 @@ export async function DELETE(request: Request) {
       );
     }
 
-    const actor = await resolveRecordActor(actorUserId);
+    const delSession = await getSessionInfo(request);
+    if (!delSession) return UNAUTHENTICATED();
+    const actor = delSession.user;
     if (!canManageSharedRecords(actor)) {
       return NextResponse.json(
         {

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
 import { transactions, inventoryItems, salesDocuments, businesses, customers } from "@/db/schema";
 import { eq } from "drizzle-orm";
+import { getSessionInfo, UNAUTHENTICATED, FORBIDDEN } from "@/lib/auth";
 
 /**
  * POST /api/sales
@@ -26,6 +27,8 @@ import { eq } from "drizzle-orm";
  */
 export async function POST(request: NextRequest) {
   try {
+    const __authSession = await getSessionInfo(request);
+    if (!__authSession) return UNAUTHENTICATED();
     const body = await request.json();
     const {
       businessId,
