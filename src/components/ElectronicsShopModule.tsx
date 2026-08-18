@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useCallback, useEffect, useMemo, useState } from "react";
+import AiSectionGuide from "./AiSectionGuide";
 import {
   ShoppingCart, Package, AlertTriangle, TrendingUp, TrendingDown, Wallet, Activity,
   Wrench, Users, Truck, FileText, Barcode, Award, RefreshCw, LayoutDashboard,
@@ -435,6 +436,7 @@ export default function ElectronicsShopModule({
             <t.icon className="w-3.5 h-3.5" />{t.label}
           </button>
         ))}
+        <AiSectionGuide moduleKey="TECH" section={tab} businessInfo={businessInfo} />
       </div>
 
       {alerts.length > 0 && tab === "DASHBOARD" && (

@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useCallback, useEffect, useMemo, useState } from "react";
+import AiSectionGuide from "./AiSectionGuide";
 import {
   Boxes, Package, Truck, Wallet, AlertTriangle, CheckCircle, Settings,
   Users, Plus, X, Calendar, Filter, TrendingUp, TrendingDown, Loader2,
@@ -379,6 +380,7 @@ export default function BlockFactoryModule({
             <span className="hidden lg:inline">{t.label}</span>
           </button>
         ))}
+        <AiSectionGuide moduleKey="BLOCK" section={tab} businessInfo={businessInfo} />
       </div>
 
       {error && <div className="px-4 py-3 rounded-xl bg-rose-500/15 border border-rose-500/30 text-rose-300 text-xs"><AlertTriangle className="w-4 h-4 inline mr-1" />{error}</div>}

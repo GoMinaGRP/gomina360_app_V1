@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useCallback, useEffect, useMemo, useState } from "react";
+import AiSectionGuide from "./AiSectionGuide";
 import {
   Fish, Droplets, HeartPulse, Activity, Egg as EggIcon, Boxes,
   Wallet, ClipboardCheck, Plus, X, Loader2, Building2,
@@ -217,6 +218,7 @@ export default function AquacultureModule({
             <span className="hidden lg:inline">{t.label}</span>
           </button>
         ))}
+        <AiSectionGuide moduleKey="AQUA" section={tab} businessInfo={businessInfo} />
       </div>
 
       {err && <div className="px-4 py-3 rounded-xl bg-rose-500/15 border border-rose-500/30 text-rose-300 text-xs"><AlertTriangle className="w-4 h-4 inline mr-1" />{err}</div>}

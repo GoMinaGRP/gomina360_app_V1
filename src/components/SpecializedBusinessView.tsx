@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
+import AiSectionGuide from "./AiSectionGuide";
 import {
   Egg,
   Boxes,
@@ -358,6 +359,12 @@ export default function SpecializedBusinessView({
             </div>
           </div>
 
+          <AiSectionGuide
+            moduleKey={upperCode.startsWith("WASH") ? "WASH" : "LIVESTOCK"}
+            section="OPERATIONS"
+            businessInfo={businessInfo}
+            variant="header"
+          />
           <button
             onClick={() => setShowLogModal(true)}
             className="flex items-center space-x-1.5 px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs sm:text-sm shadow-lg transition"

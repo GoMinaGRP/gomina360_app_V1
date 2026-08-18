@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useCallback, useEffect, useMemo, useState } from "react";
+import AiSectionGuide from "./AiSectionGuide";
 import {
   UtensilsCrossed, ChefHat, Package, AlertTriangle, TrendingUp, TrendingDown, Wallet, Activity,
   Users, Truck, FileText, Trash2, LayoutDashboard, ListOrdered, ShoppingBasket, Boxes,
@@ -362,6 +363,7 @@ export default function RestaurantKitchenModule({
             <t.icon className="w-3.5 h-3.5" />{t.label}
           </button>
         ))}
+        <AiSectionGuide moduleKey="FOOD" section={tab} businessInfo={businessInfo} />
       </div>
 
       {/* ══════════════ DASHBOARD ══════════════ */}

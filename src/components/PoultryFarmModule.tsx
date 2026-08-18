@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useCallback, useEffect, useMemo, useState } from "react";
+import AiSectionGuide from "./AiSectionGuide";
 import {
   LayoutDashboard, Egg, Wheat, Droplets, HeartPulse, Boxes,
   Wallet, ClipboardCheck, BookOpen, Plus, X, CheckCircle, Circle,
@@ -612,6 +613,7 @@ export default function PoultryFarmModule({
             <span className="hidden lg:inline">{t.label}</span>
           </button>
         ))}
+        <AiSectionGuide moduleKey="POULTRY" section={tab} businessInfo={businessInfo} />
       </div>
 
       {err && (

@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
+import AiSectionGuide from "./AiSectionGuide";
 import {
   ShoppingCart,
   CreditCard,
@@ -318,6 +319,7 @@ export default function WorkerDashboard({
         </div>
 
         <div className="flex flex-wrap items-center gap-3 text-xs">
+          <AiSectionGuide moduleKey="WORKER" section="WORKER" businessInfo={businessInfo} variant="header" />
           {canRecordSales && (
             <span className="flex items-center space-x-1 px-2.5 py-1 rounded-lg bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 font-semibold">
               <CheckCircle className="w-3.5 h-3.5" />

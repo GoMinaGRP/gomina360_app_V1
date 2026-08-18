@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useMemo, useState } from "react";
+import AiSectionGuide from "./AiSectionGuide";
 import {
   AlertTriangle, BadgeDollarSign, Boxes, Building2, CheckCircle, ClipboardCheck,
   Cpu, Droplets, Egg, Fish, LayoutDashboard, Loader2, MapPin, Package, PackagePlus,
@@ -496,6 +497,7 @@ export default function BusinessDashboardModule({
                           <span className="text-slate-500">{formatMoney(c.value, currentCurrency, true)}</span>
                         </div>
                       ))}
+        <AiSectionGuide moduleKey="GENERIC" section={tab} businessInfo={businessInfo} />
                     </div>
                   </div>
                 ) : (

@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
+import AiSectionGuide from "./AiSectionGuide";
 import {
   Users,
   Truck,
@@ -744,6 +745,7 @@ export default function SharedEnterpriseModule({
         </div>
 
         <div className="flex items-center space-x-3">
+          <AiSectionGuide moduleKey="SHARED" section={moduleType} variant="header" />
           {/* Download buttons — shared across ASSETS and INVENTORY modules, execs only */}
           {moduleType === "ASSETS" && (currentUser?.role === "OWNER" || currentUser?.role === "GENERAL_MANAGER") && (
             <div className="flex items-center gap-2">

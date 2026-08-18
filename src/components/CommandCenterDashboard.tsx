@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
+import AiSectionGuide from "./AiSectionGuide";
 import {
   TrendingUp,
   DollarSign,
@@ -289,6 +290,7 @@ export default function CommandCenterDashboard({
             <span>Scenario Planner</span>
           </button>
 
+          <AiSectionGuide moduleKey="COMMAND_CENTER" section="COMMAND_CENTER" variant="header" />
           <button
             onClick={onOpenNewBusinessModal}
             className="flex items-center space-x-1.5 px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs sm:text-sm shadow-lg transition"
