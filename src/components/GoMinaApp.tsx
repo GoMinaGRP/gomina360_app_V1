@@ -747,6 +747,7 @@ export default function GoMinaApp() {
       <NewBusinessModal
         isOpen={isNewBusinessModalOpen}
         onClose={() => setIsNewBusinessModalOpen(false)}
+        actorUserId={currentUser?.id ?? null}
         onBusinessCreated={async (biz?: any) => {
           await refreshAllData();
           if (biz?.code) setActiveTab(biz.code as ActiveTab);

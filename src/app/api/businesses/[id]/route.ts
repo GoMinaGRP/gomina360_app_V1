@@ -55,6 +55,7 @@ import {
   CATEGORY_ICON,
   reprovisionForTypeChange,
 } from "@/lib/businessProvisioning";
+import { resolveOwnerActor } from "@/lib/recordPermissions";
 
 const VALID_CATEGORIES = [
   "Poultry Farm",
@@ -175,6 +176,17 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     }
 
     const body = await request.json();
+
+    // Spoof-proof enforcement: the actor is resolved from the DB by id —
+    // only a real OWNER account may mutate business units.
+    const actor = await resolveOwnerActor(body.actorUserId ?? body.requestingUserId);
+    if (!actor) {
+      return NextResponse.json(
+        { success: false, error: "Only the OWNER can update businesses." },
+        { status: 403 }
+      );
+    }
+
     const updates: Record<string, any> = {};
 
     if (typeof body.name === "string") {
@@ -306,6 +318,14 @@ export async function DELETE(request: Request, { params }: { params: Promise<{ i
       body = await request.json();
     } catch {
       body = {};
+    }
+    // Spoof-proof enforcement — DB-resolved actor must be the OWNER.
+    const actor = await resolveOwnerActor(body.actorUserId ?? body.requestingUserId);
+    if (!actor) {
+      return NextResponse.json(
+        { success: false, error: "Only the OWNER can delete businesses." },
+        { status: 403 }
+      );
     }
     // Mandatory confirmation gate — the caller must echo the exact unit code.
     if (body.confirmCode !== biz.code) {

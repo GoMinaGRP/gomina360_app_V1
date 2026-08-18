@@ -7,6 +7,7 @@ import {
   nextBusinessCode,
   provisionBusiness,
 } from "@/lib/businessProvisioning";
+import { resolveOwnerActor } from "@/lib/recordPermissions";
 
 export async function GET() {
   try {
@@ -29,6 +30,15 @@ export async function GET() {
 export async function POST(request: Request) {
   try {
     const body = await request.json();
+    // Spoof-proof enforcement: the actor is resolved from the DB by id —
+    // only a real OWNER account may add new business units.
+    const actor = await resolveOwnerActor(body.actorUserId ?? body.requestingUserId);
+    if (!actor) {
+      return NextResponse.json(
+        { success: false, error: "Only the OWNER can add new business units." },
+        { status: 403 }
+      );
+    }
     const {
       name,
       code,

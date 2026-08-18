@@ -306,13 +306,16 @@ export default function CommandCenterDashboard({
               <span>Manage Units</span>
             </button>
           )}
-          <button
-            onClick={onOpenNewBusinessModal}
-            className="flex items-center space-x-1.5 px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs sm:text-sm shadow-lg transition"
-          >
-            <Plus className="w-4 h-4" />
-            <span>New Branch / Unit</span>
-          </button>
+          {canManageBusinesses && (
+            <button
+              onClick={onOpenNewBusinessModal}
+              data-testid="open-new-business"
+              className="flex items-center space-x-1.5 px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs sm:text-sm shadow-lg transition"
+            >
+              <Plus className="w-4 h-4" />
+              <span>New Branch / Unit</span>
+            </button>
+          )}
         </div>
       </div>
 

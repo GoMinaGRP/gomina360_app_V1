@@ -26,3 +26,15 @@ export function canManageSharedRecords(user: any): boolean {
   if (!user) return false;
   return user.role === "OWNER" || user.canManageRecords === true;
 }
+
+/**
+ * DB-resolved OWNER gate. Server routes that mutate enterprise structure
+ * (business units) call this with a client-supplied user id; the database —
+ * never the request body — decides whether the caller is really the OWNER.
+ * Returns the OWNER user row, or null.
+ */
+export async function resolveOwnerActor(actorUserId: number | null | undefined) {
+  const user = await resolveRecordActor(actorUserId);
+  if (!user || user.role !== "OWNER") return null;
+  return user;
+}

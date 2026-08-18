@@ -153,6 +153,7 @@ export default function ManageBusinessesModal({
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          actorUserId: currentUser?.id ?? null,
           name,
           category,
           region: location.region,
@@ -199,7 +200,7 @@ export default function ManageBusinessesModal({
       const res = await fetch(`/api/businesses/${biz.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status: next }),
+        body: JSON.stringify({ status: next, actorUserId: currentUser?.id ?? null }),
       });
       const d = await res.json().catch(() => null);
       if (res.ok && d?.success) {
@@ -227,7 +228,7 @@ export default function ManageBusinessesModal({
       const res = await fetch(`/api/businesses/${selected.id}`, {
         method: "DELETE",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ confirmCode: confirmText.trim() }),
+        body: JSON.stringify({ confirmCode: confirmText.trim(), actorUserId: currentUser?.id ?? null }),
       });
       const d = await res.json().catch(() => null);
       if (res.ok && d?.success) {

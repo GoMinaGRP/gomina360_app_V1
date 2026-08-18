@@ -10,6 +10,11 @@ const nextConfig: NextConfig = {
     "127.0.0.1",
     "localhost",
   ],
+  turbopack: {
+    // Pin the workspace root to this repo so build artifacts land here
+    // (parent /home/user contains node tooling that confuses root inference).
+    root: __dirname,
+  },
 };
 
 export default nextConfig;

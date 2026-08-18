@@ -8,12 +8,15 @@ interface NewBusinessModalProps {
   isOpen: boolean;
   onClose: () => void;
   onBusinessCreated: (business?: any) => void;
+  /** DB id of the acting user — the server verifies this is really the OWNER. */
+  actorUserId?: number | null;
 }
 
 export default function NewBusinessModal({
   isOpen,
   onClose,
   onBusinessCreated,
+  actorUserId = null,
 }: NewBusinessModalProps) {
   const [name, setName] = useState("");
   const [category, setCategory] = useState("Block Factory");
@@ -43,6 +46,7 @@ export default function NewBusinessModal({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          actorUserId,
           name: name || "Mina Kumasi Block & Concrete",
           category,
           region: location.region,
