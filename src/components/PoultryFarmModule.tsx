@@ -6,7 +6,7 @@ import {
   LayoutDashboard, Egg, Wheat, Droplets, HeartPulse, Boxes,
   Wallet, ClipboardCheck, BookOpen, Plus, X, CheckCircle, Circle,
   Search, TrendingUp, TrendingDown, AlertTriangle, Bird, Activity,
-  Building2, Loader2, Filter,
+  Building2, Loader2, Filter, Package,
 } from "lucide-react";
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend,
@@ -158,6 +158,8 @@ export default function PoultryFarmModule({
   const [healthRecords, setHealthRecords] = useState<any[]>([]);
   const [production, setProduction] = useState<any[]>([]);
   const [checklists, setChecklists] = useState<any[]>([]);
+  // Master Product List (poultry_products) — production types incl. user-added
+  const [products, setProducts] = useState<any[]>([]);
 
   // AI Knowledge
   const [kbQuery, setKbQuery] = useState("");
@@ -181,6 +183,7 @@ export default function PoultryFarmModule({
         setWaterLogs(d.waterLogs || []);
         setHealthRecords(d.healthRecords || []);
         setProduction(d.production || []);
+        setProducts(d.products || []);
       }
       // Daily checklists come from the unified enterprise checklist engine
       // (same row shape: checklistDate, isCompleted, completedByName/Role/At).
@@ -382,6 +385,38 @@ export default function PoultryFarmModule({
         if (d.success) { setShowForm(null); await refresh(); onRefreshData(); }
         else setErr(d.error || "Sale failed.");
         return;
+      }
+      // New product type chosen inside Log Production → save it to the Master
+      // Product List FIRST, then record production under its key so the new
+      // product is instantly linked across Production → Stock → Sales →
+      // Inventory → Reports.
+      if (entity === "PRODUCTION" && data.productionType === "__NEW__") {
+        if (!data.npName || !String(data.npName).trim()) {
+          setErr("Enter the new product name to add it to the Master Product List.");
+          return;
+        }
+        const pRes = await fetch("/api/poultry", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            entity: "PRODUCT",
+            data: {
+              name: String(data.npName).trim(),
+              unit: data.npUnit || "Units",
+              category: data.npCategory || "Poultry Products",
+              costPriceGhs: data.npCost,
+              sellingPriceGhs: data.npSelling,
+              minStockThreshold: data.npThreshold,
+              businessId: bizId,
+              branchCode: businessInfo?.code,
+            },
+          }),
+        });
+        const pD = await pRes.json();
+        if (!pD.success) {
+          setErr(pD.error || "Failed to add the new product type.");
+          return;
+        }
+        data = { ...data, productionType: pD.item.productKey };
       }
       const res = await fetch("/api/poultry", {
         method: "POST", headers: { "Content-Type": "application/json" },
@@ -1008,6 +1043,48 @@ export default function PoultryFarmModule({
             <Stat label="Total Records" value={production.length} color="cyan" />
             <Stat label="Cracked (latest)" value={latestEggs.reduce((s, p) => s + (p.crackedEggs || 0), 0)} color="rose" />
           </div>
+
+          {/* Master Product List — every production type lives here; products
+              added from the production form auto-save into this list and are
+              linked to Inventory (SKU), Stock, Sales pickers and Reports. */}
+          <Card title="Master Product List — Production Types & Sellable Products" icon={Package}>
+            <div className="p-4" data-testid="poultry-master-products">
+              <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-2.5">
+                {products.map((p: any) => {
+                  const stock = branchInventory.find((i: any) => (i.sku || "").toUpperCase() === (p.sku || "").toUpperCase());
+                  return (
+                    <div key={p.id} data-testid={`master-product-row-${p.productKey}`}
+                      className="rounded-xl border border-slate-700 bg-slate-900/60 px-3.5 py-3">
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0">
+                          <div className="text-xs font-bold text-white truncate">{p.name}</div>
+                          <div className="text-[10px] font-mono text-cyan-400 truncate">{p.sku}</div>
+                        </div>
+                        <span className={`shrink-0 text-[9px] font-black uppercase px-1.5 py-0.5 rounded border ${
+                          p.isSystem
+                            ? "bg-slate-700/70 text-slate-300 border-slate-600"
+                            : "bg-emerald-500/15 text-emerald-300 border-emerald-500/40"}`}>
+                          {p.isSystem ? "System" : "Custom"}
+                        </span>
+                      </div>
+                      <div className="mt-2 flex items-center justify-between text-[10px] text-slate-400">
+                        <span>Unit: <b className="text-slate-200">{p.unit}</b></span>
+                        <span>Sell: <b className="text-emerald-300">{formatMoney(p.sellingPriceGhs || 0, currentCurrency)}</b></span>
+                        <span>Stock: <b className={`${(stock?.quantity || 0) > 0 ? "text-cyan-300" : "text-rose-300"}`}>
+                          {stock ? `${stock.quantity} ${stock.unit}` : `0 ${p.unit}`}
+                        </b></span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+              <p className="text-[10px] text-slate-500 mt-3">
+                Pick “+ Add New Product Type…” inside <b>Log Production</b> — the product lands here
+                automatically and becomes available for future production records, inventory, stock and sales.
+              </p>
+            </div>
+          </Card>
+
           <Card title="Production Records" icon={Egg} action={
             <div className="flex items-center gap-2">
               <button onClick={() => setShowForm("SALE")} className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-bold shadow">
@@ -1021,6 +1098,7 @@ export default function PoultryFarmModule({
                 <thead className="bg-slate-900/90 text-slate-400 uppercase font-semibold text-[10px]">
                   <tr>
                     <th className="px-4 py-3">Date</th><th className="px-4 py-3">Batch</th><th className="px-4 py-3">Type</th>
+                    <th className="px-4 py-3 text-right">Product Qty</th>
                     <th className="px-4 py-3 text-right">Eggs</th><th className="px-4 py-3 text-right">Trays</th>
                     <th className="px-4 py-3 text-right">Grade A/B</th><th className="px-4 py-3 text-right">Cracked</th>
                     <th className="px-4 py-3 text-right">Lay %</th><th className="px-4 py-3 text-right">FCR</th>
@@ -1032,12 +1110,24 @@ export default function PoultryFarmModule({
                       <td className="px-4 py-3 text-slate-400">{p.recordedDate}</td>
                       <td className="px-4 py-3 font-mono text-[10px] text-emerald-400">{p.batchNumber || "—"}</td>
                       <td className="px-4 py-3">
-                        <span className="px-2 py-0.5 rounded bg-slate-700 text-slate-200 text-[9px] font-bold">
-                          {p.productionType === "EGGS" ? "EGGS" : "BROILER"}
+                        <span className={`px-2 py-0.5 rounded text-[9px] font-bold ${
+                          p.productionType === "EGGS" || p.productionType === "BROILER_WEIGHT"
+                            ? "bg-slate-700 text-slate-200"
+                            : "bg-emerald-500/15 text-emerald-300 border border-emerald-500/30"}`}>
+                          {p.productionType === "EGGS" ? "EGGS"
+                            : p.productionType === "BROILER_WEIGHT" ? "BROILER"
+                            : (p.productName || products.find((x: any) => x.productKey === p.productionType)?.name || p.productionType)}
                         </span>
                       </td>
-                      <td className="px-4 py-3 text-right font-bold text-white">{p.eggsCollected?.toLocaleString() || "—"}</td>
-                      <td className="px-4 py-3 text-right text-cyan-400 font-bold">{p.traysProduced?.toFixed(1) || "—"}</td>
+                      <td className="px-4 py-3 text-right text-amber-300 font-bold">
+                        {p.productionType === "BROILER_WEIGHT"
+                          ? (p.birdsHarvested ? `${p.birdsHarvested.toLocaleString()} birds` : "—")
+                          : p.productionType === "EGGS"
+                          ? "—"
+                          : `${(p.quantityProduced ?? 0).toLocaleString()} ${p.unit || ""}`}
+                      </td>
+                      <td className="px-4 py-3 text-right font-bold text-white">{p.eggsCollected ? p.eggsCollected.toLocaleString() : "—"}</td>
+                      <td className="px-4 py-3 text-right text-cyan-400 font-bold">{p.traysProduced ? p.traysProduced.toFixed(1) : "—"}</td>
                       <td className="px-4 py-3 text-right text-slate-300 text-[10px]">{p.gradeA || 0} / {p.gradeB || 0}</td>
                       <td className="px-4 py-3 text-right text-rose-400">{p.crackedEggs || 0}</td>
                       <td className="px-4 py-3 text-right">
@@ -1048,7 +1138,7 @@ export default function PoultryFarmModule({
                       <td className="px-4 py-3 text-right text-slate-300">{p.fcr || "—"}</td>
                     </tr>
                   ))}
-                  {production.length === 0 && <tr><td colSpan={9} className="px-4 py-10 text-center text-slate-400">No production records.</td></tr>}
+                  {production.length === 0 && <tr><td colSpan={10} className="px-4 py-10 text-center text-slate-400">No production records.</td></tr>}
                 </tbody>
               </table>
             </div>
@@ -1503,7 +1593,7 @@ export default function PoultryFarmModule({
       {/* ══════════ FORMS ══════════ */}
       {showForm && (
         <PoultryForm
-          type={showForm} flocks={flocks} inventory={branchInventory} busy={busy} error={err}
+          type={showForm} flocks={flocks} inventory={branchInventory} products={products} busy={busy} error={err}
           onClose={() => { setShowForm(null); setErr(""); }}
           onSubmit={submit}
         />
@@ -1513,11 +1603,11 @@ export default function PoultryFarmModule({
 }
 
 // ─────────────────────────── FORM MODAL ───────────────────────────
-function PoultryForm({ type, flocks, inventory = [], busy, error, onClose, onSubmit }: any) {
+function PoultryForm({ type, flocks, inventory = [], products = [], busy, error, onClose, onSubmit }: any) {
   const [f, setF] = useState<any>({
     birdType: "LAYERS", status: "ACTIVE", feedType: "LAYER_MASH", entryType: "CONSUMPTION",
     sourceType: "BOREHOLE", isTreated: false, recordType: "VACCINATION", outcome: "MONITORING",
-    productionType: "EGGS", paymentMethod: "CASH",
+    productionType: "EGGS", paymentMethod: "CASH", npUnit: "Trays", npCategory: "Poultry Products",
   });
   const set = (k: string, v: any) => setF({ ...f, [k]: v });
 
@@ -1641,28 +1731,73 @@ function PoultryForm({ type, flocks, inventory = [], busy, error, onClose, onSub
             <I label="Notes" k="notes" placeholder="Optional observations" />
           </>)}
 
-          {type === "PRODUCTION" && (<>
-            <S label="Production Type" k="productionType" opts={[{ v: "EGGS", l: "Eggs" }, { v: "BROILER_WEIGHT", l: "Broiler Harvest" }]} />
-            <BatchSelect />
-            {f.productionType === "EGGS" ? (
-              <div className="grid grid-cols-2 gap-3">
-                <I label="Eggs Collected *" k="eggsCollected" t="number" required min={0} />
-                <I label="Trays" k="traysProduced" t="number" step="0.1" placeholder="Auto (eggs÷30)" />
-                <I label="Grade A" k="gradeA" t="number" />
-                <I label="Grade B" k="gradeB" t="number" />
-                <I label="Cracked Eggs" k="crackedEggs" t="number" />
-                <I label="Lay %" k="layPercentage" t="number" step="0.1" />
+          {type === "PRODUCTION" && (() => {
+            // Production types = system products + every custom product in the
+            // Master Product List, plus the option to add a brand-new type
+            // right here (auto-saved & linked to Inventory/Stock/Sales).
+            const customProducts = products.filter(
+              (p: any) => p.isActive && !["EGGS", "BROILER_WEIGHT"].includes(p.productKey)
+            );
+            const selCustom = customProducts.find((p: any) => p.productKey === f.productionType);
+            const isNew = f.productionType === "__NEW__";
+            const newUnit = f.npUnit || "Units";
+            return (<>
+              <div data-testid="production-type-field">
+                <S label="Production Type" k="productionType" opts={[
+                  { v: "EGGS", l: "Eggs" },
+                  { v: "BROILER_WEIGHT", l: "Broiler Harvest" },
+                  ...customProducts.map((p: any) => ({ v: p.productKey, l: `${p.name} (${p.unit})` })),
+                  { v: "__NEW__", l: "＋ Add New Product Type…" },
+                ]} />
               </div>
-            ) : (
-              <div className="grid grid-cols-2 gap-3">
-                <I label="Birds Harvested" k="birdsHarvested" t="number" />
-                <I label="Total Weight (kg)" k="totalWeightKg" t="number" step="0.1" />
-                <I label="Avg Weight (kg)" k="avgWeightKg" t="number" step="0.01" />
-                <I label="FCR" k="fcr" t="number" step="0.01" />
-              </div>
-            )}
-            <I label="Date" k="recordedDate" t="date" />
-          </>)}
+
+              {isNew && (
+                <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/5 p-3 space-y-3" data-testid="new-product-panel">
+                  <div className="text-[11px] font-bold text-emerald-300">
+                    New Product Type — saved to the Master Product List and linked into Inventory, Stock, Sales & Reports
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <I label="Product Name *" k="npName" placeholder="e.g. Duck Egg Crates" />
+                    <S label="Unit" k="npUnit" opts={["Trays", "Birds", "Kg", "Pieces", "Crates", "Bags", "Units"]} />
+                    <I label="Cost Price (GH₵)" k="npCost" t="number" step="0.01" />
+                    <I label="Selling Price (GH₵)" k="npSelling" t="number" step="0.01" />
+                    <I label="Min Stock Alert Qty" k="npThreshold" t="number" step="1" />
+                    <I label="Category" k="npCategory" placeholder="Poultry Products" />
+                  </div>
+                </div>
+              )}
+
+              <BatchSelect />
+
+              {f.productionType === "EGGS" ? (
+                <div className="grid grid-cols-2 gap-3">
+                  <I label="Eggs Collected *" k="eggsCollected" t="number" required min={0} />
+                  <I label="Trays" k="traysProduced" t="number" step="0.1" placeholder="Auto (eggs÷30)" />
+                  <I label="Grade A" k="gradeA" t="number" />
+                  <I label="Grade B" k="gradeB" t="number" />
+                  <I label="Cracked Eggs" k="crackedEggs" t="number" />
+                  <I label="Lay %" k="layPercentage" t="number" step="0.1" />
+                </div>
+              ) : f.productionType === "BROILER_WEIGHT" ? (
+                <div className="grid grid-cols-2 gap-3">
+                  <I label="Birds Harvested" k="birdsHarvested" t="number" />
+                  <I label="Total Weight (kg)" k="totalWeightKg" t="number" step="0.1" />
+                  <I label="Avg Weight (kg)" k="avgWeightKg" t="number" step="0.01" />
+                  <I label="FCR" k="fcr" t="number" step="0.01" />
+                </div>
+              ) : (
+                <div className="grid grid-cols-2 gap-3">
+                  <I
+                    label={`Quantity Produced * (${isNew ? newUnit : selCustom?.unit || "Units"})`}
+                    k="quantityProduced" t="number" step="0.01" required min={0.01}
+                  />
+                  <I label="Sold Immediately (qty, optional)" k="quantitySold" t="number" step="0.01" />
+                  <I label="Revenue (GH₵, optional)" k="revenueGhs" t="number" step="0.01" />
+                </div>
+              )}
+              <I label="Date" k="recordedDate" t="date" />
+            </>);
+          })()}
 
           {type === "SALE" && (<>
             {(() => {

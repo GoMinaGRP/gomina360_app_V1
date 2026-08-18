@@ -7,11 +7,12 @@ import {
   poultryHealthRecords,
   poultryProduction,
   poultryChecklists,
+  poultryProducts,
   businesses,
   transactions,
 } from "@/db/schema";
 import { eq, desc, and } from "drizzle-orm";
-import { stockIn, stockOut } from "@/lib/stock";
+import { stockIn, stockOut, ensureInventoryItem } from "@/lib/stock";
 
 // Canonical sellable products for the poultry branch — production stocks these
 // in, sales deduct them, and they appear in every stock picker automatically.
@@ -36,6 +37,24 @@ export const POULTRY_PRODUCTS = {
     minStockThreshold: 10,
   },
 } as const;
+
+// System seeds for the Master Product List (same SKUs as POULTRY_PRODUCTS so
+// everything keeps pointing at the same canonical stock rows).
+const SYSTEM_PRODUCT_SEEDS = [
+  { productKey: "EGGS", ...POULTRY_PRODUCTS.EGGS },
+  { productKey: "BROILER_WEIGHT", ...POULTRY_PRODUCTS.BROILER },
+];
+
+/** "Duck Egg Crates" → "DUCK_EGG_CRATES" (stable master-product key fragment) */
+function slugify(name: string): string {
+  return (
+    name
+      .toUpperCase()
+      .replace(/[^A-Z0-9]+/g, "_")
+      .replace(/^_+|_+$/g, "")
+      .slice(0, 40) || "PRODUCT"
+  );
+}
 
 /**
  * GET /api/poultry?businessId=1
@@ -63,6 +82,46 @@ export async function GET(request: NextRequest) {
         scope(poultryChecklists),
       ]);
 
+    // Master Product List — self-seed the two system products the first time a
+    // poultry unit is opened (their SKUs match the seeded inventory items, so
+    // production keeps topping up the original stock rows).
+    let products: any[] = [];
+    if (bizId) {
+      products = await db
+        .select()
+        .from(poultryProducts)
+        .where(eq(poultryProducts.businessId, bizId));
+      if (products.length === 0) {
+        const [biz] = await db
+          .select()
+          .from(businesses)
+          .where(eq(businesses.id, bizId));
+        const code = biz?.code || "POULTRY";
+        for (const sys of SYSTEM_PRODUCT_SEEDS) {
+          await db.insert(poultryProducts).values({
+            businessId: bizId,
+            branchCode: code,
+            productKey: sys.productKey,
+            name: sys.name,
+            category: sys.category,
+            unit: sys.unit,
+            sku: sys.sku,
+            costPriceGhs: sys.costPriceGhs,
+            sellingPriceGhs: sys.sellingPriceGhs,
+            minStockThreshold: sys.minStockThreshold,
+            isSystem: true,
+            isActive: true,
+          });
+        }
+        products = await db
+          .select()
+          .from(poultryProducts)
+          .where(eq(poultryProducts.businessId, bizId));
+      }
+    } else {
+      products = await db.select().from(poultryProducts);
+    }
+
     const sortByIdDesc = (a: any, b: any) => (b.id || 0) - (a.id || 0);
 
     return NextResponse.json({
@@ -73,6 +132,7 @@ export async function GET(request: NextRequest) {
       healthRecords: healthRecords.sort(sortByIdDesc),
       production: production.sort(sortByIdDesc),
       checklists: checklists.sort((a: any, b: any) => (a.id || 0) - (b.id || 0)),
+      products: products.sort((a: any, b: any) => (a.id || 0) - (b.id || 0)),
     });
   } catch (error: any) {
     console.error("GET /api/poultry error:", error);
@@ -85,7 +145,7 @@ export async function GET(request: NextRequest) {
 
 /**
  * POST /api/poultry
- * Body: { entity: 'FLOCK'|'FEED'|'WATER'|'HEALTH'|'PRODUCTION'|'CHECKLIST', data: {...} }
+ * Body: { entity: 'FLOCK'|'FEED'|'WATER'|'HEALTH'|'PRODUCTION'|'PRODUCT'|'CHECKLIST', data: {...} }
  */
 export async function POST(request: NextRequest) {
   try {
@@ -289,12 +349,179 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: true, item: row });
     }
 
+    // ── MASTER PRODUCT (add a new production type / sellable product) ──
+    // Saved to the Poultry Farm Master Product List and immediately linked
+    // into Inventory (SKU row at zero stock), so every future production
+    // record, stock view, sale picker and report knows the product.
+    if (entity === "PRODUCT") {
+      const name = String(data.name || "").trim();
+      if (!name) {
+        return NextResponse.json(
+          { success: false, error: "Product name is required." },
+          { status: 400 }
+        );
+      }
+      const unit = String(data.unit || "Units").trim() || "Units";
+      const category = String(data.category || "Poultry Products").trim() || "Poultry Products";
+      const costPriceGhs = Number(data.costPriceGhs) || 0;
+      const sellingPriceGhs = Number(data.sellingPriceGhs) || 0;
+      const minStockThreshold = Number(data.minStockThreshold) || 0;
+
+      const slug = slugify(name);
+      const productKey = `CUSTOM_${slug}`;
+      const sku = `${branchCode}-${slug.replace(/_/g, "-")}`;
+
+      const existing = await db
+        .select()
+        .from(poultryProducts)
+        .where(eq(poultryProducts.businessId, businessId));
+      if (
+        existing.some(
+          (p) =>
+            p.productKey === productKey ||
+            p.name.trim().toLowerCase() === name.toLowerCase()
+        )
+      ) {
+        return NextResponse.json(
+          { success: false, error: `"${name}" already exists in the Master Product List.` },
+          { status: 409 }
+        );
+      }
+
+      let row;
+      try {
+        [row] = await db
+          .insert(poultryProducts)
+          .values({
+            businessId,
+            branchCode,
+            productKey,
+            name,
+            category,
+            unit,
+            sku,
+            costPriceGhs,
+            sellingPriceGhs,
+            minStockThreshold,
+            isSystem: false,
+            isActive: true,
+          })
+          .returning();
+      } catch (e: any) {
+        if (String(e?.message || "").includes("poultry_products_business_key_unique")) {
+          return NextResponse.json(
+            { success: false, error: `"${name}" already exists in the Master Product List.` },
+            { status: 409 }
+          );
+        }
+        throw e;
+      }
+
+      // Link into Inventory immediately (zero stock until first production
+      // record is logged) so the product is visible in stock views & reports.
+      await ensureInventoryItem({
+        businessId,
+        sku,
+        name,
+        category,
+        unit,
+        costPriceGhs,
+        sellingPriceGhs,
+        minStockThreshold,
+      });
+
+      return NextResponse.json({ success: true, item: row });
+    }
+
     // ── PRODUCTION ─────────────────────────────────────────────────
     if (entity === "PRODUCTION") {
       const eggs = Number(data.eggsCollected) || 0;
       const soldEggs = Number(data.eggsSold) || 0;
       const revenue = Number(data.revenueGhs) || 0;
       const broilersSold = Number(data.broilersSold) || 0;
+
+      // Custom Master-Product production types: productionType carries the
+      // poultry_products.product_key (CUSTOM_*). Quantity is recorded in the
+      // product's own unit and stocked straight into its linked inventory SKU.
+      if (data.productionType && !["EGGS", "BROILER_WEIGHT"].includes(data.productionType)) {
+        const products = await db
+          .select()
+          .from(poultryProducts)
+          .where(eq(poultryProducts.businessId, businessId));
+        const product = products.find((p) => p.productKey === data.productionType);
+        if (!product || !product.isActive) {
+          return NextResponse.json(
+            { success: false, error: "Unknown or inactive product type. Pick one from the Master Product List." },
+            { status: 400 }
+          );
+        }
+        const qty = Number(data.quantityProduced ?? data.quantity) || 0;
+        const qtySold = Number(data.quantitySold) || 0;
+        const [row] = await db
+          .insert(poultryProduction)
+          .values({
+            businessId,
+            branchCode,
+            flockId: data.flockId ? Number(data.flockId) : null,
+            batchNumber: data.batchNumber || null,
+            productionType: product.productKey,
+            quantityProduced: qty,
+            productName: product.name,
+            unit: product.unit,
+            revenueGhs: revenue,
+            recordedDate: data.recordedDate || today,
+            recordedByName: data.recordedByName || "Farm Staff",
+          })
+          .returning();
+
+        // Production → Stock linkage (same pipeline as eggs/broilers).
+        let stockNote = "";
+        if (qty > 0) {
+          await stockIn({
+            businessId,
+            sku: product.sku,
+            name: product.name,
+            category: product.category,
+            unit: product.unit,
+            costPriceGhs: product.costPriceGhs ?? undefined,
+            sellingPriceGhs: product.sellingPriceGhs ?? undefined,
+            minStockThreshold: product.minStockThreshold ?? undefined,
+            quantity: qty,
+          });
+          stockNote += ` | +${qty} ${product.unit} to stock`;
+        }
+        if (qtySold > 0) {
+          const out = await stockOut({ businessId, sku: product.sku, quantity: qtySold });
+          stockNote += ` | −${out.deducted} ${product.unit} sold from stock`;
+        }
+
+        // Production → Finance linkage.
+        if (revenue > 0) {
+          const trxNum = `TRX-${new Date().getFullYear()}-${Date.now().toString().slice(-6)}`;
+          await db.insert(transactions).values({
+            transactionNumber: trxNum,
+            businessId,
+            branchCode,
+            branchName: data.branchName || null,
+            type: "INCOME",
+            category: "POULTRY_PRODUCT_SALE",
+            amountGhs: revenue,
+            paymentMethod: data.paymentMethod || "CASH",
+            description: `Poultry production — ${qty} ${product.unit} ${product.name}${
+              qtySold > 0 ? `, ${qtySold} sold` : ""
+            }${stockNote}`,
+            date: today,
+            createdAt: new Date(),
+            status: "COMPLETED",
+            recordedBy: data.recordedByName || "Poultry Farm User",
+            recordedByRole: data.recordedByRole || null,
+            recordedByUserId: data.recordedByUserId ? Number(data.recordedByUserId) : null,
+          });
+        }
+
+        return NextResponse.json({ success: true, item: row, stockNote, product });
+      }
+
       const [row] = await db
         .insert(poultryProduction)
         .values({

@@ -419,7 +419,7 @@ export const poultryProduction = pgTable("poultry_production", {
   branchCode: text("branch_code"),
   flockId: integer("flock_id"),
   batchNumber: text("batch_number"),
-  productionType: text("production_type").notNull(), // EGGS or BROILER_WEIGHT
+  productionType: text("production_type").notNull(), // EGGS, BROILER_WEIGHT, or a custom master-product key
   // Egg fields
   eggsCollected: integer("eggs_collected").default(0),
   traysProduced: doublePrecision("trays_produced").default(0),
@@ -430,6 +430,10 @@ export const poultryProduction = pgTable("poultry_production", {
   birdsHarvested: integer("birds_harvested").default(0),
   totalWeightKg: doublePrecision("total_weight_kg").default(0),
   avgWeightKg: doublePrecision("avg_weight_kg").default(0),
+  // Custom master-product fields (productionType = poultry_products.product_key)
+  quantityProduced: doublePrecision("quantity_produced").default(0), // in the product's own unit
+  productName: text("product_name"), // snapshot for reports/exports
+  unit: text("unit"), // snapshot of the product unit (Trays, Birds, Kg, …)
   // Shared
   layPercentage: doublePrecision("lay_percentage").default(0),
   fcr: doublePrecision("fcr").default(0), // feed conversion ratio
@@ -438,6 +442,29 @@ export const poultryProduction = pgTable("poultry_production", {
   recordedByName: text("recorded_by_name"),
   createdAt: timestamp("created_at").defaultNow(),
 });
+
+// P5b. Poultry Master Product List — the farm's production types & sellable
+// products. Seeded with EGGS + BROILER (system); any product the user adds
+// while logging production is stored here and automatically linked into
+// Inventory (by SKU), Stock, Sales pickers and Reports.
+export const poultryProducts = pgTable("poultry_products", {
+  id: serial("id").primaryKey(),
+  businessId: integer("business_id").notNull(),
+  branchCode: text("branch_code"),
+  productKey: text("product_key").notNull(), // EGGS | BROILER_WEIGHT | custom UPPER_SNAKE
+  name: text("name").notNull(), // display name, e.g. "Duck Egg Crates"
+  category: text("category").notNull().default("Poultry Products"),
+  unit: text("unit").notNull().default("Units"), // Trays, Birds, Kg, Pieces, Crates…
+  sku: text("sku").notNull(), // inventory link — production stocks this SKU in
+  costPriceGhs: doublePrecision("cost_price_ghs").default(0),
+  sellingPriceGhs: doublePrecision("selling_price_ghs").default(0),
+  minStockThreshold: doublePrecision("min_stock_threshold").default(50),
+  isSystem: boolean("is_system").default(false), // EGGS / BROILER_WEIGHT seeds
+  isActive: boolean("is_active").default(true),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (t) => [
+  uniqueIndex("poultry_products_business_key_unique").on(t.businessId, t.productKey),
+]);
 
 // P6. Daily Activity Checklist
 export const poultryChecklists = pgTable("poultry_checklists", {

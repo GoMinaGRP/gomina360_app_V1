@@ -19,6 +19,7 @@ import {
   poultryHealthRecords,
   poultryProduction,
   poultryChecklists,
+  poultryProducts,
   blockFactoryLogs,
   blockFactoryOrders,
   blockFactoryDeliveries,
@@ -103,6 +104,7 @@ async function relatedCounts(businessId: number) {
       (await count(poultryHealthRecords, poultryHealthRecords.businessId)) +
       (await count(poultryProduction, poultryProduction.businessId)) +
       (await count(poultryChecklists, poultryChecklists.businessId)) +
+      (await count(poultryProducts, poultryProducts.businessId)) +
       (await count(blockFactoryLogs, blockFactoryLogs.businessId)) +
       (await count(blockFactoryChecklists, blockFactoryChecklists.businessId)) +
       (await count(blockTypes, blockTypes.businessId)) +
@@ -343,6 +345,7 @@ export async function DELETE(request: Request, { params }: { params: Promise<{ i
       [poultryHealthRecords, poultryHealthRecords.businessId],
       [poultryProduction, poultryProduction.businessId],
       [poultryChecklists, poultryChecklists.businessId],
+      [poultryProducts, poultryProducts.businessId],
       [blockFactoryLogs, blockFactoryLogs.businessId],
       [blockFactoryOrders, blockFactoryOrders.businessId],
       [blockFactoryDeliveries, blockFactoryDeliveries.businessId],

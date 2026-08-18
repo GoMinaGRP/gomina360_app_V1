@@ -342,6 +342,17 @@ export const GUIDES: Record<string, Record<string, SectionGuide>> = {
           ],
         },
         {
+          name: "Add a brand-new product type",
+          steps: [
+            "Open “Log Production” and pick “＋ Add New Product Type…” in the Production Type list.",
+            "Name the product (e.g. Duck Egg Crates), choose its Unit (Trays, Birds, Kg, Crates…) and set cost / selling prices.",
+            "Enter the Quantity Produced and submit.",
+            "The product is saved to the Master Product List (shown right on this tab) and its stock appears in Inventory at once.",
+            "From now on the type appears in the Production Type list, the Record Sale stock picker, and all reports — just like Eggs and Broilers.",
+          ],
+          tip: "Custom products use their own unit — after production tops the stock up, “Record Sale” sells them exactly like egg trays.",
+        },
+        {
           name: "Sell eggs or birds",
           steps: [
             "Click “Record Sale” on this tab.",
@@ -353,6 +364,12 @@ export const GUIDES: Record<string, Record<string, SectionGuide>> = {
         },
       ],
       faqs: [
+        {
+          q: "How do I add a new product type?",
+          match: ["new product", "add product", "product type", "master", "custom"],
+          answer:
+            "Log Production → Production Type → “＋ Add New Product Type…”. Name it, set unit and prices, enter the quantity and submit — it is saved to the Master Product List and becomes sellable stock linked across Production, Inventory, Sales and Reports.",
+        },
         {
           q: "Where do my eggs go after I log them?",
           match: ["where", "eggs go", "stock", "inventory"],
