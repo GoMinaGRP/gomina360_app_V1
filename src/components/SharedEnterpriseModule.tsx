@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import AiSectionGuide from "./AiSectionGuide";
 import {
   Users,
@@ -15,6 +15,10 @@ import {
   CheckCircle,
   AlertTriangle,
   WifiOff,
+  Pencil,
+  Trash2,
+  Lock,
+  ShieldCheck,
 } from "lucide-react";
 import { CurrencyCode, formatMoney } from "@/lib/currency";
 import { addToOfflineQueue } from "@/lib/offlineSync";
@@ -94,6 +98,217 @@ export default function SharedEnterpriseModule({
   const isExecutiveUser =
     currentUser?.role === "OWNER" || currentUser?.role === "GENERAL_MANAGER";
   const isBranchManagerUser = currentUser?.role === "BRANCH_MANAGER";
+
+  // ─── OWNER-controlled record management (Transactions, Suppliers, Employees) ───
+  // The OWNER always can; managers only while the OWNER has granted the flag.
+  const isOwnerUser = currentUser?.role === "OWNER";
+  const canManageShared = isOwnerUser || currentUser?.canManageRecords === true;
+  const MANAGEABLE =
+    moduleType === "TRANSACTIONS" ||
+    moduleType === "SUPPLIERS" ||
+    moduleType === "EMPLOYEES";
+
+  const [editingRecord, setEditingRecord] = useState<any | null>(null);
+  const [deletingRecord, setDeletingRecord] = useState<any | null>(null);
+  const [deleteReason, setDeleteReason] = useState("");
+  const [recordBusy, setRecordBusy] = useState(false);
+  const [recordErr, setRecordErr] = useState("");
+  const [deletionLogs, setDeletionLogs] = useState<any[]>([]);
+  const [showAccessModal, setShowAccessModal] = useState(false);
+  const [accessUsers, setAccessUsers] = useState<any[]>([]);
+  const [accessBusy, setAccessBusy] = useState<number | null>(null);
+
+  const refreshDeletionLogs = useCallback(async () => {
+    if (!MANAGEABLE) return;
+    try {
+      const r = await fetch(`/api/enterprise?deletionLogs=1&module=${moduleType}`);
+      const d = await r.json();
+      if (d.success) setDeletionLogs(d.logs || []);
+    } catch {
+      /* audit panel is informational */
+    }
+  }, [moduleType, MANAGEABLE]);
+
+  useEffect(() => {
+    setDeletionLogs([]);
+    refreshDeletionLogs();
+  }, [refreshDeletionLogs]);
+
+  const recordLabel = (r: any) =>
+    moduleType === "TRANSACTIONS"
+      ? `${r.transactionNumber} — GH₵ ${r.amountGhs} (${r.category})`
+      : moduleType === "SUPPLIERS"
+      ? r.name
+      : `${r.name} (${r.role})`;
+
+  // Edit submit: PATCH to the module's endpoint — server re-checks permission.
+  const submitRecordEdit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingRecord) return;
+    setRecordBusy(true);
+    setRecordErr("");
+    try {
+      const isTrx = moduleType === "TRANSACTIONS";
+      const body: any = isTrx
+        ? {
+            id: editingRecord.id,
+            actorUserId: currentUser?.id,
+            data: {
+              type: editingRecord.type,
+              category: editingRecord.category,
+              amountGhs: editingRecord.amountGhs,
+              paymentMethod: editingRecord.paymentMethod,
+              description: editingRecord.description,
+            },
+          }
+        : moduleType === "SUPPLIERS"
+        ? {
+            entityType: "SUPPLIERS",
+            id: editingRecord.id,
+            actorUserId: currentUser?.id,
+            data: {
+              name: editingRecord.name,
+              category: editingRecord.category,
+              contactPerson: editingRecord.contactPerson,
+              phone: editingRecord.phone,
+              email: editingRecord.email,
+              paymentTerms: editingRecord.paymentTerms,
+            },
+          }
+        : {
+            entityType: "EMPLOYEES",
+            id: editingRecord.id,
+            actorUserId: currentUser?.id,
+            data: {
+              name: editingRecord.name,
+              role: editingRecord.role,
+              phone: editingRecord.phone,
+              status: editingRecord.status,
+              salaryGhs: editingRecord.salaryGhs,
+              businessId: editingRecord.businessId,
+            },
+          };
+      const res = await fetch(isTrx ? "/api/transactions" : "/api/enterprise", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const d = await res.json();
+      if (res.ok && d.success) {
+        setEditingRecord(null);
+        onRefreshData();
+      } else {
+        setRecordErr(d.error || "Edit failed.");
+      }
+    } catch (err: any) {
+      setRecordErr(err.message || "Edit failed.");
+    } finally {
+      setRecordBusy(false);
+    }
+  };
+
+  // Delete: mandatory reason + explicit confirmation; server audits & deletes.
+  const confirmRecordDelete = async () => {
+    if (!deletingRecord || deleteReason.trim().length < 3) return;
+    setRecordBusy(true);
+    setRecordErr("");
+    try {
+      const isTrx = moduleType === "TRANSACTIONS";
+      const res = await fetch(isTrx ? "/api/transactions" : "/api/enterprise", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(
+          isTrx
+            ? { id: deletingRecord.id, reason: deleteReason.trim(), actorUserId: currentUser?.id }
+            : { entityType: moduleType, id: deletingRecord.id, reason: deleteReason.trim(), actorUserId: currentUser?.id }
+        ),
+      });
+      const d = await res.json();
+      if (res.ok && d.success) {
+        setDeletingRecord(null);
+        setDeleteReason("");
+        onRefreshData();
+        refreshDeletionLogs();
+      } else {
+        setRecordErr(d.error || "Delete failed.");
+      }
+    } catch (err: any) {
+      setRecordErr(err.message || "Delete failed.");
+    } finally {
+      setRecordBusy(false);
+    }
+  };
+
+  // OWNER access-control console: grant / revoke canManageRecords per manager.
+  const openAccessControl = async () => {
+    setShowAccessModal(true);
+    try {
+      const r = await fetch("/api/users");
+      const d = await r.json();
+      if (d.success) setAccessUsers((d.users || []).filter((u: any) => u.role !== "OWNER"));
+    } catch {
+      /* non-critical */
+    }
+  };
+
+  const toggleRecordAccess = async (u: any) => {
+    setAccessBusy(u.id);
+    try {
+      const r = await fetch("/api/users", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          userId: u.id,
+          canManageRecords: !u.canManageRecords,
+          requestingUserRole: currentUser?.role,
+        }),
+      });
+      const d = await r.json();
+      if (r.ok && d.success) {
+        setAccessUsers((prev) =>
+          prev.map((x) => (x.id === u.id ? { ...x, canManageRecords: d.user.canManageRecords } : x))
+        );
+        onRefreshData();
+      }
+    } catch {
+      /* non-critical */
+    } finally {
+      setAccessBusy(null);
+    }
+  };
+
+  // Actions cell shared by the three manageable tables.
+  const RecordActions = ({ r, prefix }: { r: any; prefix: string }) => (
+    <td className="px-4 py-3.5 text-center">
+      {canManageShared ? (
+        <div className="flex items-center justify-center gap-1.5">
+          <button
+            title="Edit record"
+            data-testid={`${prefix}-edit-${r.id}`}
+            onClick={() => { setEditingRecord({ ...r }); setRecordErr(""); }}
+            className="p-1.5 rounded-lg bg-slate-700/70 hover:bg-indigo-500/30 text-slate-200 hover:text-indigo-300 transition"
+          >
+            <Pencil className="w-3.5 h-3.5" />
+          </button>
+          <button
+            title="Delete record (reason is recorded)"
+            data-testid={`${prefix}-delete-${r.id}`}
+            onClick={() => { setDeletingRecord(r); setDeleteReason(""); setRecordErr(""); }}
+            className="p-1.5 rounded-lg bg-slate-700/70 hover:bg-rose-500/30 text-slate-200 hover:text-rose-300 transition"
+          >
+            <Trash2 className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      ) : (
+        <span
+          title="Only the OWNER, or a manager granted permission by the OWNER, can manage records"
+          className="inline-flex items-center gap-1 text-[9px] font-bold text-slate-500 bg-slate-800 border border-slate-700 px-2 py-1 rounded"
+        >
+          <Lock className="w-3 h-3" /> LOCKED
+        </span>
+      )}
+    </td>
+  );
 
   const refreshAssetAuditLogs = async () => {
     if (moduleType !== "ASSETS") return;
@@ -746,6 +961,17 @@ export default function SharedEnterpriseModule({
 
         <div className="flex items-center space-x-3">
           <AiSectionGuide moduleKey="SHARED" section={moduleType} variant="header" />
+          {MANAGEABLE && isOwnerUser && (
+            <button
+              onClick={openAccessControl}
+              data-testid="record-access-btn"
+              className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold shadow transition"
+              title="Grant or remove record management/deletion permission for managers"
+            >
+              <ShieldCheck className="w-4 h-4" />
+              Manage Access
+            </button>
+          )}
           {/* Download buttons — shared across ASSETS and INVENTORY modules, execs only */}
           {moduleType === "ASSETS" && (currentUser?.role === "OWNER" || currentUser?.role === "GENERAL_MANAGER") && (
             <div className="flex items-center gap-2">
@@ -1312,6 +1538,7 @@ export default function SharedEnterpriseModule({
                   <th className="px-4 py-3">Location</th>
                   <th className="px-4 py-3">Payment Terms</th>
                   <th className="px-4 py-3 text-right">Total Supplied</th>
+                  <th className="px-4 py-3 text-center">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-700/60">
@@ -1342,6 +1569,7 @@ export default function SharedEnterpriseModule({
                     <td className="px-4 py-3.5 text-right font-extrabold text-emerald-400">
                       {formatMoney(s.totalSuppliedGhs, currentCurrency)}
                     </td>
+                    <RecordActions r={s} prefix="supplier" />
                   </tr>
                 ))}
               </tbody>
@@ -1356,9 +1584,10 @@ export default function SharedEnterpriseModule({
                   <th className="px-4 py-3">Role / Position</th>
                   <th className="px-4 py-3">Assigned Business</th>
                   <th className="px-4 py-3">Location (Region · District · Town)</th>
-                  <th className="px-4 py-3 text-right">Monthly Salary</th>
-                  <th className="px-4 py-3 text-center">Status</th>
-                </tr>
+                    <th className="px-4 py-3 text-right">Monthly Salary</th>
+                    <th className="px-4 py-3 text-center">Status</th>
+                    <th className="px-4 py-3 text-center">Actions</th>
+                  </tr>
               </thead>
               <tbody className="divide-y divide-slate-700/60">
                 {visibleEmployees.map((emp) => (
@@ -1390,6 +1619,7 @@ export default function SharedEnterpriseModule({
                         {emp.status}
                       </span>
                     </td>
+                    <RecordActions r={emp} prefix="employee" />
                   </tr>
                 ))}
               </tbody>
@@ -1645,6 +1875,7 @@ export default function SharedEnterpriseModule({
                   <th className="px-4 py-3">Payment</th>
                   <th className="px-4 py-3 text-right">Amount</th>
                   <th className="px-4 py-3 text-center">Status</th>
+                  <th className="px-4 py-3 text-center">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-700/60">
@@ -1720,6 +1951,7 @@ export default function SharedEnterpriseModule({
                           {t.status}
                         </span>
                       </td>
+                      <RecordActions r={t} prefix="trx" />
                     </tr>
                   );
                 })}
@@ -1728,6 +1960,57 @@ export default function SharedEnterpriseModule({
           )}
         </div>
       </div>
+
+      {/* Deletion audit trail — every deleted record, with user, date, time & reason */}
+      {MANAGEABLE && (
+        <div
+          data-testid="deletion-log"
+          className="bg-slate-800/90 border border-slate-700/80 rounded-2xl p-5 shadow-xl"
+        >
+          <h3 className="text-base font-bold text-white flex items-center gap-2 mb-1">
+            <Trash2 className="w-4 h-4 text-rose-400" />
+            Deletion Audit Trail
+          </h3>
+          <p className="text-[11px] text-slate-400 mb-3">
+            Every record removed from this module — permanently logged with the user, date, time and reason.
+          </p>
+          {deletionLogs.length === 0 ? (
+            <p className="text-xs text-slate-500 py-3 text-center" data-testid="deletion-log-empty">
+              No records have been deleted from this module.
+            </p>
+          ) : (
+            <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
+              {deletionLogs.map((l) => (
+                <div
+                  key={l.id}
+                  data-testid={`deletion-log-row-${l.id}`}
+                  className="rounded-xl bg-slate-900/70 border border-rose-500/20 px-4 py-3"
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="text-xs font-bold text-rose-300 truncate">{l.recordLabel}</div>
+                      <div className="text-[11px] text-slate-300 mt-0.5">
+                        Reason: <span className="text-slate-100">{l.reason}</span>
+                      </div>
+                    </div>
+                    <div className="text-right shrink-0">
+                      <div className="text-[11px] font-semibold text-slate-200">
+                        {l.deletedByName}{" "}
+                        <span className="text-[9px] font-black text-slate-400 bg-slate-700/70 px-1.5 py-0.5 rounded">
+                          {l.deletedByRole}
+                        </span>
+                      </div>
+                      <div className="text-[10px] text-slate-500 font-mono mt-0.5">
+                        {l.createdAt ? new Date(l.createdAt).toLocaleString() : "—"}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Modal for adding records */}
       {showModal && (
@@ -1901,6 +2184,284 @@ export default function SharedEnterpriseModule({
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* ─── Record edit modal (OWNER or OWNER-granted manager) ─── */}
+      {editingRecord && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm p-4">
+          <div className="bg-slate-900 border border-slate-700 rounded-2xl p-6 w-full max-w-md shadow-2xl space-y-4">
+            <h3 className="text-lg font-bold text-white">
+              Edit {moduleType === "TRANSACTIONS" ? "Transaction" : moduleType === "SUPPLIERS" ? "Supplier" : "Employee"} —{" "}
+              <span className="text-indigo-300">{recordLabel(editingRecord)}</span>
+            </h3>
+            <form onSubmit={submitRecordEdit} className="space-y-3" data-testid="record-edit-form">
+              {recordErr && (
+                <div className="bg-rose-500/10 border border-rose-500/30 text-rose-300 p-2.5 rounded-lg text-xs">{recordErr}</div>
+              )}
+              {moduleType === "TRANSACTIONS" ? (
+                <>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-400 mb-1">Type</label>
+                      <select
+                        value={editingRecord.type}
+                        onChange={(e) => setEditingRecord({ ...editingRecord, type: e.target.value })}
+                        className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-white text-sm"
+                      >
+                        <option value="INCOME">Income / Revenue</option>
+                        <option value="EXPENSE">Expense</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-400 mb-1">Amount (GH₵)</label>
+                      <input type="number" step="0.01" value={editingRecord.amountGhs}
+                        onChange={(e) => setEditingRecord({ ...editingRecord, amountGhs: Number(e.target.value) })}
+                        className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-white text-sm" />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-400 mb-1">Category</label>
+                    <input type="text" value={editingRecord.category || ""}
+                      onChange={(e) => setEditingRecord({ ...editingRecord, category: e.target.value })}
+                      className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-white text-sm" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-400 mb-1">Payment Method</label>
+                    <select
+                      value={editingRecord.paymentMethod}
+                      onChange={(e) => setEditingRecord({ ...editingRecord, paymentMethod: e.target.value })}
+                      className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-white text-sm"
+                    >
+                      <option value="MTN_MOMO">MTN Mobile Money (MoMo)</option>
+                      <option value="TELECEL_CASH">Telecel Cash</option>
+                      <option value="BANK_TRANSFER">Ecobank / GCB Bank Transfer</option>
+                      <option value="POS_CARD">POS Hardware Checkout</option>
+                      <option value="CASH">Cash Payment</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-400 mb-1">Description / Memo</label>
+                    <input type="text" data-testid="edit-trx-description" value={editingRecord.description || ""}
+                      onChange={(e) => setEditingRecord({ ...editingRecord, description: e.target.value })}
+                      className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-white text-sm" />
+                  </div>
+                </>
+              ) : moduleType === "SUPPLIERS" ? (
+                <>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-400 mb-1">Supplier Name</label>
+                    <input type="text" data-testid="edit-supplier-name" value={editingRecord.name || ""}
+                      onChange={(e) => setEditingRecord({ ...editingRecord, name: e.target.value })}
+                      className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-white text-sm" />
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-400 mb-1">Category</label>
+                      <input type="text" value={editingRecord.category || ""}
+                        onChange={(e) => setEditingRecord({ ...editingRecord, category: e.target.value })}
+                        className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-white text-sm" />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-400 mb-1">Contact Person</label>
+                      <input type="text" value={editingRecord.contactPerson || ""}
+                        onChange={(e) => setEditingRecord({ ...editingRecord, contactPerson: e.target.value })}
+                        className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-white text-sm" />
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-400 mb-1">Phone</label>
+                      <input type="text" value={editingRecord.phone || ""}
+                        onChange={(e) => setEditingRecord({ ...editingRecord, phone: e.target.value })}
+                        className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-white text-sm" />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-400 mb-1">Email</label>
+                      <input type="text" value={editingRecord.email || ""}
+                        onChange={(e) => setEditingRecord({ ...editingRecord, email: e.target.value })}
+                        className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-white text-sm" />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-400 mb-1">Payment Terms</label>
+                    <select
+                      value={editingRecord.paymentTerms || "NET_30"}
+                      onChange={(e) => setEditingRecord({ ...editingRecord, paymentTerms: e.target.value })}
+                      className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-white text-sm"
+                    >
+                      <option value="NET_14">NET_14</option>
+                      <option value="NET_30">NET_30</option>
+                      <option value="CASH_ON_DELIVERY">CASH_ON_DELIVERY</option>
+                      <option value="MOMO_INSTANT">MOMO_INSTANT</option>
+                    </select>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-400 mb-1">Employee Name</label>
+                    <input type="text" data-testid="edit-employee-name" value={editingRecord.name || ""}
+                      onChange={(e) => setEditingRecord({ ...editingRecord, name: e.target.value })}
+                      className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-white text-sm" />
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-400 mb-1">Role / Position</label>
+                      <input type="text" value={editingRecord.role || ""}
+                        onChange={(e) => setEditingRecord({ ...editingRecord, role: e.target.value })}
+                        className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-white text-sm" />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-400 mb-1">Monthly Salary (GH₵)</label>
+                      <input type="number" step="0.01" value={editingRecord.salaryGhs}
+                        onChange={(e) => setEditingRecord({ ...editingRecord, salaryGhs: Number(e.target.value) })}
+                        className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-white text-sm" />
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-400 mb-1">Phone</label>
+                      <input type="text" value={editingRecord.phone || ""}
+                        onChange={(e) => setEditingRecord({ ...editingRecord, phone: e.target.value })}
+                        className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-white text-sm" />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-400 mb-1">Status</label>
+                      <select
+                        value={editingRecord.status || "ACTIVE"}
+                        onChange={(e) => setEditingRecord({ ...editingRecord, status: e.target.value })}
+                        className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-white text-sm"
+                      >
+                        <option value="ACTIVE">ACTIVE</option>
+                        <option value="ON_LEAVE">ON_LEAVE</option>
+                        <option value="SUSPENDED">SUSPENDED</option>
+                      </select>
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-400 mb-1">Assigned Business</label>
+                    <select
+                      value={String(editingRecord.businessId)}
+                      onChange={(e) => setEditingRecord({ ...editingRecord, businessId: Number(e.target.value) })}
+                      className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-white text-sm"
+                    >
+                      {businesses.map((b: any) => (
+                        <option key={b.id} value={b.id}>{b.name} ({b.code})</option>
+                      ))}
+                    </select>
+                  </div>
+                </>
+              )}
+              <div className="flex justify-end space-x-3 pt-3 border-t border-slate-800">
+                <button type="button" onClick={() => setEditingRecord(null)}
+                  className="px-4 py-2 rounded-lg bg-slate-800 text-slate-300 hover:bg-slate-700 text-xs font-semibold">
+                  Cancel
+                </button>
+                <button type="submit" disabled={recordBusy} data-testid="record-edit-save"
+                  className="px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold shadow-md transition disabled:opacity-50">
+                  {recordBusy ? "Saving…" : "Save Changes"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ─── Delete confirmation — mandatory reason, permanently audited ─── */}
+      {deletingRecord && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm p-4">
+          <div className="bg-slate-900 border border-rose-500/40 rounded-2xl p-6 w-full max-w-md shadow-2xl space-y-4" data-testid="delete-confirm-modal">
+            <div className="flex items-center gap-2 text-rose-300 font-bold text-base">
+              <AlertTriangle className="w-5 h-5" />
+              Confirm permanent deletion
+            </div>
+            <p className="text-xs text-slate-300 leading-relaxed">
+              You are about to delete <b className="text-rose-300">{recordLabel(deletingRecord)}</b>.
+              This cannot be undone. The deletion is permanently recorded with your
+              user, the date &amp; time, and the reason you give below.
+            </p>
+            {recordErr && (
+              <div className="bg-rose-500/10 border border-rose-500/30 text-rose-300 p-2.5 rounded-lg text-xs">{recordErr}</div>
+            )}
+            <div>
+              <label className="block text-xs font-semibold text-slate-400 mb-1">
+                Reason for deletion <span className="text-rose-400">* (recorded in the audit trail)</span>
+              </label>
+              <textarea
+                rows={2}
+                value={deleteReason}
+                onChange={(e) => setDeleteReason(e.target.value)}
+                placeholder="e.g. Duplicate entry created in error…"
+                data-testid="delete-reason-input"
+                className="w-full px-3 py-2 bg-slate-800 border border-rose-500/40 rounded-lg text-white text-sm"
+              />
+            </div>
+            <div className="flex justify-end space-x-3 pt-1 border-t border-slate-800">
+              <button type="button" onClick={() => { setDeletingRecord(null); setDeleteReason(""); }}
+                className="px-4 py-2 rounded-lg bg-slate-800 text-slate-300 hover:bg-slate-700 text-xs font-semibold">
+                Cancel
+              </button>
+              <button
+                onClick={confirmRecordDelete}
+                disabled={recordBusy || deleteReason.trim().length < 3}
+                data-testid="delete-confirm-btn"
+                className="px-4 py-2 rounded-lg bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold shadow-md transition disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                {recordBusy ? "Deleting…" : "Delete Record"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ─── OWNER access-control console ─── */}
+      {showAccessModal && isOwnerUser && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm p-4">
+          <div className="bg-slate-900 border border-slate-700 rounded-2xl p-6 w-full max-w-lg shadow-2xl space-y-4" data-testid="record-access-modal">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <ShieldCheck className="w-5 h-5 text-indigo-300" />
+                <h3 className="text-lg font-bold text-white">Record Access Control</h3>
+              </div>
+              <button onClick={() => setShowAccessModal(false)} data-testid="access-modal-close" className="p-1 rounded hover:bg-slate-800 text-slate-400 hover:text-white">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <p className="text-[11px] text-slate-400 leading-relaxed">
+              You (the OWNER) can <b>always</b> add, edit and delete records in Transactions &amp; MoMo,
+              Suppliers &amp; Vendors and Employees &amp; Payroll. Use the toggles to grant or remove
+              the same power for selected managers. Every deletion is logged with user, date, time and reason.
+            </p>
+            <div className="space-y-2 max-h-80 overflow-y-auto pr-1">
+              {accessUsers.map((u) => (
+                <div key={u.id} className="flex items-center justify-between gap-3 rounded-xl bg-slate-800/70 border border-slate-700 px-4 py-3">
+                  <div className="min-w-0">
+                    <div className="text-xs font-bold text-white truncate">{u.name}</div>
+                    <div className="text-[10px] text-slate-400">
+                      <span className="font-black text-cyan-300">{u.role}</span>
+                      {u.assignedBusinessId ? ` · ${getBusinessName(u.assignedBusinessId)}` : " · All businesses"}
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => toggleRecordAccess(u)}
+                    disabled={accessBusy === u.id}
+                    data-testid={`access-toggle-${u.id}`}
+                    className={`shrink-0 px-3 py-1.5 rounded-lg text-[10px] font-black transition ${
+                      u.canManageRecords
+                        ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 hover:bg-emerald-500/30"
+                        : "bg-slate-700/70 text-slate-400 border border-slate-600 hover:bg-slate-600"
+                    }`}
+                  >
+                    {accessBusy === u.id ? "…" : u.canManageRecords ? "CAN MANAGE & DELETE ✓" : "NO ACCESS"}
+                  </button>
+                </div>
+              ))}
+              {accessUsers.length === 0 && (
+                <p className="text-xs text-slate-500 text-center py-4">Loading users…</p>
+              )}
+            </div>
           </div>
         </div>
       )}

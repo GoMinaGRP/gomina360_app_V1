@@ -30,6 +30,26 @@ export const users = pgTable("users", {
   canRecordExpenses: boolean("can_record_expenses").default(false), // requires BRANCH_MANAGER permission
   canManageStock: boolean("can_manage_stock").default(false),      // requires BRANCH_MANAGER permission
   canExportData: boolean("can_export_data").default(false),        // BRANCH_MANAGER & WORKER export permission toggle
+  // OWNER-granted permission to manage (edit) & delete shared enterprise records
+  // (Transactions & MoMo, Suppliers & Vendors, Employees & Payroll). The OWNER
+  // always retains full control; managers act only while this flag is granted.
+  canManageRecords: boolean("can_manage_records").default(false),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+// Immutable audit trail of every shared-record deletion: WHO deleted WHAT,
+// WHEN (date + time) and WHY (mandatory reason), with a full snapshot of the
+// removed record so nothing is ever lost without trace.
+export const recordDeletionLogs = pgTable("record_deletion_logs", {
+  id: serial("id").primaryKey(),
+  module: text("module").notNull(), // 'TRANSACTIONS' | 'SUPPLIERS' | 'EMPLOYEES'
+  recordId: integer("record_id").notNull(),
+  recordLabel: text("record_label").notNull(), // e.g. TRX-2026-4521, 'Ghafeed Ltd'
+  recordSnapshot: jsonb("record_snapshot"), // full row at moment of deletion
+  reason: text("reason").notNull(),
+  deletedByUserId: integer("deleted_by_user_id"),
+  deletedByName: text("deleted_by_name").notNull(),
+  deletedByRole: text("deleted_by_role").notNull(),
   createdAt: timestamp("created_at").defaultNow(),
 });
 

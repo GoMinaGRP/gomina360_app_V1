@@ -1309,6 +1309,7 @@ export const GUIDES: Record<string, Record<string, SectionGuide>> = {
         },
       ],
       faqs: [
+        { q: "Who can edit or delete records here?", match: ["delete", "edit", "permission", "who", "remove", "manage"], answer: "The OWNER always can. Managers only when the OWNER has granted them record-management permission via “Manage Access”. Deleting asks for a reason and is permanently logged in the Deletion Audit Trail at the bottom of this page with the user, date and time." },
         { q: "Why register suppliers?", match: ["why", "purpose"], answer: "Tagging purchases to suppliers shows pricing trends and reliability per vendor — and keeps the Purchases sections in the business modules tidy." },
       ],
     },
@@ -1326,6 +1327,7 @@ export const GUIDES: Record<string, Record<string, SectionGuide>> = {
         },
       ],
       faqs: [
+        { q: "Who can edit or delete records here?", match: ["delete", "edit", "permission", "who", "remove", "manage"], answer: "The OWNER always can. Managers only when the OWNER has granted them record-management permission via “Manage Access”. Deleting asks for a reason and is permanently logged in the Deletion Audit Trail at the bottom of this page with the user, date and time." },
         { q: "Worker vs Branch Manager?", match: ["role", "worker", "manager"], answer: "WORKERs record sales and expenses in their own branch only; BRANCH_MANAGERs also manage workers, assets and branch registers. Owners/GMs see everything." },
       ],
     },
@@ -1398,6 +1400,7 @@ export const GUIDES: Record<string, Record<string, SectionGuide>> = {
         },
       ],
       faqs: [
+        { q: "Who can edit or delete records here?", match: ["delete", "edit", "permission", "who", "remove", "manage"], answer: "The OWNER always can. Managers only when the OWNER has granted them record-management permission via “Manage Access”. Deleting asks for a reason and is permanently logged in the Deletion Audit Trail at the bottom of this page with the user, date and time." },
         { q: "Is MoMo separated from cash?", match: ["momo", "cash", "method"], answer: "Yes — each transaction carries its method, so MoMo vs cash vs bank totals can be reconciled separately at close of day." },
       ],
     },

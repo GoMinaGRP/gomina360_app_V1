@@ -8,9 +8,234 @@ import {
   customers,
   suppliers,
   businesses,
+  recordDeletionLogs,
 } from "@/db/schema";
-import { eq } from "drizzle-orm";
+import { desc, eq } from "drizzle-orm";
 import { computeStockStatus } from "@/lib/stock";
+import {
+  canManageSharedRecords,
+  resolveRecordActor,
+} from "@/lib/recordPermissions";
+
+// Which enterprise entity a deletion-log row refers to.
+const MODULE_TABLE: Record<string, any> = {
+  SUPPLIERS: suppliers,
+  EMPLOYEES: employees,
+};
+
+/**
+ * GET /api/enterprise?deletionLogs=1&module=SUPPLIERS
+ * Returns the immutable deletion audit trail (user, date, time, reason,
+ * record snapshot) for a shared module.
+ */
+export async function GET(request: Request) {
+  try {
+    const { searchParams } = new URL(request.url);
+    if (searchParams.get("deletionLogs") !== "1") {
+      return NextResponse.json(
+        { success: false, error: "Unsupported query." },
+        { status: 400 }
+      );
+    }
+    const module = (searchParams.get("module") || "").toUpperCase();
+    let rows = await db
+      .select()
+      .from(recordDeletionLogs)
+      .orderBy(desc(recordDeletionLogs.id))
+      .limit(50);
+    if (module) rows = rows.filter((r) => r.module === module);
+    return NextResponse.json({ success: true, logs: rows });
+  } catch (error: any) {
+    return NextResponse.json(
+      { success: false, error: error.message },
+      { status: 500 }
+    );
+  }
+}
+
+/**
+ * PATCH /api/enterprise — edit a supplier or employee record.
+ * OWNER always allowed; other users only with the OWNER-granted
+ * canManageRecords flag (resolved server-side from the database).
+ */
+export async function PATCH(request: Request) {
+  try {
+    const body = await request.json();
+    const { entityType, id, data, actorUserId } = body || {};
+    const moduleKey = String(entityType || "").toUpperCase();
+    const table = MODULE_TABLE[moduleKey];
+    if (!table) {
+      return NextResponse.json(
+        { success: false, error: "entityType must be SUPPLIERS or EMPLOYEES." },
+        { status: 400 }
+      );
+    }
+    const recordId = Number(id);
+    if (!Number.isFinite(recordId)) {
+      return NextResponse.json(
+        { success: false, error: "Valid record id is required." },
+        { status: 400 }
+      );
+    }
+
+    const actor = await resolveRecordActor(actorUserId);
+    if (!canManageSharedRecords(actor)) {
+      return NextResponse.json(
+        {
+          success: false,
+          error:
+            "Not permitted — only the OWNER (or a manager the OWNER has granted record-management permission) can edit records.",
+        },
+        { status: 403 }
+      );
+    }
+
+    const [existing] = await db.select().from(table).where(eq(table.id, recordId));
+    if (!existing) {
+      return NextResponse.json(
+        { success: false, error: "Record not found." },
+        { status: 404 }
+      );
+    }
+
+    const d = data || {};
+    const updates: Record<string, any> = {};
+    if (moduleKey === "SUPPLIERS") {
+      if (typeof d.name === "string" && d.name.trim()) updates.name = d.name.trim();
+      if (typeof d.category === "string" && d.category.trim()) updates.category = d.category.trim();
+      if (typeof d.contactPerson === "string" && d.contactPerson.trim()) updates.contactPerson = d.contactPerson.trim();
+      if (typeof d.phone === "string" && d.phone.trim()) updates.phone = d.phone.trim();
+      if (typeof d.email === "string") updates.email = d.email.trim() || null;
+      if (typeof d.paymentTerms === "string" && d.paymentTerms.trim()) updates.paymentTerms = d.paymentTerms.trim();
+    } else {
+      // EMPLOYEES
+      if (typeof d.name === "string" && d.name.trim()) updates.name = d.name.trim();
+      if (typeof d.role === "string" && d.role.trim()) updates.role = d.role.trim();
+      if (typeof d.phone === "string" && d.phone.trim()) updates.phone = d.phone.trim();
+      if (typeof d.status === "string" && d.status.trim()) updates.status = d.status.trim();
+      if (d.salaryGhs !== undefined) {
+        const v = Number(d.salaryGhs);
+        if (!Number.isFinite(v) || v < 0) {
+          return NextResponse.json(
+            { success: false, error: "Salary must be a positive number." },
+            { status: 400 }
+          );
+        }
+        updates.salaryGhs = v;
+      }
+      if (d.businessId !== undefined) updates.businessId = Number(d.businessId) || existing.businessId;
+    }
+    if (d.region !== undefined) updates.region = d.region || null;
+    if (d.district !== undefined) updates.district = d.district || null;
+    if (d.town !== undefined) updates.town = d.town || null;
+
+    if (Object.keys(updates).length === 0) {
+      return NextResponse.json(
+        { success: false, error: "Nothing to update." },
+        { status: 400 }
+      );
+    }
+
+    const [updated] = await db
+      .update(table)
+      .set(updates)
+      .where(eq(table.id, recordId))
+      .returning();
+    return NextResponse.json({ success: true, item: updated });
+  } catch (error: any) {
+    return NextResponse.json(
+      { success: false, error: error.message },
+      { status: 500 }
+    );
+  }
+}
+
+/**
+ * DELETE /api/enterprise — permanently delete a supplier or employee record.
+ * Permission-gated exactly like PATCH and ALWAYS writes an immutable audit
+ * row (module, record snapshot, user, date+time, mandatory reason) first.
+ */
+export async function DELETE(request: Request) {
+  try {
+    const body = await request.json().catch(() => ({}));
+    const { entityType, id, reason, actorUserId } = body || {};
+    const moduleKey = String(entityType || "").toUpperCase();
+    const table = MODULE_TABLE[moduleKey];
+    if (!table) {
+      return NextResponse.json(
+        { success: false, error: "entityType must be SUPPLIERS or EMPLOYEES." },
+        { status: 400 }
+      );
+    }
+    const recordId = Number(id);
+    if (!Number.isFinite(recordId)) {
+      return NextResponse.json(
+        { success: false, error: "Valid record id is required." },
+        { status: 400 }
+      );
+    }
+    const cleanReason = String(reason || "").trim();
+    if (cleanReason.length < 3) {
+      return NextResponse.json(
+        { success: false, error: "A deletion reason is required and is recorded permanently." },
+        { status: 400 }
+      );
+    }
+
+    const actor = await resolveRecordActor(actorUserId);
+    if (!canManageSharedRecords(actor)) {
+      return NextResponse.json(
+        {
+          success: false,
+          error:
+            "Not permitted — only the OWNER (or a manager the OWNER has granted record-management permission) can delete records.",
+        },
+        { status: 403 }
+      );
+    }
+
+    const [existing] = await db.select().from(table).where(eq(table.id, recordId));
+    if (!existing) {
+      return NextResponse.json(
+        { success: false, error: "Record not found." },
+        { status: 404 }
+      );
+    }
+
+    const label =
+      moduleKey === "SUPPLIERS"
+        ? existing.name
+        : `${existing.name} (${existing.role})`;
+
+    // Immutable audit row BEFORE the delete lands.
+    const [log] = await db
+      .insert(recordDeletionLogs)
+      .values({
+        module: moduleKey,
+        recordId: existing.id,
+        recordLabel: label,
+        recordSnapshot: existing,
+        reason: cleanReason,
+        deletedByUserId: actor?.id ?? null,
+        deletedByName: actor?.name || "Unknown",
+        deletedByRole: actor?.role || "UNKNOWN",
+      })
+      .returning();
+
+    await db.delete(table).where(eq(table.id, recordId));
+
+    return NextResponse.json({
+      success: true,
+      deleted: { id: existing.id, label },
+      auditLogId: log.id,
+    });
+  } catch (error: any) {
+    return NextResponse.json(
+      { success: false, error: error.message },
+      { status: 500 }
+    );
+  }
+}
 
 export async function POST(request: Request) {
   try {

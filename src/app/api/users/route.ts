@@ -137,6 +137,7 @@ export async function PATCH(request: Request) {
       canRecordExpenses,
       canManageStock,
       canExportData,
+      canManageRecords,
     } = body;
 
     if (!userId) {
@@ -152,6 +153,15 @@ export async function PATCH(request: Request) {
     if (requestingUserRole === "GENERAL_MANAGER" && targetUser.role === "OWNER") {
       return NextResponse.json(
         { success: false, error: "GENERAL_MANAGER is unauthorized to modify the OWNER account or permissions" },
+        { status: 403 }
+      );
+    }
+
+    // Only the OWNER can grant or revoke shared-record management/deletion
+    // permission (Transactions & MoMo, Suppliers & Vendors, Employees & Payroll).
+    if (canManageRecords !== undefined && requestingUserRole !== "OWNER") {
+      return NextResponse.json(
+        { success: false, error: "Only the OWNER can grant or remove record-management permission." },
         { status: 403 }
       );
     }
@@ -173,6 +183,7 @@ export async function PATCH(request: Request) {
         canRecordExpenses: canRecordExpenses !== undefined ? Boolean(canRecordExpenses) : targetUser.canRecordExpenses,
         canManageStock: canManageStock !== undefined ? Boolean(canManageStock) : targetUser.canManageStock,
         canExportData: canExportData !== undefined ? Boolean(canExportData) : targetUser.canExportData,
+        canManageRecords: canManageRecords !== undefined ? Boolean(canManageRecords) : targetUser.canManageRecords,
       })
       .where(eq(users.id, Number(userId)))
       .returning();
