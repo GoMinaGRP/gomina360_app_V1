@@ -9,6 +9,7 @@ import {
   Pencil,
   Plus,
   Power,
+  RotateCcw,
   ShieldCheck,
   Trash2,
   X,
@@ -44,7 +45,7 @@ interface ManageBusinessesModalProps {
   onDeleted?: (code: string) => void;
 }
 
-type Mode = "list" | "edit" | "delete";
+type Mode = "list" | "edit" | "delete" | "reset";
 
 export default function ManageBusinessesModal({
   isOpen,
@@ -83,6 +84,11 @@ export default function ManageBusinessesModal({
   const [deleteCounts, setDeleteCounts] = useState<any | null>(null);
   const [confirmText, setConfirmText] = useState("");
 
+  // Reset-confirmation state
+  const [resetCounts, setResetCounts] = useState<any | null>(null);
+  const [resetMasters, setResetMasters] = useState(false);
+  const [resetStaffUsers, setResetStaffUsers] = useState(false);
+
   const sorted = useMemo(
     () => [...businesses].sort((a, b) => a.id - b.id),
     [businesses]
@@ -97,6 +103,9 @@ export default function ManageBusinessesModal({
       setArmedCode(null);
       setConfirmText("");
       setDeleteCounts(null);
+      setResetCounts(null);
+      setResetMasters(false);
+      setResetStaffUsers(false);
     }
   }, [isOpen]);
 
@@ -134,6 +143,59 @@ export default function ManageBusinessesModal({
       if (res.ok && d?.success) setDeleteCounts(d.counts);
     } catch {
       /* counts are informational only */
+    }
+  };
+
+  const openReset = async (biz: any) => {
+    setSelected(biz);
+    setConfirmText("");
+    setResetCounts(null);
+    setResetMasters(false);
+    setResetStaffUsers(false);
+    setError("");
+    setNotice("");
+    setMode("reset");
+    try {
+      const res = await fetch(`/api/businesses/${biz.id}`);
+      const d = await res.json();
+      if (res.ok && d?.success) setResetCounts(d.counts);
+    } catch {
+      /* counts are informational only */
+    }
+  };
+
+  const handleReset = async () => {
+    if (!selected || confirmText.trim() !== selected.code) return;
+    setBusy(true);
+    setError("");
+    try {
+      const res = await fetch(`/api/businesses/${selected.id}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          actorUserId: currentUser?.id ?? null,
+          confirmCode: confirmText.trim(),
+          resetMasterLists: resetMasters,
+          resetUsers: resetStaffUsers,
+        }),
+      });
+      const d = await res.json().catch(() => null);
+      if (res.ok && d?.success) {
+        await onChanged();
+        setNotice(
+          `"${d.reset.name}" (${d.reset.code}) reset to a NEW business state — ` +
+            `${d.removedRecords} operational records cleared; starter stock kit and a zero-based dashboard re-seeded.` +
+            (resetMasters ? " Master lists were reset to type defaults." : " Master lists preserved.") +
+            (resetStaffUsers ? ` ${d.usersUnassigned} staff user(s) un-assigned.` : " Staff users kept.")
+        );
+        resetToList();
+      } else {
+        setError(d?.error || "Failed to reset the business.");
+      }
+    } catch (err: any) {
+      setError(err?.message || "Network error while resetting the business.");
+    } finally {
+      setBusy(false);
     }
   };
 
@@ -278,6 +340,7 @@ export default function ManageBusinessesModal({
                   "Owner console — add, edit, rename, relocate, change type, deactivate or permanently delete any unit"}
                 {mode === "edit" && `Editing ${selected?.name} (${selected?.code})`}
                 {mode === "delete" && `Confirm permanent deletion of ${selected?.name}`}
+                {mode === "reset" && `Reset ${selected?.name} to a new business state`}
               </p>
             </div>
           </div>
@@ -433,6 +496,14 @@ export default function ManageBusinessesModal({
                                 : inactive
                                 ? "Re-activate"
                                 : "Deactivate"}
+                            </button>
+                            <button
+                              onClick={() => openReset(biz)}
+                              data-testid={`manage-biz-reset-${biz.code}`}
+                              title="Reset to new business state — clears all operational records"
+                              className="p-2 rounded-lg bg-slate-700/70 hover:bg-cyan-500/30 text-slate-200 hover:text-cyan-300 transition"
+                            >
+                              <RotateCcw className="w-4 h-4" />
                             </button>
                             <button
                               onClick={() => openDelete(biz)}
@@ -687,6 +758,120 @@ export default function ManageBusinessesModal({
                   className="px-4 py-2 rounded-lg bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold shadow-md transition disabled:opacity-40 disabled:cursor-not-allowed"
                 >
                   {busy ? "Deleting..." : "Permanently Delete Unit"}
+                </button>
+              </div>
+            </div>
+          )}
+
+          {mode === "reset" && selected && (
+            <div className="space-y-4" data-testid="manage-reset-panel">
+              <div className="rounded-xl bg-cyan-500/10 border border-cyan-500/40 p-4">
+                <div className="flex items-center gap-2 text-cyan-300 font-bold text-sm mb-1">
+                  <RotateCcw className="w-4 h-4" />
+                  Reset to new business state — operational history is wiped
+                </div>
+                <p className="text-[12px] text-cyan-200/80 leading-relaxed">
+                  Resetting <b>{selected.name}</b> ({selected.code}) clears every{" "}
+                  <b>sale, stock & inventory item, production record, expense, order and all
+                  other activity logs</b>, then re-seeds the exact workspace a brand-new unit
+                  receives: <b>zero-based dashboard metrics</b> and the category{" "}
+                  <b>starter stock kit</b>. The unit keeps its <b>setup — business type, name,
+                  code, location, branches, enterprise suppliers, staff users and master
+                  lists</b> — unless you choose to reset those too below. This cannot be undone.
+                </p>
+              </div>
+
+              <div
+                className="bg-slate-800/70 border border-slate-700 rounded-xl p-4 text-[12px]"
+                data-testid="manage-reset-counts"
+              >
+                <div className="text-xs font-bold text-slate-300 uppercase tracking-wide mb-2">
+                  Operational records that will be cleared
+                </div>
+                {resetCounts ? (
+                  <>
+                    {countRow("Inventory / stock items (replaced by starter kit)", resetCounts.groups.inventoryItems)}
+                    {countRow("Sales documents & orders", resetCounts.groups.salesDocuments)}
+                    {countRow("Financial transactions", resetCounts.groups.transactions)}
+                    {countRow("Production & operations (master products kept unless reset)", resetCounts.groups.productionAndOps)}
+                    {countRow("Employees (payroll records)", resetCounts.groups.employees)}
+                    {countRow("Customers", resetCounts.groups.customers)}
+                    {countRow("Assets", resetCounts.groups.assets)}
+                    {countRow("Checklist entries (templates kept unless master reset)", resetCounts.groups.checklists)}
+                    {countRow("Financial metric periods", resetCounts.groups.metrics)}
+                    {countRow("Custom expense categories", resetCounts.groups.expenseCategories)}
+                    {countRow("Export records", resetCounts.groups.exports)}
+                    <div className="flex items-center justify-between pt-2 mt-1 border-t border-slate-700">
+                      <span className="font-bold text-white">TOTAL OPERATIONAL RECORDS</span>
+                      <span className="font-black text-cyan-300">
+                        {resetCounts.totalRecords}
+                      </span>
+                    </div>
+                  </>
+                ) : (
+                  <div className="text-slate-400 text-xs py-2">Counting operational records…</div>
+                )}
+              </div>
+
+              <div className="bg-slate-800/40 border border-slate-700 rounded-xl p-4 space-y-3 text-[12px]">
+                <label className="flex items-start gap-2.5 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={resetMasters}
+                    onChange={(e) => setResetMasters(e.target.checked)}
+                    data-testid="manage-reset-masters"
+                    className="mt-0.5 accent-cyan-500"
+                  />
+                  <span className="text-slate-200">
+                    <b className="text-cyan-300">Also reset master lists</b> — product / type
+                    catalogs (poultry products, block types, menu items) and daily-checklist
+                    templates are wiped and re-seeded to the type defaults.
+                  </span>
+                </label>
+                <label className="flex items-start gap-2.5 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={resetStaffUsers}
+                    onChange={(e) => setResetStaffUsers(e.target.checked)}
+                    data-testid="manage-reset-users"
+                    className="mt-0.5 accent-cyan-500"
+                  />
+                  <span className="text-slate-200">
+                    <b className="text-cyan-300">Also un-assign staff users</b> — user accounts
+                    are kept but un-assigned from this unit, ready for re-deployment.
+                  </span>
+                </label>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-400 mb-1">
+                  Type <span className="font-black text-cyan-300">{selected.code}</span> to confirm
+                  reset
+                </label>
+                <input
+                  type="text"
+                  value={confirmText}
+                  onChange={(e) => setConfirmText(e.target.value)}
+                  placeholder={selected.code}
+                  data-testid="manage-reset-confirm-input"
+                  className="w-full px-3 py-2 bg-slate-800 border border-cyan-500/40 rounded-lg text-white text-sm"
+                />
+              </div>
+
+              <div className="flex justify-end space-x-3 pt-1">
+                <button
+                  onClick={resetToList}
+                  className="px-4 py-2 rounded-lg bg-slate-800 text-slate-300 hover:bg-slate-700 text-xs font-semibold"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleReset}
+                  disabled={busy || confirmText.trim() !== selected.code}
+                  data-testid="manage-reset-confirm"
+                  className="px-4 py-2 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-bold shadow-md transition disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  {busy ? "Resetting..." : "Reset to New Business State"}
                 </button>
               </div>
             </div>

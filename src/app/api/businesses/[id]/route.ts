@@ -54,6 +54,7 @@ import { eq, inArray } from "drizzle-orm";
 import {
   CATEGORY_ICON,
   reprovisionForTypeChange,
+  provisionBusiness,
 } from "@/lib/businessProvisioning";
 import { resolveOwnerActor } from "@/lib/recordPermissions";
 
@@ -417,6 +418,196 @@ export async function DELETE(request: Request, { params }: { params: Promise<{ i
       success: true,
       deleted: { id: biz.id, code: biz.code, name: biz.name },
       removedRecords: counts.totalRecords,
+    });
+  } catch (error: any) {
+    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+  }
+}
+
+/**
+ * POST /api/businesses/[id] — OWNER "Reset to New Business State".
+ *
+ * Wipes every OPERATIONAL record of the unit (sales, transactions/expenses,
+ * stock & inventory, production & activity logs, orders, deliveries, payroll
+ * records, customers, assets, checklist history, metrics, AI insights, export
+ * manifests) and then re-seeds the exact factory-fresh workspace a brand-new
+ * unit gets (zero-based metrics + category starter kit), so the unit appears
+ * and behaves precisely as if it has just been created.
+ *
+ * PRESERVED by default (setup): the unit row itself (type, code, name,
+ * location, branch), enterprise suppliers, assigned staff user accounts, and
+ * MASTER LISTS (poultry products, block types, restaurant menu items,
+ * checklist templates, expense-category structure is reset since it is
+ * activity-driven).
+ *
+ * Optional owner flags:
+ *   resetMasterLists=true — also wipe master lists (poultry_products,
+ *                           block_types, restaurant_menu_items,
+ *                           checklist_templates → re-seeded to type defaults)
+ *   resetUsers=true       — also un-assign all staff users from this unit
+ *
+ * Safety: spoof-proof DB-resolved OWNER gate + mandatory confirmCode echo.
+ */
+export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
+  try {
+    const { id } = await params;
+    const businessId = parseInt(id, 10);
+    if (!Number.isFinite(businessId)) {
+      return NextResponse.json({ success: false, error: "Invalid business id." }, { status: 400 });
+    }
+    const biz = await loadBusiness(businessId);
+    if (!biz) {
+      return NextResponse.json({ success: false, error: "Business not found." }, { status: 404 });
+    }
+
+    let body: any = {};
+    try {
+      body = await request.json();
+    } catch {
+      body = {};
+    }
+
+    // Spoof-proof enforcement — DB-resolved actor must be the OWNER.
+    const actor = await resolveOwnerActor(body.actorUserId ?? body.requestingUserId);
+    if (!actor) {
+      return NextResponse.json(
+        { success: false, error: "Only the OWNER can reset a business." },
+        { status: 403 }
+      );
+    }
+
+    // Mandatory confirmation gate — the caller must echo the exact unit code.
+    if (body.confirmCode !== biz.code) {
+      return NextResponse.json(
+        { success: false, error: `Reset requires confirmation: send confirmCode "${biz.code}".` },
+        { status: 400 }
+      );
+    }
+
+    const resetMasterLists = body.resetMasterLists === true;
+    const resetUsersFlag = body.resetUsers === true;
+
+    const counts = await relatedCounts(businessId);
+
+    // ── Phase 1: wipe operational records ────────────────────────────────
+    // Asset audit history keys off assetId — purge before assets.
+    const assetRows = await db
+      .select({ id: assets.id })
+      .from(assets)
+      .where(eq(assets.businessId, businessId));
+    const assetIds = assetRows.map((a) => a.id);
+    if (assetIds.length > 0) {
+      await db.delete(assetAuditLogs).where(inArray(assetAuditLogs.assetId, assetIds));
+    }
+
+    const operationals: Array<[any, any]> = [
+      // Finance & sales activity
+      [transactions, transactions.businessId],
+      [salesDocuments, salesDocuments.businessId],
+      [expenseCategories, expenseCategories.businessId],
+      [universalExports, universalExports.businessId],
+      // Stock / inventory (starter kit is re-seeded in phase 2)
+      [inventoryItems, inventoryItems.businessId],
+      // People & asset records (fresh unit has none; staff USERS are kept)
+      [customers, customers.businessId],
+      [employees, employees.businessId],
+      [assets, assets.businessId],
+      // Activity logs — per-type operations
+      [poultryLogs, poultryLogs.businessId],
+      [poultryFlocks, poultryFlocks.businessId],
+      [poultryFeedLogs, poultryFeedLogs.businessId],
+      [poultryWaterLogs, poultryWaterLogs.businessId],
+      [poultryHealthRecords, poultryHealthRecords.businessId],
+      [poultryProduction, poultryProduction.businessId],
+      [poultryChecklists, poultryChecklists.businessId],
+      [blockFactoryLogs, blockFactoryLogs.businessId],
+      [blockFactoryOrders, blockFactoryOrders.businessId],
+      [blockFactoryDeliveries, blockFactoryDeliveries.businessId],
+      [blockFactoryChecklists, blockFactoryChecklists.businessId],
+      [aquacultureLogs, aquacultureLogs.businessId],
+      [aquaculturePonds, aquaculturePonds.businessId],
+      [aquacultureBatches, aquacultureBatches.businessId],
+      [aquacultureFeedLogs, aquacultureFeedLogs.businessId],
+      [aquacultureWaterQualityLogs, aquacultureWaterQualityLogs.businessId],
+      [aquacultureHarvests, aquacultureHarvests.businessId],
+      [aquacultureChecklists, aquacultureChecklists.businessId],
+      [livestockLogs, livestockLogs.businessId],
+      [restaurantLogs, restaurantLogs.businessId],
+      [restaurantOrders, restaurantOrders.businessId],
+      [restaurantWaste, restaurantWaste.businessId],
+      [restaurantPurchases, restaurantPurchases.businessId],
+      [electronicsLogs, electronicsLogs.businessId],
+      [electronicsOrders, electronicsOrders.businessId],
+      [electronicsSerials, electronicsSerials.businessId],
+      [electronicsWarranties, electronicsWarranties.businessId],
+      [electronicsPurchases, electronicsPurchases.businessId],
+      [carWashLogs, carWashLogs.businessId],
+      // Checklist completion history (templates are setup — kept unless opted out)
+      [checklistEntries, checklistEntries.businessId],
+      // Executive dashboards — fresh zero-based row re-seeded in phase 2
+      [businessMetrics, businessMetrics.businessId],
+      [aiInsights, aiInsights.businessId],
+    ];
+    for (const [table, col] of operationals) {
+      await db.delete(table).where(eq(col, businessId));
+    }
+
+    let masterListsReset: string[] = [];
+    if (resetMasterLists) {
+      const masters: Array<[any, any, string]> = [
+        [poultryProducts, poultryProducts.businessId, "poultry_products"],
+        [blockTypes, blockTypes.businessId, "block_types"],
+        [restaurantMenuItems, restaurantMenuItems.businessId, "restaurant_menu_items"],
+        [checklistTemplates, checklistTemplates.businessId, "checklist_templates"],
+      ];
+      for (const [table, col, label] of masters) {
+        await db.delete(table).where(eq(col, businessId));
+        masterListsReset.push(label);
+      }
+    }
+
+    let usersUnassigned = 0;
+    if (resetUsersFlag) {
+      const moved = await db
+        .update(users)
+        .set({ assignedBusinessId: null })
+        .where(eq(users.assignedBusinessId, businessId))
+        .returning({ id: users.id });
+      usersUnassigned = moved.length;
+    }
+
+    // ── Phase 2: re-seed the factory-fresh workspace ─────────────────────
+    // provisionBusiness is idempotent per area — with metrics/inventory wiped
+    // above it recreates exactly what a brand-new unit receives: zero-based
+    // metrics (initial capital intact), the category starter stock kit, and
+    // (if master lists were reset) the default checklist template set.
+    const seeded = await provisionBusiness({
+      id: biz.id,
+      code: biz.code,
+      name: biz.name,
+      category: biz.category,
+      initialCapitalGhs: biz.initialCapitalGhs,
+    });
+
+    return NextResponse.json({
+      success: true,
+      reset: {
+        id: biz.id,
+        code: biz.code,
+        name: biz.name,
+        category: biz.category,
+        status: biz.status,
+      },
+      removedRecords: counts.totalRecords,
+      masterListsReset,
+      usersUnassigned,
+      reseeded: seeded,
+      kept: {
+        businessSetup: true,
+        suppliersShared: true,
+        usersAssigned: !resetUsersFlag,
+        masterLists: !resetMasterLists,
+      },
     });
   } catch (error: any) {
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });
