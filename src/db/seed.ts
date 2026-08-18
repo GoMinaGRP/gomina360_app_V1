@@ -364,6 +364,42 @@ export async function seedDatabase() {
     },
   ]);
 
+  // 2c. Seed initial sign-in credentials + GM enterprise visibility.
+  // Fresh databases must be self-contained: without this, no account could
+  // sign in at all (login requires a password hash). Idempotent by design —
+  // only fills accounts whose password_hash is still NULL so it NEVER
+  // clobbers passwords the OWNER rotated later, and only adds grants that
+  // are missing.
+  const { scryptSync, randomBytes } = await import("crypto");
+  const seedPw = (pw: string) => {
+    const salt = randomBytes(16).toString("hex");
+    return `scrypt:${salt}:${scryptSync(pw, salt, 64).toString("hex")}`;
+  };
+  const seededUsers = await db
+    .select({ id: users.id, role: users.role })
+    .from(users);
+  for (const su of seededUsers) {
+    // Documented factory credentials (OWNER must rotate after first sign-in):
+    //   OWNER          → Owner@GoMina26
+    //   everyone else  → GoMina@User<their id>
+    const initial = su.role === "OWNER" ? "Owner@GoMina26" : `GoMina@User${su.id}`;
+    await db.execute(
+      sql`UPDATE users SET password_hash = ${seedPw(initial)}, password_changed_at = NOW()
+          WHERE id = ${su.id} AND password_hash IS NULL`
+    );
+  }
+  // General Manager starts with visibility of every unit via revocable grants
+  // (the "+7 extra branch(es)" baseline shown in Users & Access).
+  await db.execute(sql`
+    INSERT INTO user_business_access (user_id, business_id, created_by_user_id)
+    SELECT 2, b.id, 1 FROM businesses b
+    WHERE EXISTS (SELECT 1 FROM users WHERE id = 2 AND role = 'GENERAL_MANAGER')
+      AND NOT EXISTS (
+        SELECT 1 FROM user_business_access g
+        WHERE g.user_id = 2 AND g.business_id = b.id
+      )
+  `);
+
   // 3. Insert Business Performance Metrics for 2026-Q1
   await db.insert(businessMetrics).values([
     {
