@@ -65,6 +65,9 @@ export default function GoMinaApp() {
   const [isNewBusinessModalOpen, setIsNewBusinessModalOpen] = useState(false);
   const [isManageBizOpen, setIsManageBizOpen] = useState(false);
   const [isUserAccessOpen, setIsUserAccessOpen] = useState(false);
+  // Secure-session state (declared with the other UI state so the data
+  // refresh callback below can safely bounce a dead session to sign-in).
+  const [signedIn, setSignedIn] = useState(false);
 
   // Baseline snapshot of the highest transaction id at first load. Any transaction
   // created after this point (a new in-app sale/expense) is layered onto the seeded
@@ -74,8 +77,21 @@ export default function GoMinaApp() {
   const refreshAllData = useCallback(async () => {
     try {
       const res = await fetch("/api/init");
+      // Session gone (expired, revoked by the OWNER, or the server/database
+      // was redeployed): NEVER strand the user on a dead-end "Connection
+      // Notice — Sign in required" panel. Bounce straight back to the
+      // sign-in screen so they can re-authenticate cleanly.
+      if (res.status === 401) {
+        setSignedIn(false);
+        setCurrentUser(null);
+        setError(null);
+        return;
+      }
       const data = await res.json();
       if (data.success) {
+        // A healthy response must clear any previously displayed error —
+        // otherwise a stale notice would keep covering the working app.
+        setError(null);
         setBusinesses(data.businesses || []);
         setMetrics(data.metrics || []);
         setUsersList(data.users || []);
@@ -129,8 +145,6 @@ export default function GoMinaApp() {
   // ── Secure login bootstrap ──────────────────────────────────────────────
   // Identity comes from the server session (httpOnly cookie). No session →
   // the app renders the sign-in screen and fetches NOTHING else.
-  const [signedIn, setSignedIn] = useState(false);
-
   useEffect(() => {
     (async () => {
       try {
@@ -736,12 +750,21 @@ export default function GoMinaApp() {
         <div className="bg-rose-900/30 border border-rose-500/40 rounded-2xl p-6 max-w-md text-center space-y-3">
           <h2 className="text-xl font-bold text-rose-400">Connection Notice</h2>
           <p className="text-sm text-slate-300">{error}</p>
-          <button
-            onClick={refreshAllData}
-            className="px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs shadow-md transition"
-          >
-            Retry Connection
-          </button>
+          <div className="flex items-center justify-center gap-2">
+            <button
+              onClick={refreshAllData}
+              className="px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs shadow-md transition"
+            >
+              Retry Connection
+            </button>
+            <button
+              onClick={() => { setError(null); setSignedIn(false); setCurrentUser(null); }}
+              data-testid="back-to-signin"
+              className="px-4 py-2 rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-200 font-bold text-xs shadow-md transition"
+            >
+              Back to Sign In
+            </button>
+          </div>
         </div>
       </div>
     );
@@ -753,7 +776,14 @@ export default function GoMinaApp() {
         currentCurrency={currentCurrency}
         onCurrencyChange={setCurrentCurrency}
         isOnline={isOnline}
-        onToggleOnline={() => setIsOnline(!isOnline)}
+        onToggleOnline={() => {
+          const goingOnline = !isOnline;
+          setIsOnline(goingOnline);
+          // Reconnecting after offline mode: revalidate the session and data.
+          // A dead session now bounces to the sign-in screen automatically
+          // instead of dying on a dead-end "Connection Notice".
+          if (goingOnline) refreshAllData();
+        }}
         offlineQueueCount={offlineQueueCount}
         onSyncComplete={refreshAllData}
         currentUser={currentUser}
