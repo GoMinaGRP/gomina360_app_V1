@@ -138,8 +138,9 @@ export async function POST(request: Request) {
       );
     }
 
-    // canManageRecords is OWNER-granted only.
-    if (canManageRecords !== undefined && !isOwner) {
+    // canManageRecords is OWNER-granted only (a non-owner merely ECHOING the
+    // inherited false default is not a grant — only a truthy value is).
+    if (!!canManageRecords && !isOwner) {
       return FORBIDDEN("Only the OWNER can grant record-management permission.");
     }
     // Non-OWNER can never create other elevated roles.
@@ -277,7 +278,13 @@ export async function PATCH(request: Request) {
         if (targetUser.assignedBusinessId == null || !(allowed ?? []).includes(Number(targetUser.assignedBusinessId))) {
           return FORBIDDEN("That user belongs to a branch you do not manage.");
         }
-        if (canManageRecords !== undefined || canManageUsers !== undefined) {
+        // Record-management / delegation powers: the manager must not CHANGE
+        // them (echoing the row's existing value untouched is fine — the form
+        // always round-trips full state).
+        if (
+          (canManageRecords !== undefined && Boolean(canManageRecords) !== !!targetUser.canManageRecords) ||
+          (canManageUsers !== undefined && Boolean(canManageUsers) !== !!targetUser.canManageUsers)
+        ) {
           return FORBIDDEN("Only the OWNER can grant record-management or user-management powers.");
         }
         if (newPassword !== undefined) {
