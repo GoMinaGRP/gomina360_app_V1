@@ -101,6 +101,9 @@ export async function POST(request: Request) {
       user: sanitize(user),
       accessibleBusinessIds: access,
       expiresAt: expires,
+      // Header-channel fallback for cookie-hostile embedded contexts; the
+      // client stores this in sessionStorage and reattaches it to /api calls.
+      sessionToken: token,
     });
     res.headers.set("Set-Cookie", `${SESSION_COOKIE}=${token}; ${COOKIE_BASE}`);
     return res;

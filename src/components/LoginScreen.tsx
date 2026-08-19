@@ -7,7 +7,7 @@ import { Lock, Mail, ShieldCheck, Eye, EyeOff, AlertTriangle } from "lucide-reac
  * GoMina 360 secure sign-in gate. Every user logs in with their own email +
  * password; the session is an httpOnly cookie (7 days, SameSite=Lax).
  */
-export default function LoginScreen({ onSuccess, notice }: { onSuccess: (user: any) => void; notice?: string }) {
+export default function LoginScreen({ onSuccess, notice }: { onSuccess: (user: any, sessionToken?: string) => void; notice?: string }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPw, setShowPw] = useState(false);
@@ -27,7 +27,7 @@ export default function LoginScreen({ onSuccess, notice }: { onSuccess: (user: a
       });
       const d = await res.json().catch(() => null);
       if (res.ok && d?.success) {
-        onSuccess(d.user);
+        onSuccess(d.user, d.sessionToken);
       } else {
         setError(d?.error || "Sign in failed. Please try again.");
       }

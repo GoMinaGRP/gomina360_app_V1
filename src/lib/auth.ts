@@ -57,9 +57,18 @@ export async function destroySession(token: string | null | undefined) {
 }
 
 export function readSessionToken(request: Request): string | null {
+  // Channel 1 (primary): the httpOnly session cookie.
   const cookie = request.headers.get("cookie") || "";
   const match = cookie.match(new RegExp(`(?:^|;\\s*)${SESSION_COOKIE}=([^;]+)`));
-  return match ? decodeURIComponent(match[1]) : null;
+  if (match) return decodeURIComponent(match[1]);
+  // Channel 2 (embedded-preview fallback): a bearer token the client keeps in
+  // sessionStorage and attaches to every /api/* call. Browsers that hard-block
+  // third-party cookies inside cross-site iframes still permit headers, so
+  // sign-in survives where cookie-only auth "blinks and bounces" back to login.
+  const auth = request.headers.get("authorization") || "";
+  if (auth.startsWith("Bearer ")) return auth.slice(7).trim() || null;
+  const hdr = request.headers.get("x-gomina-session");
+  return hdr ? hdr.trim() : null;
 }
 
 export interface SessionInfo {

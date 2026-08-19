@@ -26,6 +26,7 @@ import BusinessDashboardModule from "./BusinessDashboardModule";
 import UniversalExportCenter from "./UniversalExportCenter";
 import { CurrencyCode } from "@/lib/currency";
 import { getOfflineQueue } from "@/lib/offlineSync";
+import { installSessionBridge, setSessionToken, clearSessionToken } from "@/lib/sessionBridge";
 import { Loader2 } from "lucide-react";
 
 export default function GoMinaApp() {
@@ -147,6 +148,11 @@ export default function GoMinaApp() {
     return "error";
   }, []);
 
+  // Attach the bearer-token channel to every /api fetch before ANY fetch can
+  // fire (the cookie stays primary; the header saves embedded contexts whose
+  // browsers block third-party cookie storage).
+  useEffect(() => { installSessionBridge(); }, []);
+
   // ── Secure login bootstrap ──────────────────────────────────────────────
   // Identity comes from the server session (httpOnly cookie). No session →
   // the app renders the sign-in screen and fetches NOTHING else.
@@ -169,9 +175,10 @@ export default function GoMinaApp() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const handleLoginSuccess = async (user: any) => {
+  const handleLoginSuccess = async (user: any, sessionToken?: string) => {
     setError(null);
     setLoginNotice("");
+    if (sessionToken) setSessionToken(sessionToken);
     setLoading(true);
     setCurrentUser(user);
     setSignedIn(true);
@@ -194,6 +201,7 @@ export default function GoMinaApp() {
     try {
       await fetch("/api/auth/logout", { method: "POST" });
     } catch { /* best effort */ }
+    clearSessionToken();
     setSignedIn(false);
     setCurrentUser(null);
     setLoginNotice("");
