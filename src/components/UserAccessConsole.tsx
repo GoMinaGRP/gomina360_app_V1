@@ -39,6 +39,11 @@ interface Props {
  */
 export default function UserAccessConsole({ isOpen, onClose, businesses, currentUser, onChanged }: Props) {
   const isOwner = currentUser?.role === "OWNER";
+  // OWNER-delegated manager: trusted to administer the users inside the
+  // branches they themselves can access.
+  const isDelegated =
+    !isOwner && !!currentUser?.canManageUsers &&
+    ["BRANCH_MANAGER", "GENERAL_MANAGER"].includes(currentUser?.role);
   const [users, setUsers] = useState<any[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -58,8 +63,34 @@ export default function UserAccessConsole({ isOpen, onClose, businesses, current
   const [canManageRecords, setCanManageRecords] = useState(false);
   const [extraAccess, setExtraAccess] = useState<number[]>([]);
   const [isActive, setIsActive] = useState(true);
+  const [canDelegateUsers, setCanDelegateUsers] = useState(false);
 
   const sortedBiz = useMemo(() => [...businesses].sort((a, b) => a.id - b.id), [businesses]);
+
+  // The delegated manager's own accessible branches (derived from their row
+  // in the loaded directory: primary assignment + explicit grants).
+  const meRow = users.find((u) => u.id === currentUser?.id);
+  const scopeIds = useMemo(
+    () =>
+      new Set<number>(
+        [meRow?.assignedBusinessId, ...(meRow?.extraAccessIds || [])]
+          .filter((x) => x != null)
+          .map(Number)
+      ),
+    [meRow]
+  );
+  // Branch picks offered to a delegated caller are capped at their scope.
+  const visibleBiz = isOwner ? sortedBiz : sortedBiz.filter((b) => scopeIds.has(b.id));
+  const roleOptions = isOwner ? ROLES : ["BRANCH_MANAGER", "WORKER"];
+  // A delegated manager may act on a row only if that user works inside the
+  // branches they manage (and never on themselves or executives).
+  const canManageRow = (u: any) =>
+    isOwner ||
+    (isDelegated &&
+      u.id !== currentUser?.id &&
+      ["WORKER", "BRANCH_MANAGER"].includes(u.role) &&
+      u.assignedBusinessId != null &&
+      scopeIds.has(Number(u.assignedBusinessId)));
 
   const loadUsers = async () => {
     try {
@@ -84,12 +115,12 @@ export default function UserAccessConsole({ isOpen, onClose, businesses, current
   }, [isOpen]);
 
   if (!isOpen) return null;
-  if (!isOwner) {
+  if (!isOwner && !isDelegated) {
     return (
       <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
         <div className="bg-slate-900 border border-slate-700 rounded-2xl p-6 max-w-sm text-center space-y-3">
           <ShieldCheck className="w-8 h-8 text-rose-400 mx-auto" />
-          <p className="text-sm text-slate-300">Only the OWNER can manage users and access.</p>
+          <p className="text-sm text-slate-300">Only the OWNER (or a manager the OWNER has trusted with user management) can open Users & Access.</p>
           <button onClick={onClose} className="px-4 py-2 rounded-lg bg-slate-800 text-slate-300 text-xs font-semibold">Close</button>
         </div>
       </div>
@@ -104,7 +135,8 @@ export default function UserAccessConsole({ isOpen, onClose, businesses, current
     setName("");
     setEmail("");
     setRole("WORKER");
-    setAssignedBusinessId(sortedBiz[0]?.id ?? "");
+    setAssignedBusinessId(visibleBiz[0]?.id ?? "");
+    setCanDelegateUsers(false);
     setPassword("");
     setCanRecordSales(true);
     setCanRecordExpenses(false);
@@ -119,7 +151,9 @@ export default function UserAccessConsole({ isOpen, onClose, businesses, current
   };
 
   const openEdit = (u: any) => {
+    if (!canManageRow(u)) return;
     setEditing(u);
+    setCanDelegateUsers(Boolean(u.canManageUsers));
     setName(u.name);
     setEmail(u.email);
     setRole(u.role);
@@ -150,6 +184,7 @@ export default function UserAccessConsole({ isOpen, onClose, businesses, current
           assignedBusinessId: assignedBusinessId === "" ? null : assignedBusinessId,
           password: password || undefined,
           canRecordSales, canRecordExpenses, canManageStock, canExportData, canManageRecords,
+          canManageUsers: isOwner ? canDelegateUsers : undefined,
           extraAccessIds: extraAccess,
         }),
       });
@@ -187,8 +222,9 @@ export default function UserAccessConsole({ isOpen, onClose, businesses, current
           assignedBusinessId: assignedBusinessId === "" ? null : assignedBusinessId,
           isActive,
           canRecordSales, canRecordExpenses, canManageStock, canExportData, canManageRecords,
+          canManageUsers: isOwner ? canDelegateUsers : undefined,
           extraAccessIds: extraAccess,
-          newPassword: password || undefined,
+          newPassword: isOwner && password ? password : undefined,
         }),
       });
       const d = await res.json().catch(() => null);
@@ -271,7 +307,7 @@ export default function UserAccessConsole({ isOpen, onClose, businesses, current
           <select value={role} onChange={(e) => setRole(e.target.value)}
             data-testid="user-form-role"
             className="w-full px-3 py-2 bg-slate-800 border border-slate-600 rounded-lg text-white text-sm">
-            {ROLES.map((r) => <option key={r} value={r}>{ROLE_LABEL[r] || r}</option>)}
+            {roleOptions.map((r) => <option key={r} value={r}>{ROLE_LABEL[r] || r}</option>)}
           </select>
         </div>
         <div>
@@ -284,12 +320,13 @@ export default function UserAccessConsole({ isOpen, onClose, businesses, current
             data-testid="user-form-business"
             className="w-full px-3 py-2 bg-slate-800 border border-slate-600 rounded-lg text-white text-sm"
           >
-            <option value="">— All businesses (executive) —</option>
-            {sortedBiz.map((b) => <option key={b.id} value={b.id}>{b.name} ({b.code})</option>)}
+            {isOwner && <option value="">— All businesses (executive) —</option>}
+            {visibleBiz.map((b) => <option key={b.id} value={b.id}>{b.name} ({b.code})</option>)}
           </select>
         </div>
       </div>
 
+      {(!isEdit || isOwner) && (
       <div>
         <label className="block text-xs font-semibold text-slate-400 mb-1">
           {isEdit ? "Reset password (leave blank to keep current)" : "Initial password (blank = auto-generate)"}
@@ -305,6 +342,7 @@ export default function UserAccessConsole({ isOpen, onClose, businesses, current
           <p className="text-[10px] text-amber-400 mt-1">Resetting signs the user out everywhere immediately.</p>
         )}
       </div>
+      )}
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 bg-slate-800/40 border border-slate-700 rounded-xl p-3">
         <div>
@@ -313,14 +351,25 @@ export default function UserAccessConsole({ isOpen, onClose, businesses, current
           <Toggle label="Record expenses" value={canRecordExpenses} onChange={setCanRecordExpenses} testid="perm-expenses" />
           <Toggle label="Manage stock" value={canManageStock} onChange={setCanManageStock} testid="perm-stock" />
           <Toggle label="Export data" value={canExportData} onChange={setCanExportData} testid="perm-export" />
-          <Toggle label="Manage & delete shared records" value={canManageRecords} onChange={setCanManageRecords} testid="perm-records" tint="cyan" />
+          {isOwner && (
+            <Toggle label="Manage & delete shared records" value={canManageRecords} onChange={setCanManageRecords} testid="perm-records" tint="cyan" />
+          )}
+          {isOwner && (role === "BRANCH_MANAGER" || role === "GENERAL_MANAGER") && (
+            <Toggle
+              label="Delegate user & access management"
+              value={canDelegateUsers}
+              onChange={setCanDelegateUsers}
+              testid="perm-delegate"
+              tint="cyan"
+            />
+          )}
         </div>
         <div>
           <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wide mb-1">
             Extra business access (in addition to primary)
           </div>
           <div className="max-h-36 overflow-y-auto space-y-1 pr-1" data-testid="user-form-extra-access">
-            {sortedBiz.map((b) => {
+            {visibleBiz.map((b) => {
               const granted = extraAccess.includes(b.id);
               return (
                 <label key={b.id} className="flex items-center gap-2 text-xs text-slate-300 cursor-pointer">
@@ -371,7 +420,9 @@ export default function UserAccessConsole({ isOpen, onClose, businesses, current
               Users & Access
             </h2>
             <p className="text-xs text-slate-400 mt-0.5">
-              {view === "list" && "Create logins, assign roles, businesses and permissions"}
+              {view === "list" && (isOwner
+                ? "Create logins, assign roles, businesses and permissions"
+                : "Manage the users in the branches assigned to you")}
               {view === "create" && "Create a new user account"}
               {view === "edit" && `Editing ${editing?.name}`}
             </p>
@@ -442,12 +493,14 @@ export default function UserAccessConsole({ isOpen, onClose, businesses, current
                       </div>
                     </div>
                     <div className="flex items-center gap-1.5 shrink-0">
-                      <button onClick={() => openEdit(u)} data-testid={`user-edit-${u.id}`}
-                        title="Edit / assign / reset"
-                        className="p-2 rounded-lg bg-slate-700/70 hover:bg-indigo-500/30 text-slate-200 hover:text-indigo-300 transition">
-                        <Pencil className="w-4 h-4" />
-                      </button>
-                      {u.role !== "OWNER" && (
+                      {canManageRow(u) && (
+                        <button onClick={() => openEdit(u)} data-testid={`user-edit-${u.id}`}
+                          title="Edit / assign / reset"
+                          className="p-2 rounded-lg bg-slate-700/70 hover:bg-indigo-500/30 text-slate-200 hover:text-indigo-300 transition">
+                          <Pencil className="w-4 h-4" />
+                        </button>
+                      )}
+                      {isOwner && u.role !== "OWNER" && (
                         <button onClick={() => handleDelete(u)} data-testid={`user-delete-${u.id}`}
                           title="Delete account"
                           className="p-2 rounded-lg bg-slate-700/70 hover:bg-rose-500/30 text-slate-200 hover:text-rose-300 transition">

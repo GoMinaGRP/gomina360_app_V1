@@ -81,6 +81,7 @@ export async function POST(request: Request) {
       canManageStock,
       canExportData,
       canManageRecords,
+      canManageUsers,
       password,
       extraAccessIds,
     } = body;
@@ -94,15 +95,38 @@ export async function POST(request: Request) {
 
     const isOwner = me.role === "OWNER";
     const isBranchManager = me.role === "BRANCH_MANAGER";
-    // Non-OWNER callers (branch managers) may ONLY create WORKER accounts,
-    // and only for a business they themselves can access.
+    // OWNER-delegated user administrator: manager (branch or general) trusted
+    // to run Users & Access strictly within the branches they can access.
+    const isDelegatedMgr =
+      !isOwner && !!me.canManageUsers && ["BRANCH_MANAGER", "GENERAL_MANAGER"].includes(me.role);
     if (!isOwner) {
-      if (!isBranchManager || role !== "WORKER") {
-        return FORBIDDEN("Only the OWNER can create user accounts.");
-      }
       const allowed = await accessibleBusinessIds(me);
-      if (!assignedBusinessId || !(allowed ?? []).includes(Number(assignedBusinessId))) {
-        return FORBIDDEN("You can only create workers for your own business.");
+      if (isDelegatedMgr) {
+        // Delegated managers create WORKERS and BRANCH MANAGERS only, always
+        // pinned to a branch inside their own scope; extra grants are capped
+        // at that same scope. They can never mint elevated roles, hand out
+        // record-management, or extend the delegation itself.
+        if (!["WORKER", "BRANCH_MANAGER"].includes(role)) {
+          return FORBIDDEN("You can only create Worker and Branch Manager accounts.");
+        }
+        if (!assignedBusinessId || !(allowed ?? []).includes(Number(assignedBusinessId))) {
+          return FORBIDDEN("You can only create users for branches you manage.");
+        }
+        if (canManageUsers) {
+          return FORBIDDEN("Only the OWNER can delegate user management.");
+        }
+        if (Array.isArray(extraAccessIds) && extraAccessIds.some((id: any) => !(allowed ?? []).includes(Number(id)))) {
+          return FORBIDDEN("You can only grant access to branches you manage.");
+        }
+      } else {
+        // Legacy: a plain branch manager may ONLY create WORKER accounts for a
+        // business they themselves can access.
+        if (!isBranchManager || role !== "WORKER") {
+          return FORBIDDEN("Only the OWNER can create user accounts.");
+        }
+        if (!assignedBusinessId || !(allowed ?? []).includes(Number(assignedBusinessId))) {
+          return FORBIDDEN("You can only create workers for your own business.");
+        }
       }
     }
 
@@ -159,11 +183,18 @@ export async function POST(request: Request) {
           ? true
           : Boolean(canExportData ?? false),
         canManageRecords: isOwner ? Boolean(canManageRecords ?? false) : false,
+        // Delegation flag is OWNER-granted and only meaningful on managers.
+        canManageUsers:
+          isOwner && ["GENERAL_MANAGER", "BRANCH_MANAGER"].includes(role)
+            ? Boolean(canManageUsers ?? false)
+            : false,
       })
       .returning();
 
     await setUserPassword(newUser.id, initialPassword);
-    if (isOwner && Array.isArray(extraAccessIds) && extraAccessIds.length) {
+    if ((isOwner || isDelegatedMgr) && Array.isArray(extraAccessIds) && extraAccessIds.length) {
+      // For delegated callers the pre-check above already proved every id is
+      // inside their own branch scope.
       await replaceUserAccess(
         newUser.id,
         extraAccessIds.map(Number).filter((n) => Number.isFinite(n)),
@@ -208,6 +239,7 @@ export async function PATCH(request: Request) {
       canManageStock,
       canExportData,
       canManageRecords,
+      canManageUsers,
       newPassword,
       extraAccessIds,
     } = body;
@@ -224,14 +256,43 @@ export async function PATCH(request: Request) {
     const isOwner = me.role === "OWNER";
     const isGM = me.role === "GENERAL_MANAGER";
     const isBM = me.role === "BRANCH_MANAGER";
+    const isDelegatedMgr =
+      !isOwner && !!me.canManageUsers && ["BRANCH_MANAGER", "GENERAL_MANAGER"].includes(me.role);
 
     if (!isOwner) {
       // Nobody but the OWNER may touch OWNER accounts.
       if (targetUser.role === "OWNER") {
         return FORBIDDEN("Only the OWNER can modify the OWNER account.");
       }
-      // GM restrictions: no elevation, no record-permission, no password resets.
-      if (isGM) {
+      if (isDelegatedMgr) {
+        // Delegated user admin: manage ONLY workers & branch managers whose
+        // primary branch is inside the caller's own accessible scope.
+        if (targetUser.id === me.id) {
+          return FORBIDDEN("You cannot edit your own account from the access console.");
+        }
+        if (!["WORKER", "BRANCH_MANAGER"].includes(targetUser.role)) {
+          return FORBIDDEN("You can only manage Workers and Branch Managers inside your scope.");
+        }
+        const allowed = await accessibleBusinessIds(me);
+        if (targetUser.assignedBusinessId == null || !(allowed ?? []).includes(Number(targetUser.assignedBusinessId))) {
+          return FORBIDDEN("That user belongs to a branch you do not manage.");
+        }
+        if (canManageRecords !== undefined || canManageUsers !== undefined) {
+          return FORBIDDEN("Only the OWNER can grant record-management or user-management powers.");
+        }
+        if (newPassword !== undefined) {
+          return FORBIDDEN("Only the OWNER can reset passwords.");
+        }
+        if (role !== undefined && !["WORKER", "BRANCH_MANAGER"].includes(role)) {
+          return FORBIDDEN("You can only assign Worker or Branch Manager roles.");
+        }
+        if (assignedBusinessId !== undefined && assignedBusinessId && !(allowed ?? []).includes(Number(assignedBusinessId))) {
+          return FORBIDDEN("You can only assign branches you manage.");
+        }
+        if (Array.isArray(extraAccessIds) && extraAccessIds.some((id: any) => !(allowed ?? []).includes(Number(id)))) {
+          return FORBIDDEN("You can only grant access to branches you manage.");
+        }
+      } else if (isGM) {
         if (canManageRecords !== undefined) {
           return FORBIDDEN("Only the OWNER can grant or remove record-management permission.");
         }
@@ -292,6 +353,13 @@ export async function PATCH(request: Request) {
         canManageStock: canManageStock !== undefined ? Boolean(canManageStock) : targetUser.canManageStock,
         canExportData: canExportData !== undefined ? Boolean(canExportData) : targetUser.canExportData,
         canManageRecords: canManageRecords !== undefined ? Boolean(canManageRecords) : targetUser.canManageRecords,
+        // OWNER-only toggle, meaningful on manager roles only (else force off).
+        canManageUsers:
+          isOwner && canManageUsers !== undefined
+            ? ["GENERAL_MANAGER", "BRANCH_MANAGER"].includes(role ?? targetUser.role)
+              ? Boolean(canManageUsers)
+              : false
+            : targetUser.canManageUsers,
       })
       .where(eq(users.id, Number(userId)))
       .returning();
@@ -302,7 +370,8 @@ export async function PATCH(request: Request) {
       await db.delete(userSessions).where(eq(userSessions.userId, targetUser.id));
     }
 
-    if (isOwner && Array.isArray(extraAccessIds)) {
+    if ((isOwner || isDelegatedMgr) && Array.isArray(extraAccessIds)) {
+      // Delegated callers already passed the "grants ⊆ own scope" check above.
       await replaceUserAccess(
         targetUser.id,
         extraAccessIds.map(Number).filter((n) => Number.isFinite(n)),

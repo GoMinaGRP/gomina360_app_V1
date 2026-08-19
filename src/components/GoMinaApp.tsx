@@ -455,7 +455,8 @@ export default function GoMinaApp() {
       );
     }
 
-    // BRANCH_MANAGER: Worker Management panel
+    // BRANCH_MANAGER: Worker Management panel. Delegated managers also get the
+    // entry point to the full Users & Access console from here.
     if (activeTab === "WORKERS_MANAGE") {
       const bizInfo = businesses.find((b) => b.id === currentUser?.assignedBusinessId);
       return (
@@ -463,6 +464,7 @@ export default function GoMinaApp() {
           currentUser={currentUser}
           businessInfo={bizInfo}
           onRefreshData={refreshAllData}
+          onOpenUserAccess={() => setIsUserAccessOpen(true)}
         />
       );
     }
@@ -513,6 +515,7 @@ export default function GoMinaApp() {
           onOpenManageBusinesses={() => setIsManageBizOpen(true)}
           onOpenUserAccess={() => setIsUserAccessOpen(true)}
           canManageBusinesses={currentUser?.role === "OWNER"}
+          canManageUsersConsole={currentUser?.role === "OWNER" || !!currentUser?.canManageUsers}
           checklists={checklistData}
         />
       );

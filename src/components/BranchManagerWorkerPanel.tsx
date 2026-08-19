@@ -22,12 +22,16 @@ interface BranchManagerWorkerPanelProps {
   currentUser: any;
   businessInfo: any;
   onRefreshData: () => void;
+  // Entry point to the full Users & Access console — rendered only when the
+  // OWNER has delegated user management to this manager.
+  onOpenUserAccess?: () => void;
 }
 
 export default function BranchManagerWorkerPanel({
   currentUser,
   businessInfo,
   onRefreshData,
+  onOpenUserAccess,
 }: BranchManagerWorkerPanelProps) {
   const [workers, setWorkers] = useState<any[]>([]);
   const [loadingWorkers, setLoadingWorkers] = useState(true);
@@ -204,13 +208,26 @@ export default function BranchManagerWorkerPanel({
             </p>
           </div>
         </div>
-        <button
-          onClick={() => setShowCreateModal(true)}
-          className="flex items-center space-x-1.5 px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs sm:text-sm shadow-lg transition shrink-0"
-        >
-          <UserPlus className="w-4 h-4" />
-          <span>Add Sales Person</span>
-        </button>
+        <div className="flex items-center gap-2 shrink-0">
+          {currentUser?.canManageUsers && onOpenUserAccess && (
+            <button
+              onClick={onOpenUserAccess}
+              data-testid="open-user-access-bm"
+              title="OWNER-delegated: create workers & branch managers, assign roles, branches and permissions"
+              className="flex items-center space-x-1.5 px-4 py-2.5 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white font-bold text-xs sm:text-sm shadow-lg transition"
+            >
+              <Shield className="w-4 h-4" />
+              <span>Users &amp; Access</span>
+            </button>
+          )}
+          <button
+            onClick={() => setShowCreateModal(true)}
+            className="flex items-center space-x-1.5 px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs sm:text-sm shadow-lg transition"
+          >
+            <UserPlus className="w-4 h-4" />
+            <span>Add Sales Person</span>
+          </button>
+        </div>
       </div>
 
       {/* Workers Table */}

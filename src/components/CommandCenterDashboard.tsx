@@ -52,6 +52,8 @@ interface CommandCenterDashboardProps {
   onOpenManageBusinesses?: () => void;
   onOpenUserAccess?: () => void;
   canManageBusinesses?: boolean;
+  // OWNER or an OWNER-delegated manager (Users & Access console access).
+  canManageUsersConsole?: boolean;
   checklists?: { templates: any[]; entries: any[] };
 }
 
@@ -66,6 +68,7 @@ export default function CommandCenterDashboard({
   onOpenManageBusinesses,
   onOpenUserAccess,
   canManageBusinesses = false,
+  canManageUsersConsole = false,
   checklists,
 }: CommandCenterDashboardProps) {
   const [chartView, setChartView] = useState<
@@ -319,7 +322,7 @@ export default function CommandCenterDashboard({
               <span>New Branch / Unit</span>
             </button>
           )}
-          {canManageBusinesses && onOpenUserAccess && (
+          {(canManageBusinesses || canManageUsersConsole) && onOpenUserAccess && (
             <button
               onClick={onOpenUserAccess}
               data-testid="open-user-access"

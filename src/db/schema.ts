@@ -34,6 +34,11 @@ export const users = pgTable("users", {
   // (Transactions & MoMo, Suppliers & Vendors, Employees & Payroll). The OWNER
   // always retains full control; managers act only while this flag is granted.
   canManageRecords: boolean("can_manage_records").default(false),
+  // OWNER-delegated user administration: a BRANCH_MANAGER / GENERAL_MANAGER
+  // carrying this flag may open Users & Access and create workers AND branch
+  // managers, assign role/business/branch/permissions, and edit or deactivate
+  // users inside their own accessible branch scope. Grant/revoke is OWNER-only.
+  canManageUsers: boolean("can_manage_users").default(false),
   // ── Secure login ──────────────────────────────────────────────────────
   // scrypt password hash (format "scrypt:<salt_hex>:<hash_hex>"); null until
   // the OWNER sets a password for the account.
