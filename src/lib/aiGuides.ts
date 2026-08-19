@@ -1229,6 +1229,7 @@ export const GUIDES: Record<string, Record<string, SectionGuide>> = {
             "Enter the customer, the material, quantity, agreed price, due date and delivery site.",
             "Save — it shows as PENDING until you fulfil it.",
             "Advance it to READY, then DELIVERED: delivering deducts the stock and books the revenue automatically.",
+            "Click “Track” on any order row to open its live timeline — placed, ready, delivered — with customer, site and date stamps.",
           ],
         },
         {
@@ -1241,6 +1242,12 @@ export const GUIDES: Record<string, Record<string, SectionGuide>> = {
         },
       ],
       faqs: [
+        {
+          q: "How do I track a customer order?",
+          match: ["track order", "track an order", "order status", "where is my order", "order progress"],
+          answer:
+            "Click the “Track” button on any order row — the timeline shows exactly when it was placed, when it became ready for pickup or dispatch, and when it was delivered, with the customer details and due date alongside. Delivering is the moment stock drops and revenue books.",
+        },
         {
           q: "When does stock actually move?",
           match: ["when", "stock move", "deliver", "fulfil"],
@@ -1260,11 +1267,18 @@ export const GUIDES: Record<string, Record<string, SectionGuide>> = {
             "Click “Schedule Delivery”.",
             "Enter the customer and site address, pick the material and quantity, add the driver and vehicle number.",
             "Save as SCHEDULED, then advance EN_ROUTE and DELIVERED as the truck moves.",
+            "Click “Track” on any dispatch row to follow its timeline — scheduled, en route, delivered — with driver, vehicle and site details.",
           ],
           tip: "A standalone delivery deducts stock when it completes. If the delivery is linked to a customer order, the order's own fulfilment handles stock — never both.",
         },
       ],
       faqs: [
+        {
+          q: "How do I track a delivery?",
+          match: ["track delivery", "track a delivery", "delivery status", "where is the truck", "delivery progress"],
+          answer:
+            "Click the “Track” button on the dispatch row — the timeline shows when it was scheduled, when the truck left the yard (en route) and when the materials landed on site, including driver, vehicle and the linked customer order if there is one. Trucks en route over 2 days also flag amber on this tab and the dashboard.",
+        },
         {
           q: "A truck is overdue?",
           match: ["late", "overdue", "en route"],

@@ -6,7 +6,7 @@ import {
   HardHat, Package, AlertTriangle, TrendingUp, Wallet, Activity, Boxes,
   Users, Truck, FileText, RefreshCw, LayoutDashboard, ClipboardList,
   UserCog, X, Plus, CheckCircle2, ClipboardCheck, Sparkles, ShoppingCart,
-  Hammer,
+  Hammer, MapPin,
 } from "lucide-react";
 import {
   ResponsiveContainer, PieChart, Pie, Cell, Tooltip, BarChart, Bar, XAxis, YAxis,
@@ -78,6 +78,7 @@ export default function HardwareStoreModule({
   const [deliveries, setDeliveries] = useState<any[]>([]);
   const [opsLogs, setOpsLogs] = useState<any[]>([]);
   const [showForm, setShowForm] = useState<FormType>(null);
+  const [trackItem, setTrackItem] = useState<{ type: "ORDER" | "DELIVERY"; row: any } | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
@@ -606,9 +607,12 @@ export default function HardwareStoreModule({
                     o.orderNumber, o.customerName, o.itemName, o.quantity,
                     formatMoney(o.totalGhs, currentCurrency, true), o.dueDate || "—", o.deliverySite || "—",
                     <Badge key="s" s={o.status} />,
-                    nextOrderStatus[o.status]
-                      ? <button key="a" data-testid={`hw-order-adv-${o.id}`} onClick={() => patchEntity("ORDER", o.id, { status: nextOrderStatus[o.status] })} className="px-2 py-1 rounded bg-amber-500/20 border border-amber-500/40 text-amber-300 text-[10px] font-bold">→ {nextOrderStatus[o.status]}</button>
-                      : "—",
+                    <span key="a" className="flex items-center gap-1.5 justify-end">
+                      <button data-testid={`hw-order-track-${o.id}`} onClick={() => setTrackItem({ type: "ORDER", row: o })} className="px-2 py-1 rounded bg-sky-500/20 border border-sky-500/40 text-sky-300 text-[10px] font-bold flex items-center gap-1 hover:bg-sky-500/30"><MapPin className="w-3 h-3" />Track</button>
+                      {nextOrderStatus[o.status]
+                        ? <button data-testid={`hw-order-adv-${o.id}`} onClick={() => patchEntity("ORDER", o.id, { status: nextOrderStatus[o.status] })} className="px-2 py-1 rounded bg-amber-500/20 border border-amber-500/40 text-amber-300 text-[10px] font-bold">→ {nextOrderStatus[o.status]}</button>
+                        : null}
+                    </span>,
                   ])} />
                 <p className="px-4 pb-3 pt-1 text-[10px] text-slate-500">Fulfilling (delivering) an order deducts the stock and books the revenue to Finance automatically.</p>
               </Card>
@@ -659,9 +663,12 @@ export default function HardwareStoreModule({
                 d.driverName ? `${d.driverName}${d.vehicleNumber ? ` • ${d.vehicleNumber}` : ""}` : "—",
                 d.dispatchDate,
                 <Badge key="s" s={d.status} />,
-                nextDeliveryStatus[d.status]
-                  ? <button key="a" data-testid={`hw-delivery-adv-${d.id}`} onClick={() => patchEntity("DELIVERY", d.id, { status: nextDeliveryStatus[d.status] })} className="px-2 py-1 rounded bg-orange-500/20 border border-orange-500/40 text-orange-300 text-[10px] font-bold">→ {nextDeliveryStatus[d.status].replace("_", " ")}</button>
-                  : "—",
+                <span key="a" className="flex items-center gap-1.5 justify-end">
+                  <button data-testid={`hw-delivery-track-${d.id}`} onClick={() => setTrackItem({ type: "DELIVERY", row: d })} className="px-2 py-1 rounded bg-sky-500/20 border border-sky-500/40 text-sky-300 text-[10px] font-bold flex items-center gap-1 hover:bg-sky-500/30"><MapPin className="w-3 h-3" />Track</button>
+                  {nextDeliveryStatus[d.status]
+                    ? <button data-testid={`hw-delivery-adv-${d.id}`} onClick={() => patchEntity("DELIVERY", d.id, { status: nextDeliveryStatus[d.status] })} className="px-2 py-1 rounded bg-orange-500/20 border border-orange-500/40 text-orange-300 text-[10px] font-bold">→ {nextDeliveryStatus[d.status].replace("_", " ")}</button>
+                    : null}
+                </span>,
               ])} />
             <p className="px-4 pb-3 pt-1 text-[10px] text-slate-500">Completing a standalone delivery deducts the dispatched quantity from stock. Deliveries linked to an order inherit the order's own fulfilment so stock is never deducted twice.</p>
           </Card>
@@ -732,6 +739,7 @@ export default function HardwareStoreModule({
       )}
 
       {showForm && <HardwareForm type={showForm} busy={busy} onClose={() => { setShowForm(null); setError(""); }} onSubmit={submit} inventory={branchInventory} suppliers={suppliers} orders={orders} currency={currentCurrency} />}
+      {trackItem && <HardwareTrackModal track={trackItem} currency={currentCurrency} onClose={() => setTrackItem(null)} />}
     </div>
   );
 }
@@ -808,4 +816,102 @@ function HardwareForm({ type, busy, onClose, onSubmit, inventory, suppliers, ord
     </>}
     <div className="flex justify-end gap-3 pt-3 border-t border-slate-800"><button type="button" data-testid="hwf-cancel" onClick={onClose} className="px-4 py-2 bg-slate-800 rounded-lg text-xs text-slate-300">Cancel</button><button data-testid="hwf-submit" disabled={busy} className="px-5 py-2 bg-amber-600 hover:bg-amber-500 rounded-lg text-xs font-bold text-white disabled:opacity-50">{busy ? "Saving..." : "Save"}</button></div>
   </form></div></div>;
+}
+
+// ─── Order / Delivery Tracking Modal ─────────────────────────────────────────
+
+function fmtTrackDate(v: any): string | null {
+  if (!v) return null;
+  const s = String(v);
+  // Date-only strings ("2026-08-19") must parse as LOCAL midnight, not UTC —
+  // otherwise they render a day early for users west of Greenwich.
+  const dateOnly = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s);
+  const d = dateOnly ? new Date(Number(dateOnly[1]), Number(dateOnly[2]) - 1, Number(dateOnly[3])) : new Date(s);
+  if (isNaN(d.getTime())) return null;
+  return d.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
+}
+
+function HardwareTrackModal({
+  track, currency, onClose,
+}: {
+  track: { type: "ORDER" | "DELIVERY"; row: any };
+  currency: CurrencyCode;
+  onClose: () => void;
+}) {
+  const { type, row } = track;
+  const isOrder = type === "ORDER";
+  const cancelled = row.status === "CANCELLED";
+  // Forward progress rank: 1 = first stage only, 2 = mid, 3 = fully complete
+  const rank = cancelled ? 0
+    : isOrder ? (row.status === "DELIVERED" ? 3 : row.status === "READY" ? 2 : 1)
+    : (row.status === "DELIVERED" ? 3 : row.status === "EN_ROUTE" ? 2 : 1);
+  const steps = isOrder
+    ? [
+        { label: "Order Placed", detail: `Recorded by ${row.createdByName || "staff"}${row.createdByRole ? ` (${row.createdByRole})` : ""}`, at: fmtTrackDate(row.createdAt) || "—" },
+        { label: "Ready for Pickup / Dispatch", detail: "Material packed and staged in the yard", at: fmtTrackDate(row.readyAt) },
+        { label: "Delivered to Customer", detail: row.deliverySite ? `Handed over at ${row.deliverySite}` : "Collected / handed over — sale booked to Finance", at: fmtTrackDate(row.fulfilledDate) },
+      ]
+    : [
+        { label: "Delivery Scheduled", detail: `Dispatch planned for ${row.dispatchDate || "—"}`, at: fmtTrackDate(row.createdAt) || fmtTrackDate(row.dispatchDate) || "—" },
+        { label: "En Route to Site", detail: row.driverName ? `${row.driverName}${row.vehicleNumber ? ` • ${row.vehicleNumber}` : ""}` : "Driver dispatched with materials", at: fmtTrackDate(row.enRouteAt) },
+        { label: "Delivered to Site", detail: row.siteAddress ? `Dropped at ${row.siteAddress}` : "Site drop completed", at: fmtTrackDate(row.deliveredDate) },
+      ];
+
+  return (
+    <div data-testid="hw-track-modal" className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4" onClick={onClose}>
+      <div className="w-full max-w-md rounded-2xl bg-slate-900 border border-slate-700 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between px-5 py-4 border-b border-slate-800">
+          <div>
+            <p className="text-[10px] font-bold uppercase tracking-wider text-sky-400">{isOrder ? "Customer Order Tracking" : "Site Delivery Tracking"}</p>
+            <h3 data-testid="hw-track-title" className="text-lg font-extrabold text-white mt-0.5">{isOrder ? row.orderNumber : row.deliveryNumber}</h3>
+          </div>
+          <button data-testid="hw-track-close" onClick={onClose} className="p-1.5 rounded-lg hover:bg-slate-800 text-slate-400"><X className="w-4 h-4" /></button>
+        </div>
+
+        <div className="px-5 py-4 space-y-4">
+          {/* Summary */}
+          <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-xs">
+            <div><p className="text-[10px] text-slate-500 uppercase font-bold">Customer</p><p data-testid="hw-track-customer" className="text-slate-200 font-semibold">{row.customerName}{row.customerPhone ? <span className="block text-[10px] text-slate-400 font-normal">{row.customerPhone}</span> : null}</p></div>
+            <div><p className="text-[10px] text-slate-500 uppercase font-bold">Material</p><p className="text-slate-200 font-semibold">{row.quantity} × {row.itemName}</p></div>
+            {isOrder && <div><p className="text-[10px] text-slate-500 uppercase font-bold">Order Total</p><p className="text-amber-300 font-bold">{formatMoney(row.totalGhs || 0, currency, true)}</p></div>}
+            {isOrder && <div><p className="text-[10px] text-slate-500 uppercase font-bold">Due Date</p><p className="text-slate-200 font-semibold">{row.dueDate || "—"}</p></div>}
+            {!isOrder && <div><p className="text-[10px] text-slate-500 uppercase font-bold">Linked Order</p><p className="text-slate-200 font-semibold">{row.orderNumber || "Standalone dispatch"}</p></div>}
+            {!isOrder && <div><p className="text-[10px] text-slate-500 uppercase font-bold">Site</p><p className="text-slate-200 font-semibold">{row.siteAddress || "—"}</p></div>}
+            <div><p className="text-[10px] text-slate-500 uppercase font-bold">Current Status</p><span data-testid="hw-track-status" className={`inline-block px-2 py-0.5 rounded-full border text-[10px] font-bold ${STATUS_STYLE[row.status] || ""}`}>{row.status}</span></div>
+          </div>
+
+          {cancelled && (
+            <div data-testid="hw-track-cancelled" className="rounded-lg bg-rose-500/10 border border-rose-500/40 px-3 py-2 text-[11px] text-rose-300 font-semibold">
+              This {isOrder ? "order" : "delivery"} was cancelled — tracking stopped at its last completed stage.
+            </div>
+          )}
+
+          {/* Timeline */}
+          <div className="relative">
+            {steps.map((s, i) => {
+              const n = i + 1;
+              const done = rank >= n;
+              const current = !cancelled && rank === n && rank < steps.length;
+              const isLast = i === steps.length - 1;
+              return (
+                <div key={s.label} data-testid={`hw-track-step-${n}`} className="relative flex gap-3 pb-5 last:pb-0">
+                  {!isLast && <span className={`absolute left-[9px] top-5 bottom-0 w-px ${rank > n ? "bg-emerald-500/60" : "bg-slate-700"}`} />}
+                  <span className={`relative z-10 mt-0.5 w-[19px] h-[19px] shrink-0 rounded-full border-2 flex items-center justify-center ${done ? "bg-emerald-500/20 border-emerald-500 text-emerald-400" : current ? "bg-amber-500/10 border-amber-500 text-amber-400" : "bg-slate-800 border-slate-600 text-slate-600"}`}>
+                    {done ? <CheckCircle2 className="w-3 h-3" /> : <span className="w-1.5 h-1.5 rounded-full bg-current" />}
+                  </span>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-baseline justify-between gap-2">
+                      <p className={`text-xs font-bold ${done ? "text-slate-100" : "text-slate-500"}`}>{s.label}</p>
+                      <span className={`text-[10px] font-semibold whitespace-nowrap ${done ? "text-emerald-400" : "text-slate-600"}`}>{s.at || "Pending"}</span>
+                    </div>
+                    <p className={`text-[10px] mt-0.5 ${done ? "text-slate-400" : "text-slate-600"}`}>{s.detail}</p>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
 }

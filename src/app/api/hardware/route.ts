@@ -316,6 +316,7 @@ export async function PATCH(request: NextRequest) {
         .update(hardwareOrders)
         .set({
           status: data?.status || undefined,
+          readyAt: data?.status === "READY" && before.status !== "READY" ? today : undefined,
           notes: data?.notes !== undefined ? data.notes : undefined,
         })
         .where(eq(hardwareOrders.id, Number(id)))
@@ -366,6 +367,7 @@ export async function PATCH(request: NextRequest) {
         .update(hardwareDeliveries)
         .set({
           status: data?.status || undefined,
+          enRouteAt: data?.status === "EN_ROUTE" && before.status !== "EN_ROUTE" ? today : undefined,
           deliveredDate: data?.status === "DELIVERED" ? today : undefined,
           notes: data?.notes !== undefined ? data.notes : undefined,
         })

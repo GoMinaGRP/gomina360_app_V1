@@ -838,6 +838,7 @@ export const hardwareOrders = pgTable("hardware_orders", {
   status: text("status").notNull().default("PENDING"), // PENDING, READY, DELIVERED, CANCELLED
   dueDate: text("due_date"),
   deliverySite: text("delivery_site"), // e.g. "East Legon Site, Plot 14"
+  readyAt: text("ready_at"), // date order status first reached READY (tracking)
   fulfilledDate: text("fulfilled_date"),
   notes: text("notes"),
   createdByName: text("created_by_name"),
@@ -885,6 +886,7 @@ export const hardwareDeliveries = pgTable("hardware_deliveries", {
   unit: text("unit").notNull().default("Units"),
   status: text("status").notNull().default("SCHEDULED"), // SCHEDULED, EN_ROUTE, DELIVERED, CANCELLED
   dispatchDate: text("dispatch_date").notNull(),
+  enRouteAt: text("en_route_at"), // date delivery first departed (tracking)
   deliveredDate: text("delivered_date"),
   notes: text("notes"),
   createdByName: text("created_by_name"),
