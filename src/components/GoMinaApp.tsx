@@ -13,6 +13,7 @@ import IntegrationsHubView from "./IntegrationsHubView";
 import NewBusinessModal from "./NewBusinessModal";
 import ManageBusinessesModal from "./ManageBusinessesModal";
 import UserAccessConsole from "./UserAccessConsole";
+import ChangePasswordModal from "./ChangePasswordModal";
 import WorkerDashboard from "./WorkerDashboard";
 import BranchManagerWorkerPanel from "./BranchManagerWorkerPanel";
 import BranchManagerSalesView from "./BranchManagerSalesView";
@@ -66,6 +67,8 @@ export default function GoMinaApp() {
   const [isNewBusinessModalOpen, setIsNewBusinessModalOpen] = useState(false);
   const [isManageBizOpen, setIsManageBizOpen] = useState(false);
   const [isUserAccessOpen, setIsUserAccessOpen] = useState(false);
+  // Self-service password change (account menu → Change Password).
+  const [isChangePwOpen, setIsChangePwOpen] = useState(false);
   // Secure-session state (declared with the other UI state so the data
   // refresh callback below can safely bounce a dead session to sign-in).
   const [signedIn, setSignedIn] = useState(false);
@@ -819,6 +822,7 @@ export default function GoMinaApp() {
         usersList={usersList}
         onUserSelect={setCurrentUser}
         onLogout={handleLogout}
+        onOpenChangePassword={() => setIsChangePwOpen(true)}
       />
 
       <div className="flex flex-1 overflow-hidden">
@@ -873,6 +877,13 @@ export default function GoMinaApp() {
         businesses={businesses}
         currentUser={currentUser}
         onChanged={refreshAllData}
+      />
+
+      {/* Self-service password change for the signed-in user (any role). */}
+      <ChangePasswordModal
+        isOpen={isChangePwOpen}
+        onClose={() => setIsChangePwOpen(false)}
+        currentUser={currentUser}
       />
 
       <ManageBusinessesModal

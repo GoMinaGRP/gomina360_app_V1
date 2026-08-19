@@ -12,6 +12,7 @@ import {
   ChevronDown,
   Briefcase,
   CheckCircle2,
+  KeyRound,
 } from "lucide-react";
 import { CurrencyCode, CURRENCIES } from "@/lib/currency";
 import { synchronizeOfflineQueue, getOfflineQueue } from "@/lib/offlineSync";
@@ -28,6 +29,8 @@ interface NavbarProps {
   onUserSelect: (user: any) => void;
   /** Secure session sign-out (replaces the old free role-switcher). */
   onLogout?: () => void;
+  /** Opens the self-service "Change Password" dialog (any signed-in role). */
+  onOpenChangePassword?: () => void;
 }
 
 export default function Navbar({
@@ -41,6 +44,7 @@ export default function Navbar({
   usersList,
   onUserSelect,
   onLogout,
+  onOpenChangePassword,
 }: NavbarProps) {
   const [isSyncing, setIsSyncing] = useState(false);
   const [showCurrencyDropdown, setShowCurrencyDropdown] = useState(false);
@@ -214,6 +218,17 @@ export default function Navbar({
                   </div>
                 </div>
                 <div className="px-3 py-1 space-y-1">
+                  <button
+                    onClick={() => {
+                      setShowUserDropdown(false);
+                      onOpenChangePassword?.();
+                    }}
+                    data-testid="open-change-password"
+                    className="w-full text-left px-3 py-2 rounded-lg text-xs font-semibold hover:bg-emerald-500/15 text-slate-200 hover:text-emerald-300 transition flex items-center justify-between"
+                  >
+                    <span>Change Password</span>
+                    <KeyRound className="w-3.5 h-3.5" />
+                  </button>
                   <button
                     onClick={() => {
                       setShowUserDropdown(false);
