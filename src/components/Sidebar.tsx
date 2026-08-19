@@ -24,6 +24,7 @@ import {
   ChevronRight,
   ShieldAlert,
   ShoppingCart,
+  HardHat,
 } from "lucide-react";
 
 export type ActiveTab =
@@ -89,6 +90,7 @@ export default function Sidebar({
     "Restaurant & Food": Utensils,
     "Electronic Shop": Cpu,
     "Car Wash": Droplets,
+    "Hardware Store": HardHat,
   };
 
   const isAccessible = (biz: any) => {

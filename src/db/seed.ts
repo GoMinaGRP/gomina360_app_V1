@@ -26,7 +26,57 @@ import {
   scenarioSimulations,
   integrations,
 } from "./schema";
-import { sql } from "drizzle-orm";
+import { sql, eq } from "drizzle-orm";
+import { provisionBusiness } from "@/lib/businessProvisioning";
+
+/**
+ * Hardware & Building Materials flagship unit. Runs on EVERY seed pass —
+ * fresh databases get it right after the seven core branches, and
+ * pre-existing databases are repaired forward when the type is introduced.
+ * Idempotent: no-ops once HARDWARE-01 exists, so OWNER edits (rename,
+ * manager, capital) are never clobbered on later boots.
+ */
+async function ensureHardwareFlagship() {
+  const existing = await db.select().from(businesses).where(eq(businesses.code, "HARDWARE-01"));
+  if (existing.length > 0) return;
+  const [biz] = await db
+    .insert(businesses)
+    .values({
+      name: "GoMina Hardware & Building Materials Depot",
+      code: "HARDWARE-01",
+      category: "Hardware Store",
+      branchLocation: "Asokwa Industrial Area, Kumasi",
+      region: "Ashanti",
+      managerName: "Kwadwo Boateng",
+      contactPhone: "+233 20 880 4567",
+      status: "ACTIVE",
+      initialCapitalGhs: 320000,
+      monthlyTargetRevenueGhs: 180000,
+      iconName: "HardHat",
+    })
+    .returning();
+  // Same auto-provisioning every other unit gets: zero-based metrics, the
+  // Hardware starter inventory kit, and the full daily-checklist template set.
+  await provisionBusiness({
+    id: biz.id,
+    code: biz.code,
+    name: biz.name,
+    category: biz.category,
+    initialCapitalGhs: biz.initialCapitalGhs,
+  });
+  // General Manager visibility sweep — mirrors the core-branch grants, so the
+  // GM can open the new unit from day one (revocable in Users & Access).
+  await db.execute(sql`
+    INSERT INTO user_business_access (user_id, business_id, created_by_user_id)
+    SELECT 2, ${biz.id}, 1
+    WHERE EXISTS (SELECT 1 FROM users WHERE id = 2 AND role = 'GENERAL_MANAGER')
+      AND NOT EXISTS (
+        SELECT 1 FROM user_business_access g
+        WHERE g.user_id = 2 AND g.business_id = ${biz.id}
+      )
+  `);
+  console.log("Hardware flagship unit provisioned: HARDWARE-01");
+}
 
 export async function seedDatabase() {
   console.log("Starting database seeding for GoMina 360 Command Center...");
@@ -35,6 +85,7 @@ export async function seedDatabase() {
   const existingBusinesses = await db.select().from(businesses);
   if (existingBusinesses.length > 0) {
     console.log("Database already seeded with GoMina 360 data.");
+    await ensureHardwareFlagship();
     return;
   }
 
@@ -1294,6 +1345,8 @@ export async function seedDatabase() {
       WHERE name = ${name}
     `);
   }
+
+  await ensureHardwareFlagship();
 
   console.log("GoMina 360 Command Center database seeding completed successfully!");
 }

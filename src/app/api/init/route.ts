@@ -17,6 +17,7 @@ import {
   restaurantLogs,
   electronicsLogs,
   carWashLogs,
+  hardwareLogs,
   aiInsights,
   scenarioSimulations,
   integrations,
@@ -68,6 +69,7 @@ export async function GET(request: Request) {
     const restaurant = await db.select().from(restaurantLogs);
     const electronics = await db.select().from(electronicsLogs);
     const carWash = await db.select().from(carWashLogs);
+    const hardware = await db.select().from(hardwareLogs);
 
     // ── Scope everything to the user's accessible businesses ────────────
     const scopedBusinesses =
@@ -126,6 +128,7 @@ export async function GET(request: Request) {
         restaurant: filterByAccess(restaurant, allowed),
         electronics: filterByAccess(electronics, allowed),
         carWash: filterByAccess(carWash, allowed),
+        hardware: filterByAccess(hardware, allowed),
       },
     });
   } catch (error: any) {

@@ -1141,6 +1141,176 @@ export const GUIDES: Record<string, Record<string, SectionGuide>> = {
       ],
     },
   },
+  HARDWARE: {
+    DASHBOARD: {
+      title: "Hardware Store Dashboard",
+      intro:
+        "The trading picture of {biz}: material sales, open contractor orders, supplier purchases, site deliveries and stock value for the whole yard.",
+      tasks: [
+        {
+          name: "Sell materials at the counter",
+          steps: [
+            "Click the amber “Sale” button (top right).",
+            "Pick the material from live stock — available quantity and price are shown in the list.",
+            "Enter the quantity, confirm the total, add the customer and payment method.",
+            "Submit — stock drops immediately and the sale posts to Finance with a receipt.",
+          ],
+          tip: "Counter sales, delivered orders and goods receipts all update this dashboard the moment you save.",
+        },
+        {
+          name: "Read the cards",
+          steps: [
+            "Revenue and Net Profit summarise the period; Orders, Deliveries Out and SKU Stock flag today's workload.",
+            "Low or out-of-stock materials raise amber alerts above the cards.",
+            "Click any tab (Stock, Orders, Deliveries, Staff & Yard Ops) to act on what you see.",
+          ],
+        },
+      ],
+      faqs: [
+        {
+          q: "How do I sell something not in stock?",
+          match: ["not in stock", "no stock", "unavailable", "out of stock"],
+          answer:
+            "You cannot sell what is not in stock — the sale picker only lists available items. Take the customer's order on the Orders tab instead, then restock and deliver it.",
+        },
+        {
+          q: "Where does the money go?",
+          match: ["revenue", "money", "finance"],
+          answer:
+            "Every sale posts straight into Transactions tagged to this branch — it counts in the branch profit, the Command Center and every export.",
+        },
+        {
+          q: "How do I restock materials?",
+          match: ["restock", "reorder", "more stock"],
+          answer:
+            "Open the Orders & Purchases tab and record a supplier purchase (or log a Goods-Received Note on Staff & Yard Ops) — when the goods are received, stock quantities rise automatically and the cost posts to Finance in one flow.",
+        },
+      ],
+    },
+    STOCK: {
+      title: "Stock & Materials",
+      intro:
+        "The full materials catalogue of {biz}: cement, steel, roofing, paint, plumbing and more — with quantities, prices, margins and live status.",
+      tasks: [
+        {
+          name: "Add a new material",
+          steps: [
+            "Click “New Material”.",
+            "Fill the name, category (cement, steel, roofing…), quantity, unit, cost and selling price.",
+            "Save — it becomes sellable in the Sale form immediately.",
+          ],
+        },
+        {
+          name: "Keep stock honest",
+          steps: [
+            "Quantities fall automatically with each sale or outgoing site delivery; receipts add them back.",
+            "Amber LOW_STOCK rows mean reorder via a supplier purchase before you stock out.",
+          ],
+        },
+      ],
+      faqs: [
+        {
+          q: "How do I restock cement?",
+          match: ["restock", "reorder", "more stock"],
+          answer:
+            "Open Orders & Purchases and record a supplier purchase (or log a GRN on Staff & Yard Ops) — when the goods are received, quantities rise here automatically and the cost posts to Finance in one flow.",
+        },
+      ],
+    },
+    ORDERS: {
+      title: "Orders & Purchases",
+      intro:
+        "Contractor and customer material orders on one side, supplier restock purchases on the other — the heartbeat of {biz}.",
+      tasks: [
+        {
+          name: "Take a customer order",
+          steps: [
+            "Click “New Order”.",
+            "Enter the customer, the material, quantity, agreed price, due date and delivery site.",
+            "Save — it shows as PENDING until you fulfil it.",
+            "Advance it to READY, then DELIVERED: delivering deducts the stock and books the revenue automatically.",
+          ],
+        },
+        {
+          name: "Restock from a supplier",
+          steps: [
+            "Click “Record Purchase” and pick the supplier, material, quantity and unit cost.",
+            "Leave it ORDERED while the truck is on the way.",
+            "Switch it to RECEIVED when goods land — stock rises and the expense posts to Finance in one step.",
+          ],
+        },
+      ],
+      faqs: [
+        {
+          q: "When does stock actually move?",
+          match: ["when", "stock move", "deliver", "fulfil"],
+          answer:
+            "Stock moves at fulfilment time: taking the order only records the customer promise; delivering it deducts the materials and books revenue. Purchases top stock up the moment they are received.",
+        },
+      ],
+    },
+    DELIVERIES: {
+      title: "Site Deliveries",
+      intro:
+        "The dispatch board of {biz}: every truck leaving the yard for a construction site, from scheduled to delivered.",
+      tasks: [
+        {
+          name: "Dispatch a delivery",
+          steps: [
+            "Click “Schedule Delivery”.",
+            "Enter the customer and site address, pick the material and quantity, add the driver and vehicle number.",
+            "Save as SCHEDULED, then advance EN_ROUTE and DELIVERED as the truck moves.",
+          ],
+          tip: "A standalone delivery deducts stock when it completes. If the delivery is linked to a customer order, the order's own fulfilment handles stock — never both.",
+        },
+      ],
+      faqs: [
+        {
+          q: "A truck is overdue?",
+          match: ["late", "overdue", "en route"],
+          answer:
+            "Deliveries en route for more than 2 days raise an amber warning on this tab and on the dashboard — call the driver and update the customer before site work stalls.",
+        },
+      ],
+    },
+    YARD_OPS: {
+      title: "Staff & Yard Ops",
+      intro:
+        "People and goods-in for {biz}: staff sales performance, branch assets, and the Goods-Received ledger that proves what physically entered the yard.",
+      tasks: [
+        {
+          name: "Log a goods receipt (GRN)",
+          steps: [
+            "Click “Log Goods Receipt” (or the cyan GRN button in the header).",
+            "Enter the supplier, material, quantity received, unit cost and condition.",
+            "Save — the matching stock item is topped up (or created) and the landed cost books to Finance as an expense.",
+          ],
+        },
+        {
+          name: "Track staff performance",
+          steps: [
+            "The Staff Performance table ranks each person by sales value, receipts handled and expenses logged.",
+            "Figures come from the recorded-by stamp on every transaction — no manual reporting needed.",
+          ],
+        },
+      ],
+      faqs: [
+        {
+          q: "Goods arrived damaged?",
+          match: ["damaged", "broken", "partial"],
+          answer:
+            "Log the GRN with condition DAMAGED or PARTIAL and the true usable quantity, then raise it with the supplier. Repeated damage in 30 days triggers a warning in the AI Insights card.",
+        },
+      ],
+    },
+    DEFAULT: {
+      title: "Hardware & Building Materials",
+      intro:
+        "The complete operating workspace of {biz}: counter sales, contractor orders, supplier restocking, site deliveries and the goods-received ledger — all wired into stock and finance.",
+      tasks: CHECKLIST_TASKS,
+      faqs: [],
+    },
+  },
   LIVESTOCK: {
     OPERATIONS: {
       title: "Livestock Operations",

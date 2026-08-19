@@ -27,6 +27,7 @@ export const CATEGORY_PREFIX: Record<string, string> = {
   "Restaurant & Food": "FOOD",
   "Electronic Shop": "TECH",
   "Car Wash": "WASH",
+  "Hardware Store": "HARDWARE",
 };
 
 export const CATEGORY_ICON: Record<string, string> = {
@@ -37,6 +38,7 @@ export const CATEGORY_ICON: Record<string, string> = {
   "Restaurant & Food": "Utensils",
   "Electronic Shop": "Cpu",
   "Car Wash": "Droplets",
+  "Hardware Store": "HardHat",
 };
 
 export interface StarterItem {
@@ -86,6 +88,14 @@ const KITS: Record<string, StarterItem[]> = {
     { name: "Executive Wash & Wax", skuSuffix: "WASH-EXEC", category: "Wash Services", quantity: 999, unit: "Jobs", costPriceGhs: 8, sellingPriceGhs: 40, minStockThreshold: 50 },
     { name: "Interior Detailing Package", skuSuffix: "DETAIL-INT", category: "Wash Services", quantity: 999, unit: "Jobs", costPriceGhs: 15, sellingPriceGhs: 70, minStockThreshold: 50 },
     { name: "Car Wash Shampoo 25L Drum", skuSuffix: "SHAMPOO-25L", category: "Chemicals & Supplies", quantity: 4, unit: "Drums", costPriceGhs: 320, sellingPriceGhs: 380, minStockThreshold: 2 },
+  ],
+  "Hardware Store": [
+    { name: "Ghacem 42.5R Portland Cement 50kg", skuSuffix: "CEMENT-50KG", category: "Cement & Mortar", quantity: 200, unit: "Bags", costPriceGhs: 105, sellingPriceGhs: 118, minStockThreshold: 50 },
+    { name: "High-Tensile Iron Rods 12mm", skuSuffix: "ROD-12MM", category: "Steel & Reinforcement", quantity: 500, unit: "Lengths", costPriceGhs: 42, sellingPriceGhs: 55, minStockThreshold: 120 },
+    { name: "Common Wire Nails 3in (25kg Box)", skuSuffix: "NAILS-3IN", category: "Fasteners & Fixings", quantity: 40, unit: "Boxes", costPriceGhs: 380, sellingPriceGhs: 460, minStockThreshold: 12 },
+    { name: "Alu-Zinc Roofing Sheets 0.5mm", skuSuffix: "ROOF-ALZINC", category: "Roofing & Cladding", quantity: 150, unit: "Sheets", costPriceGhs: 95, sellingPriceGhs: 125, minStockThreshold: 40 },
+    { name: "Emulsion Paint 20L Bucket", skuSuffix: "PAINT-20L", category: "Paints & Finishing", quantity: 30, unit: "Buckets", costPriceGhs: 340, sellingPriceGhs: 420, minStockThreshold: 10 },
+    { name: "uPVC Pipe 110mm (4m Length)", skuSuffix: "UPVC-110MM", category: "Plumbing & Drainage", quantity: 80, unit: "Lengths", costPriceGhs: 65, sellingPriceGhs: 85, minStockThreshold: 20 },
   ],
 };
 

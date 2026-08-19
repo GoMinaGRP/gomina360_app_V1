@@ -5,7 +5,7 @@ import "./globals.css";
 export const metadata: Metadata = {
   title: "GoMina 360 | All-In-One Enterprise Command Center",
   description:
-    "Enterprise management and decision-support operating system for a Ghana-based business owner. Securely manage Poultry, Block Factory, Aquaculture, Livestock, Restaurant, Electronic Shop, and Car Wash from one centralized HQ.",
+    "Enterprise management and decision-support operating system for a Ghana-based business owner. Securely manage Poultry, Block Factory, Aquaculture, Livestock, Restaurant, Electronic Shop, Car Wash, and Hardware Store units from one centralized HQ.",
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {

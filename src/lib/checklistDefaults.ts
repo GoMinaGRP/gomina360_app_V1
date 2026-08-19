@@ -78,6 +78,17 @@ const WASH_TASKS: TaskSeed[] = [
   { taskKey: "YARD_CLOSING", taskLabel: "Close bays, drain lines & store equipment", category: "SECURITY" },
 ];
 
+const HARDWARE_TASKS: TaskSeed[] = [
+  { taskKey: "SILO_CEMENT_COUNT", taskLabel: "Count cement bags & steel sections before opening", category: "STOCK" },
+  { taskKey: "DELIVERY_SCHEDULE", taskLabel: "Confirm today's site delivery & dispatch schedule", category: "DELIVERIES" },
+  { taskKey: "GRN_VERIFY", taskLabel: "Verify & log any overnight supplier receipts", category: "STOCK" },
+  { taskKey: "RACK_SAFETY", taskLabel: "Check racking, pallets & forklift safety", category: "SECURITY" },
+  { taskKey: "DUST_COVER", taskLabel: "Cover cement & boards against rain/dust", category: "CLEANING" },
+  { taskKey: "CASH_FLOAT", taskLabel: "Record cash & MoMo opening float", category: "FINANCE" },
+  { taskKey: "QUOTE_FOLLOWUP", taskLabel: "Follow up contractor quotes & pending orders", category: "SALES" },
+  { taskKey: "YARD_LOCKUP", taskLabel: "Lock yard gates & container store at close", category: "SECURITY" },
+];
+
 export const GENERIC_TASKS: TaskSeed[] = [
   { taskKey: "OPEN_SITE", taskLabel: "Open site & equipment check", category: "ADMIN" },
   { taskKey: "STOCK_CHECK", taskLabel: "Stock & materials count", category: "STOCK" },
@@ -106,6 +117,7 @@ const DEFAULT_TASKS_BY_CATEGORY: Record<string, TaskSeed[]> = {
   "Restaurant & Food": FOOD_TASKS,
   "Electronic Shop": TECH_TASKS,
   "Car Wash": WASH_TASKS,
+  "Hardware Store": HARDWARE_TASKS,
 };
 
 /** Pick the best task set for a business: exact code → category → generic. */

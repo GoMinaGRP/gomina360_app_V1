@@ -24,6 +24,7 @@ const CATEGORIES = [
   "Restaurant & Food",
   "Electronic Shop",
   "Car Wash",
+  "Hardware Store",
 ];
 
 const STATUSES = ["ACTIVE", "EXPANDING", "MAINTENANCE", "INACTIVE"];

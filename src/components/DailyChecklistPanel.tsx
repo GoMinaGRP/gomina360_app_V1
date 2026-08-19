@@ -47,6 +47,13 @@ const ACCENTS: Record<string, { btn: string; bar: string; doneWrap: string; done
     doneIcon: "text-emerald-400",
     textAccent: "text-emerald-300",
   },
+  amber: {
+    btn: "bg-amber-600 hover:bg-amber-500",
+    bar: "bg-amber-500",
+    doneWrap: "bg-emerald-500/10 border-emerald-500/40 text-emerald-200",
+    doneIcon: "text-emerald-400",
+    textAccent: "text-amber-300",
+  },
 };
 
 export default function DailyChecklistPanel({
@@ -63,7 +70,7 @@ export default function DailyChecklistPanel({
   businessName?: string;
   employees?: any[];
   currentUser?: any;
-  accent?: "cyan" | "emerald";
+  accent?: "cyan" | "emerald" | "amber";
   onChanged?: () => void;
 }) {
   const A = ACCENTS[accent] || ACCENTS.cyan;

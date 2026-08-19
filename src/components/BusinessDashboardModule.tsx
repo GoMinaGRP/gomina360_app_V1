@@ -6,7 +6,7 @@ import {
   AlertTriangle, BadgeDollarSign, Boxes, Building2, CheckCircle, ClipboardCheck,
   Cpu, Droplets, Egg, Fish, LayoutDashboard, Loader2, MapPin, Package, PackagePlus,
   Phone, Plus, ShoppingCart, TrendingDown, TrendingUp, Users, Utensils, Wallet,
-  Activity, X, Beef, BarChart3, ExternalLink, Sparkles,
+  Activity, X, Beef, BarChart3, ExternalLink, Sparkles, HardHat,
 } from "lucide-react";
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend, PieChart, Pie, Cell,
@@ -118,6 +118,18 @@ const CATEGORY_CFG: Record<string, any> = {
     opsUnit: "vehicles", opsQtyLabel: "Vehicles serviced",
     opsHint: "Log washes, detailing, waxing and bay maintenance work.",
     productRe: /wash|wax|shampoo|detail|car/i,
+  },
+  "Hardware Store": {
+    accent: "amber", icon: HardHat,
+    badgeCls: "bg-amber-500/20 text-amber-300 border-amber-500/30",
+    iconCls: "bg-amber-500/20 border-amber-400/30 text-amber-400",
+    gradCls: "from-slate-900 via-amber-950/40 to-slate-900",
+    saleBtn: "bg-amber-600 hover:bg-amber-500",
+    tabActive: "bg-amber-600",
+    opsLabel: "Goods Received Log",
+    opsUnit: "units", opsQtyLabel: "Units received",
+    opsHint: "Log supplier receipts, stock-takes and yard dispatch work.",
+    productRe: /cement|rod|iron|steel|nail|paint|roof|pipe|sand|aggregate|timber|board|block|wire|hardware|tool|drill|mixer|built|construct/i,
   },
   _default: {
     accent: "emerald", icon: Building2,

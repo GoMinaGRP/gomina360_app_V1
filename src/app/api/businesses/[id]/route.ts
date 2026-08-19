@@ -36,6 +36,10 @@ import {
   restaurantLogs,
   electronicsLogs,
   carWashLogs,
+  hardwareLogs,
+  hardwareOrders,
+  hardwarePurchases,
+  hardwareDeliveries,
   aiInsights,
   scenarioSimulations,
   checklistTemplates,
@@ -66,6 +70,7 @@ const VALID_CATEGORIES = [
   "Restaurant & Food",
   "Electronic Shop",
   "Car Wash",
+  "Hardware Store",
 ];
 
 const VALID_STATUSES = ["ACTIVE", "EXPANDING", "MAINTENANCE", "INACTIVE"];
@@ -97,7 +102,10 @@ async function relatedCounts(businessId: number) {
       (await count(electronicsSerials, electronicsSerials.businessId)) +
       (await count(electronicsWarranties, electronicsWarranties.businessId)) +
       (await count(electronicsPurchases, electronicsPurchases.businessId)) +
-      (await count(restaurantOrders, restaurantOrders.businessId)),
+      (await count(restaurantOrders, restaurantOrders.businessId)) +
+      (await count(hardwareOrders, hardwareOrders.businessId)) +
+      (await count(hardwarePurchases, hardwarePurchases.businessId)) +
+      (await count(hardwareDeliveries, hardwareDeliveries.businessId)),
     productionAndOps:
       (await count(poultryLogs, poultryLogs.businessId)) +
       (await count(poultryFlocks, poultryFlocks.businessId)) +
@@ -123,7 +131,8 @@ async function relatedCounts(businessId: number) {
       (await count(restaurantWaste, restaurantWaste.businessId)) +
       (await count(restaurantPurchases, restaurantPurchases.businessId)) +
       (await count(electronicsLogs, electronicsLogs.businessId)) +
-      (await count(carWashLogs, carWashLogs.businessId)),
+      (await count(carWashLogs, carWashLogs.businessId)) +
+      (await count(hardwareLogs, hardwareLogs.businessId)),
     checklists:
       (await count(checklistTemplates, checklistTemplates.businessId)) +
       (await count(checklistEntries, checklistEntries.businessId)),
@@ -375,6 +384,10 @@ export async function DELETE(request: Request, { params }: { params: Promise<{ i
       [restaurantLogs, restaurantLogs.businessId],
       [electronicsLogs, electronicsLogs.businessId],
       [carWashLogs, carWashLogs.businessId],
+      [hardwareLogs, hardwareLogs.businessId],
+      [hardwareOrders, hardwareOrders.businessId],
+      [hardwarePurchases, hardwarePurchases.businessId],
+      [hardwareDeliveries, hardwareDeliveries.businessId],
       [aiInsights, aiInsights.businessId],
       [checklistTemplates, checklistTemplates.businessId],
       [checklistEntries, checklistEntries.businessId],
@@ -529,6 +542,10 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       [electronicsWarranties, electronicsWarranties.businessId],
       [electronicsPurchases, electronicsPurchases.businessId],
       [carWashLogs, carWashLogs.businessId],
+      [hardwareLogs, hardwareLogs.businessId],
+      [hardwareOrders, hardwareOrders.businessId],
+      [hardwarePurchases, hardwarePurchases.businessId],
+      [hardwareDeliveries, hardwareDeliveries.businessId],
       // Checklist completion history (templates are setup — kept unless opted out)
       [checklistEntries, checklistEntries.businessId],
       // Executive dashboards — fresh zero-based row re-seeded in phase 2

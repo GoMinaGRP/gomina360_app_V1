@@ -23,6 +23,7 @@ import BlockFactoryModule from "./BlockFactoryModule";
 import AquacultureModule from "./AquacultureModule";
 import ElectronicsShopModule from "./ElectronicsShopModule";
 import RestaurantKitchenModule from "./RestaurantKitchenModule";
+import HardwareStoreModule from "./HardwareStoreModule";
 import BusinessDashboardModule from "./BusinessDashboardModule";
 import UniversalExportCenter from "./UniversalExportCenter";
 import { CurrencyCode } from "@/lib/currency";
@@ -57,6 +58,7 @@ export default function GoMinaApp() {
     restaurant: [],
     electronics: [],
     carWash: [],
+    hardware: [],
   });
 
   // UI States
@@ -136,6 +138,7 @@ export default function GoMinaApp() {
             restaurant: [],
             electronics: [],
             carWash: [],
+            hardware: [],
           }
         );
         return "ok";
@@ -299,6 +302,8 @@ export default function GoMinaApp() {
           ? "electronics"
           : upper.startsWith("WASH")
           ? "carWash"
+          : upper.startsWith("HARDWARE")
+          ? "hardware"
           : null;
         setSpecializedLogs((prev) => {
           if (!bucket) return prev;
@@ -343,6 +348,7 @@ export default function GoMinaApp() {
       else if (upperBiz.startsWith("FOOD")) logs = ownLogs(specializedLogs.restaurant || []);
       else if (upperBiz.startsWith("TECH")) logs = ownLogs(specializedLogs.electronics || []);
       else if (upperBiz.startsWith("WASH")) logs = ownLogs(specializedLogs.carWash || []);
+      else if (upperBiz.startsWith("HARDWARE")) logs = ownLogs(specializedLogs.hardware || []);
 
       return (
         <WorkerDashboard
@@ -538,8 +544,9 @@ export default function GoMinaApp() {
       Aquaculture: "AQUA",
       Livestock: "LIVESTOCK",
       "Car Wash": "WASH",
+      "Hardware Store": "HARDWARE",
     };
-    const KNOWN_PREFIXES = ["POULTRY", "BLOCK", "TECH", "FOOD", "AQUA", "LIVESTOCK", "WASH"];
+    const KNOWN_PREFIXES = ["POULTRY", "BLOCK", "TECH", "FOOD", "AQUA", "LIVESTOCK", "WASH", "HARDWARE"];
     const tabBiz = businesses.find((b) => b.code === activeTab);
     if (tabBiz) {
       const bizInfo = tabBiz;
@@ -631,6 +638,27 @@ export default function GoMinaApp() {
             businessInfo={bizInfo}
             businessMetrics={bizMetric}
             inventory={inventory}
+            transactions={transactions}
+            assets={assets}
+            employees={employees}
+            currentCurrency={currentCurrency}
+            onRefreshData={refreshAllData}
+          />
+        );
+      }
+
+      // Hardware & Building Materials store gets its dedicated management
+      // dashboard (Inventory → Stock → Sales → Finance → Dashboard, with
+      // orders, supplier purchases, site deliveries and goods-received logs).
+      if (moduleKey === "HARDWARE") {
+        return (
+          <HardwareStoreModule
+            currentUser={currentUser}
+            businessInfo={bizInfo}
+            businessMetrics={bizMetric}
+            inventory={inventory}
+            customers={customers}
+            suppliers={suppliers}
             transactions={transactions}
             assets={assets}
             employees={employees}

@@ -92,7 +92,7 @@ export const businesses = pgTable("businesses", {
   id: serial("id").primaryKey(),
   name: text("name").notNull(),
   code: text("code").notNull().unique(), // e.g. POULTRY-01, BLOCK-01
-  category: text("category").notNull(), // 'Poultry Farm', 'Block Factory', 'Aquaculture', 'Livestock', 'Restaurant & Food', 'Electronic Shop', 'Car Wash'
+  category: text("category").notNull(), // 'Poultry Farm', 'Block Factory', 'Aquaculture', 'Livestock', 'Restaurant & Food', 'Electronic Shop', 'Car Wash', 'Hardware Store'
   branchLocation: text("branch_location").notNull(), // human-readable summary line
   // Standardized Ghana location (Region → District/MMDA → Town)
   region: text("region").notNull(), // one of the 16 official regions
@@ -801,6 +801,95 @@ export const carWashLogs = pgTable("car_wash_logs", {
   totalRevenueGhs: doublePrecision("total_revenue_ghs").notNull(),
   waterPressurePsi: integer("water_pressure_psi").default(3200),
   recordedDate: text("recorded_date").notNull(),
+});
+
+// 16B. Hardware Store — Goods Received / Yard Ops Log. Every logged receipt
+// tops up the matching inventory item (or creates it) and optionally books
+// the landed cost as an EXPENSE, so the yard log IS the stock intake ledger.
+export const hardwareLogs = pgTable("hardware_logs", {
+  id: serial("id").primaryKey(),
+  businessId: integer("business_id").notNull(),
+  receiveNoteNumber: text("receive_note_number").notNull().unique(), // e.g. "GRN-HW-2026-1042"
+  supplierName: text("supplier_name").notNull(),
+  itemName: text("item_name").notNull(), // e.g. "Ghacem 42.5R Cement 50kg"
+  quantityReceived: doublePrecision("quantity_received").notNull(),
+  unit: text("unit").notNull().default("Units"), // Bags, Lengths, Sheets, Boxes…
+  unitCostGhs: doublePrecision("unit_cost_ghs").default(0),
+  condition: text("condition").notNull().default("GOOD"), // GOOD, PARTIAL, DAMAGED
+  receivedBy: text("received_by"),
+  recordedDate: text("recorded_date").notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+// H2. Hardware Store — Customer Orders (contractor / builder material orders
+// with a fulfilment pipeline; delivering one deducts stock + books revenue)
+export const hardwareOrders = pgTable("hardware_orders", {
+  id: serial("id").primaryKey(),
+  businessId: integer("business_id").notNull(),
+  branchCode: text("branch_code"),
+  orderNumber: text("order_number").notNull().unique(),
+  customerName: text("customer_name").notNull(),
+  customerPhone: text("customer_phone"),
+  itemName: text("item_name").notNull(),
+  inventoryId: integer("inventory_id"),
+  quantity: doublePrecision("quantity").notNull(),
+  unitPriceGhs: doublePrecision("unit_price_ghs").notNull(),
+  totalGhs: doublePrecision("total_ghs").notNull(),
+  status: text("status").notNull().default("PENDING"), // PENDING, READY, DELIVERED, CANCELLED
+  dueDate: text("due_date"),
+  deliverySite: text("delivery_site"), // e.g. "East Legon Site, Plot 14"
+  fulfilledDate: text("fulfilled_date"),
+  notes: text("notes"),
+  createdByName: text("created_by_name"),
+  createdByRole: text("created_by_role"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+// H3. Hardware Store — Supplier Purchases / Restock POs. RECEIVED stock flows
+// into Inventory (+quantity / new SKU) and Finance (expense) in one step.
+export const hardwarePurchases = pgTable("hardware_purchases", {
+  id: serial("id").primaryKey(),
+  businessId: integer("business_id").notNull(),
+  branchCode: text("branch_code"),
+  purchaseNumber: text("purchase_number").notNull().unique(), // e.g. "PO-HW-2026-231"
+  supplierName: text("supplier_name").notNull(),
+  itemName: text("item_name").notNull(),
+  quantity: doublePrecision("quantity").notNull(),
+  unitCostGhs: doublePrecision("unit_cost_ghs").notNull(),
+  totalGhs: doublePrecision("total_ghs").notNull(),
+  status: text("status").notNull().default("ORDERED"), // ORDERED, RECEIVED, CANCELLED
+  orderDate: text("order_date").notNull(),
+  receivedDate: text("received_date"),
+  notes: text("notes"),
+  createdByName: text("created_by_name"),
+  createdByRole: text("created_by_role"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+// H4. Hardware Store — Site Deliveries / Dispatch. A completed standalone
+// delivery deducts the dispatched quantity from stock (order-linked
+// deliveries inherit the order's fulfilment instead — never double-counted).
+export const hardwareDeliveries = pgTable("hardware_deliveries", {
+  id: serial("id").primaryKey(),
+  businessId: integer("business_id").notNull(),
+  branchCode: text("branch_code"),
+  deliveryNumber: text("delivery_number").notNull().unique(), // e.g. "DLV-HW-2026-087"
+  orderNumber: text("order_number"), // optional link to a customer order
+  customerName: text("customer_name").notNull(),
+  siteAddress: text("site_address"),
+  driverName: text("driver_name"),
+  vehicleNumber: text("vehicle_number"),
+  itemName: text("item_name").notNull(),
+  inventoryId: integer("inventory_id"),
+  quantity: doublePrecision("quantity").notNull(),
+  unit: text("unit").notNull().default("Units"),
+  status: text("status").notNull().default("SCHEDULED"), // SCHEDULED, EN_ROUTE, DELIVERED, CANCELLED
+  dispatchDate: text("dispatch_date").notNull(),
+  deliveredDate: text("delivered_date"),
+  notes: text("notes"),
+  createdByName: text("created_by_name"),
+  createdByRole: text("created_by_role"),
+  createdAt: timestamp("created_at").defaultNow(),
 });
 
 // 17. AI Strategic Insights & Risk Recommendations

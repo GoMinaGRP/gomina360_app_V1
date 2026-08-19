@@ -8,11 +8,13 @@ import {
   restaurantLogs,
   electronicsLogs,
   carWashLogs,
+  hardwareLogs,
+  inventoryItems,
   businesses,
   transactions,
 } from "@/db/schema";
 import { eq, desc } from "drizzle-orm";
-import { stockOut } from "@/lib/stock";
+import { stockOut, computeStockStatus } from "@/lib/stock";
 import { getSessionInfo, UNAUTHENTICATED } from "@/lib/auth";
 
 export async function GET(
@@ -64,6 +66,10 @@ export async function GET(
     }
     if (upperCode.startsWith("WASH")) {
       const rows = await db.select().from(carWashLogs).where(eq(carWashLogs.businessId, biz.id)).orderBy(desc(carWashLogs.id));
+      return NextResponse.json({ success: true, businessId: biz.id, logs: rows });
+    }
+    if (upperCode.startsWith("HARDWARE")) {
+      const rows = await db.select().from(hardwareLogs).where(eq(hardwareLogs.businessId, biz.id)).orderBy(desc(hardwareLogs.id));
       return NextResponse.json({ success: true, businessId: biz.id, logs: rows });
     }
 
@@ -262,6 +268,99 @@ export async function POST(
         } catch (e) {
           console.error("wash chemical stock warning:", e);
         }
+      }
+
+      return NextResponse.json({ success: true, log: inserted });
+    }
+
+    if (upperCode.startsWith("HARDWARE")) {
+      // Goods-Received Note: the yard intake ledger. Every logged receipt
+      // tops up (or creates) the matching inventory item, and the landed
+      // cost books straight to Finance — Stock → Inventory, Purchases →
+      // Finance stay in lock-step with the physical yard.
+      const qty = Math.max(0, Number(body.quantityReceived) || 0);
+      const unitCost = Number(body.unitCostGhs) || 0;
+      const stampNote = Date.now().toString().slice(-6);
+      const [inserted] = await db
+        .insert(hardwareLogs)
+        .values({
+          businessId: biz.id,
+          receiveNoteNumber: body.receiveNoteNumber || `GRN-HW-${new Date().getFullYear()}-${stampNote}`,
+          supplierName: body.supplierName || "Supplier",
+          itemName: body.itemName || "Building Material",
+          quantityReceived: qty,
+          unit: body.unit || "Units",
+          unitCostGhs: unitCost,
+          condition: ["GOOD", "PARTIAL", "DAMAGED"].includes(body.condition) ? body.condition : "GOOD",
+          receivedBy: body.receivedBy || body.createdByName || null,
+          recordedDate: today,
+        })
+        .returning();
+
+      // ── Stock linkage: received goods flow into Inventory ──
+      if (qty > 0) {
+        try {
+          const inv = await db.select().from(inventoryItems).where(eq(inventoryItems.businessId, biz.id));
+          const key = String(inserted.itemName || "").toUpperCase().slice(0, 12);
+          const target = inv.find(
+            (i: any) =>
+              i.name?.toUpperCase().includes(key) ||
+              key.includes(String(i.name || "").toUpperCase().slice(0, 12))
+          );
+          if (target) {
+            const newQty = (target.quantity || 0) + qty;
+            await db
+              .update(inventoryItems)
+              .set({
+                quantity: newQty,
+                costPriceGhs: unitCost || target.costPriceGhs,
+                status: computeStockStatus(newQty, target.minStockThreshold || 0),
+              })
+              .where(eq(inventoryItems.id, target.id));
+          } else {
+            const taken = new Set(
+              (await db.select({ sku: inventoryItems.sku }).from(inventoryItems)).map((r: any) => r.sku)
+            );
+            let sku = `HW-${String(inserted.itemName || "ITEM").toUpperCase().replace(/[^A-Z0-9]+/g, "-").slice(0, 18)}`;
+            let n = 2;
+            while (taken.has(sku)) sku = `${sku.slice(0, 20)}-${n++}`;
+            await db.insert(inventoryItems).values({
+              name: inserted.itemName,
+              sku,
+              businessId: biz.id,
+              category: "Building Materials",
+              quantity: qty,
+              unit: inserted.unit || "Units",
+              costPriceGhs: unitCost,
+              sellingPriceGhs: Math.round(unitCost * 1.25 * 100) / 100,
+              minStockThreshold: 10,
+              status: computeStockStatus(qty, 10),
+            });
+          }
+        } catch (e) {
+          console.error("hardware receipt stock warning:", e);
+        }
+      }
+
+      // ── Finance linkage: landed cost books as an EXPENSE ──
+      if (qty > 0 && unitCost > 0 && body.recordExpense !== false) {
+        await db.insert(transactions).values({
+          transactionNumber: `TRX-${new Date().getFullYear()}-${Date.now().toString().slice(-6)}`,
+          businessId: biz.id,
+          branchCode: biz.code,
+          branchName: biz.name,
+          type: "EXPENSE",
+          category: "HARDWARE_STOCK_RECEIPT",
+          amountGhs: qty * unitCost,
+          paymentMethod: body.paymentMethod || "BANK_TRANSFER",
+          description: `GRN ${inserted.receiveNoteNumber}: ${qty} ${inserted.unit} ${inserted.itemName} from ${inserted.supplierName}`,
+          date: today,
+          createdAt: new Date(),
+          status: "COMPLETED",
+          recordedBy: body.receivedBy || body.createdByName || "Hardware Depot",
+          recordedByRole: body.recordedByRole || body.createdByRole || null,
+          recordedByUserId: body.recordedByUserId ? Number(body.recordedByUserId) : null,
+        }).catch((e) => console.error("hardware receipt txn warning:", e));
       }
 
       return NextResponse.json({ success: true, log: inserted });
