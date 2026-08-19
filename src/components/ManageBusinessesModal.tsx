@@ -40,7 +40,7 @@ interface ManageBusinessesModalProps {
   onClose: () => void;
   businesses: any[];
   currentUser: any;
-  onChanged: () => void | Promise<void>;
+  onChanged: () => void | Promise<unknown>;
   onAddNew: () => void;
   onDeleted?: (code: string) => void;
 }

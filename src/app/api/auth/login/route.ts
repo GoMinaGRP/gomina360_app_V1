@@ -11,7 +11,18 @@ import {
   accessibleBusinessIds,
 } from "@/lib/auth";
 
-const COOKIE_BASE = `Path=/; HttpOnly; SameSite=Lax; Max-Age=${7 * 24 * 3600}`;
+// Session cookie tuned for the EMBEDDED preview (the app runs inside an
+// iframe on a different site):
+// - SameSite=None + Secure is REQUIRED for the browser to store/send the
+//   cookie in a cross-site iframe at all. The old SameSite=Lax cookie was
+//   silently dropped there → every API call ran anonymous → 401 → the app
+//   "blinked and bounced back to the login page" after a successful login.
+// - Partitioned (CHIPS) keeps the cookie working as Chrome/Safari phase out
+//   unpartitioned third-party cookies; engines that don't know the attribute
+//   ignore it.
+// Loopback (localhost / 127.0.0.1) is a "potentially trustworthy" origin, so
+// Secure cookies still work over plain http in local development.
+const COOKIE_BASE = `Path=/; HttpOnly; SameSite=None; Secure; Partitioned; Max-Age=${7 * 24 * 3600}`;
 
 export async function POST(request: Request) {
   try {
@@ -94,7 +105,13 @@ export async function POST(request: Request) {
     res.headers.set("Set-Cookie", `${SESSION_COOKIE}=${token}; ${COOKIE_BASE}`);
     return res;
   } catch (error: any) {
-    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+    // DB/driver failures land here — keep the detail server-side, give the
+    // user an actionable message instead of a raw connection error.
+    console.error("[auth/login] service error:", error?.message || error);
+    return NextResponse.json(
+      { success: false, error: "Sign-in service is temporarily unavailable (database connection). Please wait a moment and retry." },
+      { status: 500 }
+    );
   }
 }
 

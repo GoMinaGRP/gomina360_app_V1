@@ -7,7 +7,7 @@ import { Lock, Mail, ShieldCheck, Eye, EyeOff, AlertTriangle } from "lucide-reac
  * GoMina 360 secure sign-in gate. Every user logs in with their own email +
  * password; the session is an httpOnly cookie (7 days, SameSite=Lax).
  */
-export default function LoginScreen({ onSuccess }: { onSuccess: (user: any) => void }) {
+export default function LoginScreen({ onSuccess, notice }: { onSuccess: (user: any) => void; notice?: string }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPw, setShowPw] = useState(false);
@@ -66,6 +66,16 @@ export default function LoginScreen({ onSuccess }: { onSuccess: (user: any) => v
             Sign in with your own account. You will only see the businesses and
             branches the OWNER has assigned to you.
           </p>
+
+          {notice && (
+            <div
+              data-testid="login-notice"
+              className="flex items-start gap-2 bg-amber-500/10 border border-amber-500/40 text-amber-300 p-3 rounded-lg text-xs leading-relaxed"
+            >
+              <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+              <span>{notice}</span>
+            </div>
+          )}
 
           {error && (
             <div

@@ -68,13 +68,16 @@ export default function GoMinaApp() {
   // Secure-session state (declared with the other UI state so the data
   // refresh callback below can safely bounce a dead session to sign-in).
   const [signedIn, setSignedIn] = useState(false);
+  // One-line explanation shown on the sign-in screen when a login POST
+  // succeeded but the browser refused to keep the session cookie.
+  const [loginNotice, setLoginNotice] = useState("");
 
   // Baseline snapshot of the highest transaction id at first load. Any transaction
   // created after this point (a new in-app sale/expense) is layered onto the seeded
   // quarter-to-date metrics so dashboards update live without double-counting.
   const baselineMaxTxnId = useRef<number | null>(null);
 
-  const refreshAllData = useCallback(async () => {
+  const refreshAllData = useCallback(async (): Promise<"ok" | "unauthorized" | "error"> => {
     try {
       const res = await fetch("/api/init");
       // Session gone (expired, revoked by the OWNER, or the server/database
@@ -85,7 +88,7 @@ export default function GoMinaApp() {
         setSignedIn(false);
         setCurrentUser(null);
         setError(null);
-        return;
+        return "unauthorized";
       }
       const data = await res.json();
       if (data.success) {
@@ -131,6 +134,7 @@ export default function GoMinaApp() {
             carWash: [],
           }
         );
+        return "ok";
       } else {
         setError(data.error || "Failed to load enterprise data.");
       }
@@ -140,6 +144,7 @@ export default function GoMinaApp() {
       setLoading(false);
       setOfflineQueueCount(getOfflineQueue().length);
     }
+    return "error";
   }, []);
 
   // ── Secure login bootstrap ──────────────────────────────────────────────
@@ -166,11 +171,23 @@ export default function GoMinaApp() {
 
   const handleLoginSuccess = async (user: any) => {
     setError(null);
+    setLoginNotice("");
     setLoading(true);
     setCurrentUser(user);
     setSignedIn(true);
     baselineMaxTxnId.current = null;
-    await refreshAllData();
+    const status = await refreshAllData();
+    if (status === "unauthorized") {
+      // The login POST succeeded but the very next authenticated call came
+      // back 401: the browser refused to store/send the session cookie
+      // (third-party-cookie policy on an embedded/iframe preview). Do NOT
+      // just blink back to a silent sign-in — explain precisely what to do.
+      setSignedIn(false);
+      setCurrentUser(null);
+      setLoginNotice(
+        "Signed in, but your browser would not keep the session cookie, so the session ended immediately. Allow cookies for this site (including third-party cookies when the app is embedded) — or open the app in its own browser tab — then sign in again."
+      );
+    }
   };
 
   const handleLogout = async () => {
@@ -179,6 +196,7 @@ export default function GoMinaApp() {
     } catch { /* best effort */ }
     setSignedIn(false);
     setCurrentUser(null);
+    setLoginNotice("");
     setActiveTab("COMMAND_CENTER");
   };
 
@@ -741,7 +759,7 @@ export default function GoMinaApp() {
 
   // No valid session → render ONLY the sign-in screen (no data is fetched).
   if (!signedIn || !currentUser) {
-    return <LoginScreen onSuccess={handleLoginSuccess} />;
+    return <LoginScreen onSuccess={handleLoginSuccess} notice={loginNotice} />;
   }
 
   if (error) {

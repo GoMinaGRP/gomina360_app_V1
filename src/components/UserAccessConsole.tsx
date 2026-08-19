@@ -29,7 +29,7 @@ interface Props {
   onClose: () => void;
   businesses: any[];
   currentUser: any;
-  onChanged: () => Promise<void> | void;
+  onChanged: () => Promise<unknown> | void;
 }
 
 /**
