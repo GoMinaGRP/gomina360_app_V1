@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import AiSectionGuide from "./AiSectionGuide";
 import {
   Users,
@@ -94,6 +94,36 @@ export default function SharedEnterpriseModule({
   const [paymentMethod, setPaymentMethod] = useState("MTN_MOMO");
   const [description, setDescription] = useState("Transaction payment via MTN MoMo");
   const [trxType, setTrxType] = useState("INCOME");
+
+  // ─── INVENTORY add-form: business + branch/register, stock details & photos ───
+  const [invBranch, setInvBranch] = useState("");
+  const [invQty, setInvQty] = useState<number>(50);
+  const [invUnit, setInvUnit] = useState("Units");
+  const [invCost, setInvCost] = useState<number>(20);
+  const [invPrice, setInvPrice] = useState<number>(35);
+  const [invMin, setInvMin] = useState<number>(10);
+  const [invPhotos, setInvPhotos] = useState<string[]>([]);
+  const [invPhotoErr, setInvPhotoErr] = useState("");
+
+  /** Accepts uploaded images or camera captures (data URLs), 5MB max each. */
+  const handleInvPhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+    Array.from(files).forEach((file) => {
+      if (file.size > 5 * 1024 * 1024) {
+        setInvPhotoErr("Each photo must be under 5MB.");
+        return;
+      }
+      setInvPhotoErr("");
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        if (ev.target?.result) setInvPhotos((prev) => [...prev, ev.target!.result as string]);
+      };
+      reader.readAsDataURL(file);
+    });
+    e.target.value = "";
+  };
+  const removeInvPhoto = (idx: number) => setInvPhotos((prev) => prev.filter((_, i) => i !== idx));
 
   const isExecutiveUser =
     currentUser?.role === "OWNER" || currentUser?.role === "GENERAL_MANAGER";
@@ -614,6 +644,24 @@ export default function SharedEnterpriseModule({
 
   const config = getModuleConfig();
 
+  // Branch/register options for the INVENTORY form: the business's own code
+  // plus any registers already used by its transactions.
+  const invBranchOptions = useMemo(() => {
+    const biz = businesses.find((b: any) => String(b.id) === String(businessId));
+    const set = new Set<string>();
+    if (biz?.code) set.add(String(biz.code));
+    for (const t of transactions || []) {
+      if (String(t.businessId) === String(businessId) && t.branchCode) set.add(String(t.branchCode));
+    }
+    return [...set];
+  }, [businesses, businessId, transactions]);
+
+  const handleInvBusinessChange = (id: string) => {
+    setBusinessId(id);
+    const biz = businesses.find((b: any) => String(b.id) === String(id));
+    setInvBranch(biz?.code || "");
+  };
+
   const handleAddItem = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSubmitting(true);
@@ -700,16 +748,20 @@ export default function SharedEnterpriseModule({
       };
     } else if (moduleType === "INVENTORY") {
       entityType = "inventory";
+      const invBiz = businesses.find((b: any) => String(b.id) === String(businessId));
       data = {
         name,
-        sku: `SKU-${Math.floor(1000 + Math.random() * 9000)}`,
         businessId: Number(businessId),
+        branchCode: invBranch.trim() || invBiz?.code || null,
+        branchName: invBiz?.name || null,
         category: typeOrCategory,
-        quantity: Number(amountGhs) || 100,
-        unit: "Units",
-        costPriceGhs: 25,
-        sellingPriceGhs: 45,
-        minStockThreshold: 10,
+        quantity: Number(invQty) || 0,
+        unit: invUnit || "Units",
+        costPriceGhs: Number(invCost) || 0,
+        sellingPriceGhs: Number(invPrice) || 0,
+        minStockThreshold: Number(invMin) || 10,
+        photo: invPhotos[0] || null,
+        photos: invPhotos,
       };
     }
 
@@ -731,6 +783,8 @@ export default function SharedEnterpriseModule({
         onRefreshData();
         setShowModal(false);
         setLocation({ region: "", district: "", town: "" });
+        setInvPhotos([]);
+        setInvPhotoErr("");
       }
     } catch (err) {
       console.error("Error saving entity:", err);
@@ -1815,9 +1869,10 @@ export default function SharedEnterpriseModule({
             <table className="w-full text-left text-xs sm:text-sm">
               <thead className="bg-slate-900/90 text-slate-400 uppercase font-semibold text-[11px] tracking-wider border-b border-slate-700">
                 <tr>
+                  <th className="px-3 py-3 text-center">Photo</th>
                   <th className="px-4 py-3">SKU & Item Name</th>
                   <th className="px-4 py-3">Category</th>
-                  <th className="px-4 py-3">Business Unit</th>
+                  <th className="px-4 py-3">Business & Branch</th>
                   <th className="px-4 py-3 text-right">Qty & Unit</th>
                   <th className="px-4 py-3 text-right">Cost Price</th>
                   <th className="px-4 py-3 text-right">Selling Price</th>
@@ -1826,7 +1881,22 @@ export default function SharedEnterpriseModule({
               </thead>
               <tbody className="divide-y divide-slate-700/60">
                 {visibleInventory.map((inv) => (
-                  <tr key={inv.id} className="hover:bg-slate-700/50">
+                  <tr key={inv.id} className="hover:bg-slate-700/50" data-testid={`inv-row-${inv.id}`}>
+                    <td className="px-3 py-2.5 text-center">
+                      {inv.photo ? (
+                        <img
+                          src={inv.photo}
+                          alt={inv.name}
+                          title={Array.isArray(inv.photos) && inv.photos.length > 1 ? `${inv.photos.length} photos` : inv.name}
+                          data-testid={`inv-photo-${inv.id}`}
+                          className="w-10 h-10 object-cover rounded-lg border border-slate-600 mx-auto"
+                        />
+                      ) : (
+                        <div className="w-10 h-10 rounded-lg border border-slate-700 bg-slate-800 flex items-center justify-center mx-auto">
+                          <Package className="w-4 h-4 text-slate-600" />
+                        </div>
+                      )}
+                    </td>
                     <td className="px-4 py-3.5 font-bold text-slate-100">
                       <div>{inv.name}</div>
                       <div className="text-[11px] font-mono text-emerald-400">
@@ -1835,7 +1905,10 @@ export default function SharedEnterpriseModule({
                     </td>
                     <td className="px-4 py-3.5 text-slate-300">{inv.category}</td>
                     <td className="px-4 py-3.5 text-slate-300">
-                      {getBusinessName(inv.businessId)}
+                      <div>{inv.branchName || getBusinessName(inv.businessId)}</div>
+                      <div className="text-[10px] font-mono text-cyan-400">
+                        {inv.branchCode || businesses.find((b: any) => b.id === inv.businessId)?.code || "—"}
+                      </div>
                     </td>
                     <td className="px-4 py-3.5 text-right font-bold text-white">
                       {inv.quantity?.toLocaleString()} {inv.unit}
@@ -2117,6 +2190,190 @@ export default function SharedEnterpriseModule({
                     <div className="text-[10px] text-slate-500">
                       Date & Time: {new Date().toLocaleString()}
                     </div>
+                  </div>
+                </>
+              ) : moduleType === "INVENTORY" ? (
+                <>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-400 mb-1">
+                      Item Name
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      placeholder="e.g. 50kg Cement Bag, Maize Feed 25kg..."
+                      value={name}
+                      onChange={(e) => setName(e.target.value)}
+                      data-testid="inv-name"
+                      className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-white text-sm"
+                    />
+                  </div>
+
+                  {/* Business + Branch/Register selection (required) */}
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-400 mb-1">
+                        Business
+                      </label>
+                      <select
+                        value={businessId}
+                        onChange={(e) => handleInvBusinessChange(e.target.value)}
+                        data-testid="inv-business-select"
+                        className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-white text-sm"
+                      >
+                        {businesses.map((b: any) => (
+                          <option key={b.id} value={b.id}>
+                            {b.name} ({b.code})
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-400 mb-1">
+                        Branch / Register
+                      </label>
+                      <input
+                        type="text"
+                        required
+                        value={invBranch}
+                        onChange={(e) => setInvBranch(e.target.value)}
+                        list="inv-branch-list"
+                        placeholder="e.g. WASH-01"
+                        data-testid="inv-branch-input"
+                        className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-white text-sm"
+                      />
+                      <datalist id="inv-branch-list">
+                        {invBranchOptions.map((c) => (
+                          <option key={c} value={c} />
+                        ))}
+                      </datalist>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-400 mb-1">
+                      Category / Type
+                    </label>
+                    <input
+                      type="text"
+                      value={typeOrCategory}
+                      onChange={(e) => setTypeOrCategory(e.target.value)}
+                      className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-white text-sm"
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-3 gap-3">
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-400 mb-1">Quantity</label>
+                      <input
+                        type="number"
+                        min={0}
+                        value={invQty}
+                        onChange={(e) => setInvQty(Number(e.target.value))}
+                        data-testid="inv-qty"
+                        className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-white text-sm"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-400 mb-1">Unit</label>
+                      <select
+                        value={invUnit}
+                        onChange={(e) => setInvUnit(e.target.value)}
+                        className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-white text-sm"
+                      >
+                        {["Units", "Bags", "Trays", "Kg", "Litres", "Tons", "Boxes", "Pieces", "Vehicles"].map((u) => (
+                          <option key={u} value={u}>{u}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-400 mb-1">Min Stock Alert</label>
+                      <input
+                        type="number"
+                        min={0}
+                        value={invMin}
+                        onChange={(e) => setInvMin(Number(e.target.value))}
+                        className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-white text-sm"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-400 mb-1">Cost Price (GH₵)</label>
+                      <input
+                        type="number"
+                        min={0}
+                        step="0.01"
+                        value={invCost}
+                        onChange={(e) => setInvCost(Number(e.target.value))}
+                        className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-white text-sm"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-400 mb-1">Selling Price (GH₵)</label>
+                      <input
+                        type="number"
+                        min={0}
+                        step="0.01"
+                        value={invPrice}
+                        onChange={(e) => setInvPrice(Number(e.target.value))}
+                        className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-white text-sm"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Item photos — upload or camera */}
+                  <div>
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="text-xs font-semibold text-slate-400">Item Photos (optional)</label>
+                      <span className="text-[10px] text-slate-500" data-testid="inv-photo-count">
+                        {invPhotos.length} attached
+                      </span>
+                    </div>
+                    {invPhotos.length > 0 && (
+                      <div className="flex flex-wrap gap-2 mb-2" data-testid="inv-photo-previews">
+                        {invPhotos.map((img, idx) => (
+                          <div key={idx} className="relative group w-16 h-16">
+                            <img src={img} alt={`Item ${idx + 1}`} className="w-full h-full object-cover rounded-lg border border-slate-700" />
+                            <button
+                              type="button"
+                              onClick={() => removeInvPhoto(idx)}
+                              className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-rose-600 text-white rounded-full text-xs flex items-center justify-center opacity-80 hover:opacity-100"
+                            >
+                              ×
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    <div className="flex gap-2">
+                      <label
+                        data-testid="inv-photo-upload"
+                        className="flex-1 flex items-center justify-center gap-2 px-3 py-2.5 bg-slate-800 border border-slate-700 border-dashed rounded-lg text-xs text-slate-400 hover:text-emerald-400 hover:border-emerald-500/50 cursor-pointer transition"
+                      >
+                        <Package className="w-4 h-4" />
+                        Upload Photo
+                        <input type="file" accept="image/*" multiple onChange={handleInvPhotoUpload} className="hidden" />
+                      </label>
+                      <label
+                        data-testid="inv-photo-camera"
+                        className="flex-1 flex items-center justify-center gap-2 px-3 py-2.5 bg-slate-800 border border-slate-700 border-dashed rounded-lg text-xs text-slate-400 hover:text-emerald-400 hover:border-emerald-500/50 cursor-pointer transition"
+                      >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"/><circle cx="12" cy="13" r="3"/></svg>
+                        Take Photo
+                        <input type="file" accept="image/*" capture="environment" onChange={handleInvPhotoUpload} className="hidden" />
+                      </label>
+                    </div>
+                    {invPhotoErr && <p className="text-[10px] text-rose-400 mt-1">{invPhotoErr}</p>}
+                  </div>
+
+                  <div className="pt-2 border-t border-slate-800">
+                    <LocationSelector
+                      value={location}
+                      onChange={setLocation}
+                      compact
+                    />
                   </div>
                 </>
               ) : (

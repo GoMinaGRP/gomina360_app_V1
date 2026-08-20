@@ -359,7 +359,7 @@ export default function WorkerDashboard({
             }`}
           >
             <tab.icon className="w-4 h-4" />
-            <span className="hidden sm:inline">{tab.label}</span>
+            <span className="text-[10px] leading-none sm:leading-normal sm:text-xs">{tab.label}</span>
           </button>
         ))}
       </div>

@@ -426,12 +426,33 @@ export async function POST(request: Request) {
     if (entityType === "inventory") {
       const qty = Number(data.quantity) || 100;
       const threshold = Number(data.minStockThreshold) || 10;
+      const bizId = Number(data.businessId) || 1;
+      // Branch/register defaults to the owning business code (same convention
+      // as transactions) so every stock row is always business+branch stamped.
+      let branchCode = data.branchCode ? String(data.branchCode).trim() : "";
+      let branchName = data.branchName ? String(data.branchName).trim() : "";
+      if (!branchCode || !branchName) {
+        const [biz] = await db
+          .select()
+          .from(businesses)
+          .where(eq(businesses.id, bizId))
+          .limit(1);
+        if (biz) {
+          if (!branchCode) branchCode = biz.code;
+          if (!branchName) branchName = biz.name;
+        }
+      }
+      const photosArr = Array.isArray(data.photos)
+        ? data.photos.filter((p: any) => typeof p === "string" && p.length > 0)
+        : [];
       const [inserted] = await db
         .insert(inventoryItems)
         .values({
           name: data.name || "New Inventory Item",
           sku: data.sku || `SKU-${Math.floor(10000 + Math.random() * 90000)}`,
-          businessId: Number(data.businessId) || 1,
+          businessId: bizId,
+          branchCode: branchCode || null,
+          branchName: branchName || null,
           category: data.category || "General Stock",
           quantity: qty,
           unit: data.unit || "Units",
@@ -440,6 +461,8 @@ export async function POST(request: Request) {
           minStockThreshold: threshold,
           status: computeStockStatus(qty, threshold),
           expiryDate: data.expiryDate || null,
+          photo: typeof data.photo === "string" && data.photo ? data.photo : photosArr[0] || null,
+          photos: photosArr,
         })
         .returning();
       return NextResponse.json({ success: true, item: inserted });

@@ -232,6 +232,9 @@ export const inventoryItems = pgTable("inventory_items", {
   // collide with another unit's rows.
   sku: text("sku").notNull(),
   businessId: integer("business_id").notNull(),
+  /** Branch/register this stock belongs to (defaults to the business code). */
+  branchCode: text("branch_code"),
+  branchName: text("branch_name"),
   category: text("category").notNull(),
   quantity: doublePrecision("quantity").notNull(),
   unit: text("unit").notNull(), // 'Bags', 'Trays', 'Tons', 'Kg', 'Units', 'Vehicles'
@@ -240,6 +243,9 @@ export const inventoryItems = pgTable("inventory_items", {
   minStockThreshold: doublePrecision("min_stock_threshold").notNull(),
   status: text("status").default("IN_STOCK"), // 'IN_STOCK', 'LOW_STOCK', 'OUT_OF_STOCK'
   expiryDate: text("expiry_date"), // perishable stock safety tracking (used by Restaurant & Kitchen)
+  /** Primary product photo (data URL) + full set — uploaded or camera-captured. */
+  photo: text("photo"),
+  photos: jsonb("photos"),
 }, (t) => [
   uniqueIndex("inventory_items_business_sku_unique").on(t.businessId, t.sku),
 ]);

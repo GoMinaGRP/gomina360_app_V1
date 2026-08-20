@@ -23,9 +23,14 @@ import {
 } from "lucide-react";
 import {
   Bar,
+  BarChart,
   CartesianGrid,
+  Cell,
   ComposedChart,
+  Legend,
   Line,
+  Pie,
+  PieChart,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -38,6 +43,7 @@ import {
   computeFinancialReport,
   defaultGranularity,
   financePeriods,
+  FinancePeriodDef,
   getFinancePeriod,
   isPurchaseLikeExpense,
   recoverBaseline,
@@ -95,6 +101,30 @@ const TONE_CLS: Record<string, string> = {
   teal: "text-teal-400",
   orange: "text-orange-400",
 };
+
+/** Report-type picker: tailors which panels the report shows. */
+const REPORT_TYPES: { key: string; label: string }[] = [
+  { key: "FULL", label: "Full Report" },
+  { key: "SALES_REVENUE", label: "Sales & Revenue" },
+  { key: "EXPENSES_PURCHASES", label: "Expenses & Purchases" },
+  { key: "PAYMENTS", label: "Payments" },
+  { key: "OUTSTANDING", label: "Outstanding" },
+  { key: "INVENTORY", label: "Inventory Value" },
+];
+/** Panels kept visible per report type (FULL shows everything). */
+const TYPE_SECTIONS: Record<string, Set<string>> = {
+  SALES_REVENUE: new Set(["trend", "chart-sales", "chart-revcats", "chart-profit", "income-cats", "scope", "ledger", "links"]),
+  EXPENSES_PURCHASES: new Set(["trend", "chart-expcats", "chart-profit", "expense-cats", "scope", "ledger", "links"]),
+  PAYMENTS: new Set(["trend", "chart-payments", "chart-profit", "payments", "scope", "ledger", "links"]),
+  OUTSTANDING: new Set(["outstanding", "scope", "ledger", "links"]),
+  INVENTORY: new Set(["scope", "ledger", "links"]),
+};
+
+const EMERALD_SHADES = ["#10b981", "#34d399", "#6ee7b7", "#a7f3d0", "#059669", "#047857", "#065f46", "#022c22"];
+const ROSE_SHADES = ["#f43f5e", "#fb7185", "#fda4af", "#e11d48", "#be123c", "#9f1239", "#881337", "#fecdd3"];
+
+const AXIS_TICK = { fontSize: 10, fill: "#94a3b8" } as const;
+const TOOLTIP_STYLE = { background: "#0f172a", border: "1px solid #334155", fontSize: 11 } as const;
 
 // Static Tailwind maps (JIT-safe: never interpolate class names).
 const ACCENT_BTN: Record<string, string> = {
@@ -164,6 +194,9 @@ export default function FinancialReportSection({
   const today = new Date();
   const periods = useMemo(() => financePeriods(today), []);
   const [periodKey, setPeriodKey] = useState<string>("ALL_TIME");
+  const [reportType, setReportType] = useState<string>("FULL");
+  const [customFrom, setCustomFrom] = useState<string>("");
+  const [customTo, setCustomTo] = useState<string>("");
   const [granularity, setGranularity] = useState<FinanceGranularity>("MONTH");
   const [scopeBizId, setScopeBizId] = useState<number | null>(businessInfo?.id ?? null);
   const [branchCode, setBranchCode] = useState<string | null>(null);
@@ -176,7 +209,23 @@ export default function FinancialReportSection({
     ? businesses.find((b) => b.id === activeBizId) || null
     : businessInfo;
 
-  const period = getFinancePeriod(periodKey, today);
+  const period = useMemo(() => {
+    if (periodKey === "CUSTOM") {
+      const start = customFrom || null;
+      const end = customTo || null;
+      return {
+        key: "CUSTOM",
+        label: start || end ? `Custom ${start ?? "…"} → ${end ?? "…"}` : "Custom range",
+        start,
+        end,
+      } as FinancePeriodDef;
+    }
+    return getFinancePeriod(periodKey, today);
+  }, [periodKey, customFrom, customTo]);
+
+  /** Panels visible for the chosen report type (FULL = everything). */
+  const showSec = (sec: string) =>
+    reportType === "FULL" || (TYPE_SECTIONS[reportType]?.has(sec) ?? false);
 
   // ── Sales documents (invoices) — self-maintained, refreshed with the ledger ──
   const txSignature = useMemo(() => {
@@ -248,6 +297,27 @@ export default function FinancialReportSection({
         today,
       }),
     [transactions, activeBizId, branchCode, isEnterprise, baseline, period, granularity]
+  );
+
+  // ── Chart datasets (payments in/out per channel, profit margin trend) ──
+  const payChannelRows = useMemo(() => {
+    const map = new Map<string, { name: string; moneyIn: number; moneyOut: number }>();
+    for (const p of report.paymentsInByMethod) {
+      map.set(p.name, { name: p.name, moneyIn: p.total, moneyOut: map.get(p.name)?.moneyOut || 0 });
+    }
+    for (const p of report.paymentsOutByMethod) {
+      map.set(p.name, { name: p.name, moneyIn: map.get(p.name)?.moneyIn || 0, moneyOut: p.total });
+    }
+    return [...map.values()].sort((a, b) => b.moneyIn + b.moneyOut - (a.moneyIn + a.moneyOut)).slice(0, 8);
+  }, [report]);
+
+  const profitRows = useMemo(
+    () =>
+      report.trend.map((b) => ({
+        ...b,
+        margin: b.revenue > 0 ? Number(((b.profit / b.revenue) * 100).toFixed(1)) : 0,
+      })),
+    [report]
   );
 
   // ── Inventory linkage (real-time stock position for the scope) ──
@@ -413,6 +483,37 @@ export default function FinancialReportSection({
               {p.label}
             </button>
           ))}
+          {/* Custom date range — pick any exact from/to dates */}
+          <button
+            data-testid={`${testid}-period-CUSTOM`}
+            onClick={() => setPeriodKey("CUSTOM")}
+            className={`px-2.5 py-1.5 rounded-lg text-[11px] font-bold transition inline-flex items-center gap-1 ${
+              periodKey === "CUSTOM"
+                ? ACCENT_BTN[accent] || ACCENT_BTN.emerald
+                : "bg-slate-900/70 border border-dashed border-slate-600 text-slate-300 hover:border-slate-500"
+            }`}
+          >
+            <CalendarRange className="w-3 h-3" /> Custom
+          </button>
+          {periodKey === "CUSTOM" && (
+            <span className="inline-flex items-center gap-1.5" data-testid={`${testid}-custom-range`}>
+              <input
+                type="date"
+                value={customFrom}
+                onChange={(e) => setCustomFrom(e.target.value)}
+                data-testid={`${testid}-date-from`}
+                className="px-2 py-1 bg-slate-900 border border-slate-700 rounded-lg text-white text-[11px] font-semibold"
+              />
+              <span className="text-slate-500 text-[10px] font-bold">to</span>
+              <input
+                type="date"
+                value={customTo}
+                onChange={(e) => setCustomTo(e.target.value)}
+                data-testid={`${testid}-date-to`}
+                className="px-2 py-1 bg-slate-900 border border-slate-700 rounded-lg text-white text-[11px] font-semibold"
+              />
+            </span>
+          )}
         </div>
         <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
           <div className="flex items-center gap-1.5">
@@ -433,6 +534,23 @@ export default function FinancialReportSection({
               </button>
             ))}
           </div>
+          <label className="flex items-center gap-2">
+            <span className="text-[10px] font-bold text-slate-400 uppercase inline-flex items-center gap-1">
+              <Receipt className="w-3 h-3" /> Report Type
+            </span>
+            <select
+              data-testid={`${testid}-report-type`}
+              value={reportType}
+              onChange={(e) => setReportType(e.target.value)}
+              className="px-2.5 py-1 bg-slate-900 border border-slate-700 rounded-lg text-white text-[11px] font-semibold"
+            >
+              {REPORT_TYPES.map((rt) => (
+                <option key={rt.key} value={rt.key}>
+                  {rt.label}
+                </option>
+              ))}
+            </select>
+          </label>
           {isEnterprise ? (
             <label className="flex items-center gap-2">
               <span className="text-[10px] font-bold text-slate-400 uppercase inline-flex items-center gap-1">
@@ -592,6 +710,7 @@ export default function FinancialReportSection({
       </div>
 
       {/* ── Trend chart ── */}
+      {showSec("trend") && (
       <Panel
         tid={`${testid}-trend`}
         title={`Financial Trend — Revenue vs Expenses vs Profit (${
@@ -644,15 +763,156 @@ export default function FinancialReportSection({
           )}
         </div>
       </Panel>
+      )}
+
+      {/* ── Interactive financial charts — sales, revenue, expenses, profit & payments ── */}
+      {(showSec("chart-sales") || showSec("chart-revcats") || showSec("chart-expcats") || showSec("chart-payments") || showSec("chart-profit")) && (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-3" data-testid={`${testid}-charts`}>
+          {showSec("chart-sales") && (
+            <Panel tid={`${testid}-chart-sales`} title="Sales Volume — receipts per period" icon={ShoppingCart}>
+              <div className="p-3">
+                {report.trend.some((b) => (b.receipts || 0) > 0) ? (
+                  <ResponsiveContainer width="100%" height={200}>
+                    <BarChart data={report.trend} margin={{ top: 6, right: 10, left: -22, bottom: 0 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
+                      <XAxis dataKey="label" tick={AXIS_TICK} axisLine={false} tickLine={false} />
+                      <YAxis allowDecimals={false} tick={AXIS_TICK} axisLine={false} tickLine={false} />
+                      <Tooltip contentStyle={TOOLTIP_STYLE} labelStyle={{ color: "#e2e8f0" }} formatter={(v: any) => [v, "Receipts"]} />
+                      <Bar dataKey="receipts" name="Receipts" fill="#f59e0b" radius={[3, 3, 0, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                ) : (
+                  <p className="h-[140px] flex items-center justify-center text-slate-500 text-xs">No receipts inside this range yet.</p>
+                )}
+              </div>
+            </Panel>
+          )}
+
+          {showSec("chart-revcats") && (
+            <Panel tid={`${testid}-chart-revcats`} title="Sales & Revenue Mix — by category" icon={TrendingUp}>
+              <div className="p-3">
+                {report.incomeByCategory.length > 0 ? (
+                  <ResponsiveContainer width="100%" height={200}>
+                    <PieChart>
+                      <Pie
+                        data={report.incomeByCategory}
+                        dataKey="total"
+                        nameKey="name"
+                        innerRadius={46}
+                        outerRadius={76}
+                        stroke="#0f172a"
+                        strokeWidth={2}
+                      >
+                        {report.incomeByCategory.map((_, i) => (
+                          <Cell key={i} fill={EMERALD_SHADES[i % EMERALD_SHADES.length]} />
+                        ))}
+                      </Pie>
+                      <Tooltip contentStyle={TOOLTIP_STYLE} labelStyle={{ color: "#e2e8f0" }} formatter={(v: any, name: any) => [formatMoney(Number(v), currentCurrency), name]} />
+                      <Legend iconSize={8} wrapperStyle={{ fontSize: 10, color: "#94a3b8" }} />
+                    </PieChart>
+                  </ResponsiveContainer>
+                ) : (
+                  <p className="h-[140px] flex items-center justify-center text-slate-500 text-xs">No income inside this range yet.</p>
+                )}
+              </div>
+            </Panel>
+          )}
+
+          {showSec("chart-expcats") && (
+            <Panel tid={`${testid}-chart-expcats`} title="Expense Mix — by category" icon={TrendingDown}>
+              <div className="p-3">
+                {report.expenseByCategory.length > 0 ? (
+                  <ResponsiveContainer width="100%" height={200}>
+                    <PieChart>
+                      <Pie
+                        data={report.expenseByCategory}
+                        dataKey="total"
+                        nameKey="name"
+                        innerRadius={46}
+                        outerRadius={76}
+                        stroke="#0f172a"
+                        strokeWidth={2}
+                      >
+                        {report.expenseByCategory.map((_, i) => (
+                          <Cell key={i} fill={ROSE_SHADES[i % ROSE_SHADES.length]} />
+                        ))}
+                      </Pie>
+                      <Tooltip contentStyle={TOOLTIP_STYLE} labelStyle={{ color: "#e2e8f0" }} formatter={(v: any, name: any) => [formatMoney(Number(v), currentCurrency), name]} />
+                      <Legend iconSize={8} wrapperStyle={{ fontSize: 10, color: "#94a3b8" }} />
+                    </PieChart>
+                  </ResponsiveContainer>
+                ) : (
+                  <p className="h-[140px] flex items-center justify-center text-slate-500 text-xs">No expenses inside this range yet.</p>
+                )}
+              </div>
+            </Panel>
+          )}
+
+          {showSec("chart-payments") && (
+            <Panel tid={`${testid}-chart-payments`} title="Payments — money in vs out by channel" icon={CreditCard}>
+              <div className="p-3">
+                {payChannelRows.length > 0 ? (
+                  <ResponsiveContainer width="100%" height={200}>
+                    <BarChart data={payChannelRows} margin={{ top: 6, right: 10, left: -14, bottom: 0 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
+                      <XAxis dataKey="name" tick={AXIS_TICK} axisLine={false} tickLine={false} />
+                      <YAxis tick={AXIS_TICK} axisLine={false} tickLine={false} />
+                      <Tooltip contentStyle={TOOLTIP_STYLE} labelStyle={{ color: "#e2e8f0" }} formatter={(v: any, name: any) => [formatMoney(Number(v), currentCurrency), name]} />
+                      <Legend iconSize={8} wrapperStyle={{ fontSize: 10, color: "#94a3b8" }} />
+                      <Bar dataKey="moneyIn" name="Money In" fill="#10b981" radius={[3, 3, 0, 0]} />
+                      <Bar dataKey="moneyOut" name="Money Out" fill="#f43f5e" radius={[3, 3, 0, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                ) : (
+                  <p className="h-[140px] flex items-center justify-center text-slate-500 text-xs">No payment activity inside this range yet.</p>
+                )}
+              </div>
+            </Panel>
+          )}
+
+          {showSec("chart-profit") && (
+            <Panel tid={`${testid}-chart-profit`} title="Profitability — profit & margin trend" icon={Scale}>
+              <div className="p-3">
+                {report.trend.some((b) => b.revenue > 0 || b.expenses > 0) ? (
+                  <ResponsiveContainer width="100%" height={200}>
+                    <ComposedChart data={profitRows} margin={{ top: 6, right: -4, left: -18, bottom: 0 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
+                      <XAxis dataKey="label" tick={AXIS_TICK} axisLine={false} tickLine={false} />
+                      <YAxis yAxisId="left" tick={AXIS_TICK} axisLine={false} tickLine={false} />
+                      <YAxis yAxisId="right" orientation="right" tick={AXIS_TICK} axisLine={false} tickLine={false} unit="%" />
+                      <Tooltip
+                        contentStyle={TOOLTIP_STYLE}
+                        labelStyle={{ color: "#e2e8f0" }}
+                        formatter={(v: any, name: any) => (name === "Margin" ? [`${v}%`, name] : [formatMoney(Number(v), currentCurrency), name])}
+                      />
+                      <Legend iconSize={8} wrapperStyle={{ fontSize: 10, color: "#94a3b8" }} />
+                      <Line yAxisId="left" type="monotone" dataKey="profit" name="Net Profit" stroke="#22d3ee" strokeWidth={2.5} dot={{ r: 3, fill: "#22d3ee" }} />
+                      <Line yAxisId="right" type="monotone" dataKey="margin" name="Margin" stroke="#f59e0b" strokeWidth={2} strokeDasharray="5 3" dot={{ r: 2.5, fill: "#f59e0b" }} />
+                    </ComposedChart>
+                  </ResponsiveContainer>
+                ) : (
+                  <p className="h-[140px] flex items-center justify-center text-slate-500 text-xs">No profit movement inside this range yet.</p>
+                )}
+              </div>
+            </Panel>
+          )}
+        </div>
+      )}
 
       {/* ── Category + payment breakdowns ── */}
+      {(showSec("income-cats") || showSec("expense-cats") || showSec("payments")) && (
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+        {showSec("income-cats") && (
         <Panel tid={`${testid}-income-cats`} title="Revenue by Category" icon={TrendingUp}>
           <BreakdownList rows={report.incomeByCategory} tone="text-emerald-300" empty="No income in this range." />
         </Panel>
+        )}
+        {showSec("expense-cats") && (
         <Panel tid={`${testid}-expense-cats`} title="Expenses by Category" icon={TrendingDown}>
           <BreakdownList rows={report.expenseByCategory} tone="text-rose-300" empty="No expenses in this range." />
         </Panel>
+        )}
+        {showSec("payments") && (
         <Panel tid={`${testid}-payments`} title="Payments — Channels" icon={CreditCard}>
           <div className="p-3.5 space-y-3 max-h-56 overflow-y-auto">
             <div>
@@ -691,10 +951,14 @@ export default function FinancialReportSection({
             </div>
           </div>
         </Panel>
+        )}
       </div>
+      )}
 
       {/* ── Outstanding + live linkage ── */}
+      {(showSec("outstanding") || showSec("links")) && (
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-3">
+        {showSec("outstanding") && (
         <Panel
           tid={`${testid}-outstanding`}
           title="Outstanding & Receivables"
@@ -747,7 +1011,9 @@ export default function FinancialReportSection({
             ))}
           </div>
         </Panel>
+        )}
 
+        {showSec("links") && (
         <Panel
           tid={`${testid}-links`}
           title="Real-Time Data Links"
@@ -790,10 +1056,12 @@ export default function FinancialReportSection({
             moment they happen — nothing here needs manual reconciliation.
           </p>
         </Panel>
+        )}
       </div>
+      )}
 
       {/* ── Per-branch / per-business split ── */}
-      {isEnterprise && (
+      {showSec("scope") && isEnterprise && (
         <EnterpriseSplitTable
           tid={`${testid}-per-business`}
           businesses={businesses}
@@ -803,7 +1071,7 @@ export default function FinancialReportSection({
           currentCurrency={currentCurrency}
         />
       )}
-      {!isEnterprise && report.branchesKey.length > 1 && (
+      {showSec("scope") && !isEnterprise && report.branchesKey.length > 1 && (
         <Panel tid={`${testid}-per-branch`} title="Branch / Register Split" icon={Building2}>
           <div className="overflow-x-auto">
             <table className="w-full text-left text-xs">
@@ -841,6 +1109,7 @@ export default function FinancialReportSection({
       )}
 
       {/* ── Ledger ── */}
+      {showSec("ledger") && (
       <Panel
         tid={`${testid}-ledger`}
         title="Financial Ledger — Sales, Purchases, Expenses & Payments"
@@ -916,6 +1185,7 @@ export default function FinancialReportSection({
           Full audit trail and PDF/Excel exports: use the Export / Audit button at the top-right of the app.
         </p>
       </Panel>
+      )}
     </div>
   );
 }

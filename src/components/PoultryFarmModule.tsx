@@ -646,7 +646,7 @@ export default function PoultryFarmModule({
             className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold transition ${
               tab === t.key ? "bg-emerald-600 text-white shadow" : "text-slate-300 hover:bg-slate-700/70"}`}>
             <t.icon className="w-4 h-4" />
-            <span className="hidden lg:inline">{t.label}</span>
+            <span className="text-[10px] leading-none lg:leading-normal lg:text-xs">{t.label}</span>
           </button>
         ))}
         <AiSectionGuide moduleKey="POULTRY" section={tab} businessInfo={businessInfo} />

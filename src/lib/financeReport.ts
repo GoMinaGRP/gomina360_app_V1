@@ -137,6 +137,8 @@ export interface TrendBucket {
   revenue: number;
   expenses: number;
   profit: number;
+  /** INCOME postings inside this bucket (drives the sales-volume chart). */
+  receipts?: number;
   /** True when the seeded baseline was folded into this bucket. */
   withBaseline?: boolean;
 }
@@ -291,7 +293,7 @@ export function computeFinancialReport(input: FinanceReportInput): FinanceReport
   //    monthly view and into the year bucket on the yearly view — All Time only.
   const trendMap: Record<string, TrendBucket> = {};
   const put = (key: string) => {
-    if (!trendMap[key]) trendMap[key] = { key, label: bucketLabel(key, granularity), revenue: 0, expenses: 0, profit: 0 };
+    if (!trendMap[key]) trendMap[key] = { key, label: bucketLabel(key, granularity), revenue: 0, expenses: 0, profit: 0, receipts: 0 };
     return trendMap[key];
   };
   if (period.start && period.end) {
@@ -311,8 +313,10 @@ export function computeFinancialReport(input: FinanceReportInput): FinanceReport
   }
   for (const t of inSel) {
     const b = put(bucketKey(t.date, granularity));
-    if (t.type === "INCOME") b.revenue += t.amountGhs || 0;
-    else if (t.type === "EXPENSE") b.expenses += t.amountGhs || 0;
+    if (t.type === "INCOME") {
+      b.revenue += t.amountGhs || 0;
+      b.receipts = (b.receipts || 0) + 1;
+    } else if (t.type === "EXPENSE") b.expenses += t.amountGhs || 0;
   }
   if (baselineIncludedInTotals) {
     if (granularity === "YEAR") {
