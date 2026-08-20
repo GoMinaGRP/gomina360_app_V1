@@ -27,7 +27,20 @@ import {
   integrations,
 } from "./schema";
 import { sql, eq } from "drizzle-orm";
-import { provisionBusiness } from "@/lib/businessProvisioning";
+import { provisionBusiness, ensureCarWashServiceCatalogue } from "@/lib/businessProvisioning";
+
+/** Auto Car Wash service catalogue for the seeded WASH-01 unit. Idempotent:
+ *  the provisioning helper is a no-op once any services exist for the unit. */
+async function ensureWashFlagshipCatalogue() {
+  const [wash] = await db.select().from(businesses).where(eq(businesses.code, "WASH-01"));
+  if (!wash) return;
+  const created = await ensureCarWashServiceCatalogue({
+    id: wash.id,
+    code: wash.code,
+    category: wash.category,
+  });
+  if (created > 0) console.log(`WASH-01 service catalogue provisioned (${created} default services).`);
+}
 
 /**
  * Hardware & Building Materials flagship unit. Runs on EVERY seed pass —
@@ -86,6 +99,7 @@ export async function seedDatabase() {
   if (existingBusinesses.length > 0) {
     console.log("Database already seeded with GoMina 360 data.");
     await ensureHardwareFlagship();
+    await ensureWashFlagshipCatalogue();
     return;
   }
 
@@ -1347,6 +1361,7 @@ export async function seedDatabase() {
   }
 
   await ensureHardwareFlagship();
+  await ensureWashFlagshipCatalogue();
 
   console.log("GoMina 360 Command Center database seeding completed successfully!");
 }

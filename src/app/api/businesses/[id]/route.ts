@@ -36,6 +36,10 @@ import {
   restaurantLogs,
   electronicsLogs,
   carWashLogs,
+  carWashServices,
+  carWashBookings,
+  carWashWashes,
+  carWashActivities,
   hardwareLogs,
   hardwareOrders,
   hardwarePurchases,
@@ -105,7 +109,10 @@ async function relatedCounts(businessId: number) {
       (await count(restaurantOrders, restaurantOrders.businessId)) +
       (await count(hardwareOrders, hardwareOrders.businessId)) +
       (await count(hardwarePurchases, hardwarePurchases.businessId)) +
-      (await count(hardwareDeliveries, hardwareDeliveries.businessId)),
+      (await count(hardwareDeliveries, hardwareDeliveries.businessId)) +
+      (await count(carWashServices, carWashServices.businessId)) +
+      (await count(carWashBookings, carWashBookings.businessId)) +
+      (await count(carWashWashes, carWashWashes.businessId)),
     productionAndOps:
       (await count(poultryLogs, poultryLogs.businessId)) +
       (await count(poultryFlocks, poultryFlocks.businessId)) +
@@ -132,6 +139,7 @@ async function relatedCounts(businessId: number) {
       (await count(restaurantPurchases, restaurantPurchases.businessId)) +
       (await count(electronicsLogs, electronicsLogs.businessId)) +
       (await count(carWashLogs, carWashLogs.businessId)) +
+      (await count(carWashActivities, carWashActivities.businessId)) +
       (await count(hardwareLogs, hardwareLogs.businessId)),
     checklists:
       (await count(checklistTemplates, checklistTemplates.businessId)) +
@@ -384,6 +392,10 @@ export async function DELETE(request: Request, { params }: { params: Promise<{ i
       [restaurantLogs, restaurantLogs.businessId],
       [electronicsLogs, electronicsLogs.businessId],
       [carWashLogs, carWashLogs.businessId],
+      [carWashServices, carWashServices.businessId],
+      [carWashBookings, carWashBookings.businessId],
+      [carWashWashes, carWashWashes.businessId],
+      [carWashActivities, carWashActivities.businessId],
       [hardwareLogs, hardwareLogs.businessId],
       [hardwareOrders, hardwareOrders.businessId],
       [hardwarePurchases, hardwarePurchases.businessId],
@@ -542,6 +554,10 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       [electronicsWarranties, electronicsWarranties.businessId],
       [electronicsPurchases, electronicsPurchases.businessId],
       [carWashLogs, carWashLogs.businessId],
+      [carWashServices, carWashServices.businessId],
+      [carWashBookings, carWashBookings.businessId],
+      [carWashWashes, carWashWashes.businessId],
+      [carWashActivities, carWashActivities.businessId],
       [hardwareLogs, hardwareLogs.businessId],
       [hardwareOrders, hardwareOrders.businessId],
       [hardwarePurchases, hardwarePurchases.businessId],

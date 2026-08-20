@@ -894,6 +894,83 @@ export const hardwareDeliveries = pgTable("hardware_deliveries", {
   createdAt: timestamp("created_at").defaultNow(),
 });
 
+// ─── Auto Car Wash module: services, bookings, work-queue, activities ───────
+
+export const carWashServices = pgTable("car_wash_services", {
+  id: serial("id").primaryKey(),
+  businessId: integer("business_id").notNull(),
+  branchCode: text("branch_code"),
+  name: text("name").notNull(), // e.g. "Executive Interior Detail"
+  category: text("category").notNull(), // WASH_PACKAGE, DETAILING, WAXING, POLISHING, INTERIOR_CLEANING, EXTERIOR_CLEANING, CUSTOM
+  description: text("description"),
+  priceGhs: doublePrecision("price_ghs").notNull(),
+  durationMinutes: integer("duration_minutes").default(45),
+  includesItems: text("includes_items"), // what the offer includes: "Foam shampoo, wax coat, tyre shine…"
+  supplyInventoryId: integer("supply_inventory_id"), // consumable stock item (chemical drum) used per job
+  supplyUsageLiters: doublePrecision("supply_usage_liters").default(0), // liters drawn from that item per job
+  active: boolean("active").default(true),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const carWashBookings = pgTable("car_wash_bookings", {
+  id: serial("id").primaryKey(),
+  businessId: integer("business_id").notNull(),
+  branchCode: text("branch_code"),
+  bookingNumber: text("booking_number").notNull().unique(), // e.g. "BK-WASH-2026-48213"
+  customerName: text("customer_name").notNull(),
+  customerPhone: text("customer_phone"),
+  vehicleLabel: text("vehicle_label"), // e.g. "Toyota Camry 2021 — GR-5521-23"
+  serviceId: integer("service_id"),
+  serviceName: text("service_name").notNull(),
+  bookingDate: text("booking_date").notNull(), // scheduled day
+  timeSlot: text("time_slot"), // e.g. "10:30"
+  assignedStaffName: text("assigned_staff_name"),
+  status: text("status").notNull().default("BOOKED"), // BOOKED, CHECKED_IN, COMPLETED, CANCELLED
+  checkedInAt: text("checked_in_at"), // booking became an active wash
+  completedAt: text("completed_at"),
+  priceGhs: doublePrecision("price_ghs").notNull().default(0),
+  notes: text("notes"),
+  createdByName: text("created_by_name"),
+  createdByRole: text("created_by_role"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const carWashWashes = pgTable("car_wash_washes", {
+  id: serial("id").primaryKey(),
+  businessId: integer("business_id").notNull(),
+  branchCode: text("branch_code"),
+  washNumber: text("wash_number").notNull().unique(), // e.g. "WSH-2026-77120"
+  bookingId: integer("booking_id"),
+  customerId: integer("customer_id"),
+  customerName: text("customer_name").notNull(),
+  customerPhone: text("customer_phone"),
+  vehicleLabel: text("vehicle_label").notNull(),
+  serviceId: integer("service_id"),
+  serviceName: text("service_name").notNull(),
+  staffId: integer("staff_id"),
+  staffName: text("staff_name"),
+  status: text("status").notNull().default("IN_PROGRESS"), // IN_PROGRESS, COMPLETED, CANCELLED
+  priceGhs: doublePrecision("price_ghs").notNull().default(0),
+  startedAt: text("started_at").notNull(),
+  doneAt: text("done_at"),
+  notes: text("notes"),
+  createdByName: text("created_by_name"),
+  createdByRole: text("created_by_role"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const carWashActivities = pgTable("car_wash_activities", {
+  id: serial("id").primaryKey(),
+  businessId: integer("business_id").notNull(),
+  branchCode: text("branch_code"),
+  action: text("action").notNull(), // SERVICE_CREATED, BOOKING_CREATED, CHECK_IN, WASH_COMPLETED, EXPENSE_LOGGED, CANCELLED, ...
+  detail: text("detail").notNull(),
+  actorName: text("actor_name"),
+  actorRole: text("actor_role"),
+  refNumber: text("ref_number"), // booking/wash number involved
+  recordedAt: timestamp("recorded_at").defaultNow(),
+});
+
 // 17. AI Strategic Insights & Risk Recommendations
 export const aiInsights = pgTable("ai_insights", {
   id: serial("id").primaryKey(),

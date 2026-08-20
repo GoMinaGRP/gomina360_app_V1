@@ -1091,56 +1091,232 @@ export const GUIDES: Record<string, Record<string, SectionGuide>> = {
 
   /* ═════════════════ SPECIALIZED OPS (CAR WASH / LIVESTOCK) ═════════════════ */
   WASH: {
-    OPERATIONS: {
-      title: "Car Wash Operations",
+    DASHBOARD: {
+      title: "Auto Car Wash Dashboard",
       intro:
-        "The daily shift console of {biz}: log vehicles washed and revenue once — stock (shampoo), finance and reports update themselves.",
+        "The trading picture of {biz}: today's sales, vehicles served, active washes, bookings, payments, expenses and profit — everything updates itself as jobs complete.",
       tasks: [
         {
-          name: "Log a wash shift",
+          name: "Start a wash (drive-in)",
           steps: [
-            "Click the green “Log Daily Operations” button (top right).",
-            "Enter Vehicles Washed, Chemical Used (liters), Total Revenue (GH₵) and Water Pressure (PSI).",
-            "Save — three things happen automatically: the revenue posts to finance, shampoo stock is deducted, and the shift appears in the logbook below.",
+            "Click the cyan “New Wash” button (top right).",
+            "Enter the customer and vehicle, pick the service from the menu — its price fills in automatically — and optionally assign a staff member.",
+            "Save — the job lands in the Active Washes queue as IN_PROGRESS.",
+            "When the job is done, pick the payment method and press “✓ Complete & Charge”.",
           ],
-          tip: "Log at the end of each shift; the Q1 revenue card and the Command Center update the moment you save.",
+          tip: "Completing a wash is the magic moment: the payment posts to Finance, the service's chemicals are drawn from stock, the customer's record is updated and the booking (if any) closes — all at once.",
         },
         {
-          name: "Sell a wash service or product",
+          name: "Read the cards",
           steps: [
-            "Use the sales area to pick a service (e.g. Executive Wash & Wax) from live stock.",
-            "Enter the quantity (jobs), customer if known, and payment method.",
-            "Submit — the sale posts revenue with a receipt.",
+            "Daily Sales, Vehicles Today, Active Washes and Bookings summarise right now; Profit Today nets today's expenses.",
+            "The payments card splits Cash / MoMo / Card; the trend chart shows the last 7 days of sales vs expenses.",
+            "Amber alerts appear for low supplies, overdue bookings and stalled washes.",
           ],
-        },
-        {
-          name: "Read the logbook",
-          steps: [
-            "The Daily Operations Logbook lists this unit's own shifts only — newest first.",
-            "Chemical litres per vehicle tell you if shampoo is being wasted (rough guide: ~0.25–0.3 L per car).",
-          ],
-        },
-        {
-          name: "Run the daily checklist",
-          steps: CHECKLIST_TASKS[0].steps,
         },
       ],
       faqs: [
         {
-          q: "The shampoo deducted looks wrong?",
-          match: ["shampoo", "chemical", "stock"],
+          q: "How do I charge for a wash?",
+          match: ["charge", "take payment", "complete", "finish"],
           answer:
-            "Chemicals deduct from your shampoo drum stock automatically (litres ÷ drum size). Restock with a new drum when the level nears the low-stock line so the alert stays green.",
+            "Open Active Washes, choose the payment method on the job's row and press “✓ Complete & Charge” — the sale posts to Finance instantly, chemicals come out of stock, and the customer accrues spend and loyalty points.",
         },
         {
-          q: "Where does the revenue go?",
+          q: "Where does the money go?",
           match: ["revenue", "money", "finance"],
           answer:
-            "Straight into Transactions & MoMo tagged to this branch — it counts in your unit's profit, the Command Center table and every export.",
+            "Every completed job posts into Transactions tagged to this branch — it counts in branch profit, the Command Center and every export.",
         },
       ],
     },
+    SERVICES: {
+      title: "Services & Pricing",
+      intro:
+        "The service menu of {biz}: wash packages, detailing, waxing, polishing, interior & exterior cleaning plus any custom offer — each with its own price, duration, included items and chemical usage.",
+      tasks: [
+        {
+          name: "Add a service",
+          steps: [
+            "Click “New Service” (or the emerald Service button up top).",
+            "Give it a name, category, price and duration, and list the items the offer includes (e.g. shampoo, wax, tyre shine).",
+            "Optionally link a chemical from stock and the liters used per job — it then deducts itself automatically at completion.",
+            "Save — the offer becomes bookable immediately.",
+          ],
+        },
+        {
+          name: "Edit or pause a service",
+          steps: [
+            "Click “Edit” on any row to change price, contents or chemical usage.",
+            "Use “Deactivate” to hide an offer without losing its history; “Activate” brings it back.",
+          ],
+        },
+      ],
+      faqs: [
+        {
+          q: "What items should a service list?",
+          match: ["includes", "items", "detergent", "shampoo", "offer"],
+          answer:
+            "Put what the customer receives in “Includes items” (e.g. foam shampoo, wax coat, dashboard polish) — it shows on the menu card. Separately, link the chemical drum and liters per job so stock falls automatically when the service is performed.",
+        },
+        {
+          q: "How are prices used?",
+          match: ["price", "pricing", "cost"],
+          answer:
+            "The service price pre-fills every new wash and booking — you can still override it per job for discounts; the job's own price is what posts to Finance.",
+        },
+      ],
+    },
+    BOOKINGS: {
+      title: "Bookings",
+      intro:
+        "Appointments for {biz}: who is coming, when, for which service and with which staff member — one click checks them into the wash queue.",
+      tasks: [
+        {
+          name: "Take a booking",
+          steps: [
+            "Click “New Booking”.",
+            "Enter the customer, vehicle, service, date and time slot; optionally reserve a staff member.",
+            "Save — the booking shows as BOOKED until the customer arrives.",
+          ],
+        },
+        {
+          name: "Check in an arrival",
+          steps: [
+            "Press “Check In → Wash” on the booking row.",
+            "The job opens in Active Washes with every detail pre-filled from the booking.",
+          ],
+          tip: "When the wash completes, the booking closes itself to COMPLETED — you never update it twice.",
+        },
+      ],
+      faqs: [
+        {
+          q: "A customer didn't show up?",
+          match: ["no-show", "cancel", "didn't come"],
+          answer:
+            "Press “Cancel” on the booking — it stays in history as CANCELLED, never charges anything, and alerts clear automatically.",
+        },
+      ],
+    },
+    WASHES: {
+      title: "Active Washes",
+      intro:
+        "The live work queue of {biz}: every job in the bays right now, plus the full wash history — completed jobs with their charges.",
+      tasks: [
+        {
+          name: "Complete and charge a job",
+          steps: [
+            "Find the job in the Active Washes table.",
+            "Pick the payment method (Cash, MTN MoMo, Telecel Cash, POS Card or Bank Transfer).",
+            "Press “✓ Complete & Charge” — payment posts to Finance, chemicals draw from stock, the customer is credited, and the job moves to history.",
+          ],
+        },
+        {
+          name: "Void a job",
+          steps: [
+            "Press “Void” only for jobs that never happened (wrong entry).",
+            "Nothing is charged and no stock moves — the row is kept as CANCELLED for audit.",
+          ],
+        },
+      ],
+      faqs: [
+        {
+          q: "When does stock actually move?",
+          match: ["when", "stock move", "chemical"],
+          answer:
+            "Stock moves at completion: starting a wash only opens the job; completing it draws the service's configured liters from the chemical drum and books the payment in the same step.",
+        },
+        {
+          q: "Reverse a completed job?",
+          match: ["reverse", "refund", "undo"],
+          answer:
+            "Completed jobs are final (they have posted revenue). Record a correcting expense instead, and the reports stay truthful.",
+        },
+      ],
+    },
+    STOCK: {
+      title: "Stock & Supplies",
+      intro:
+        "Every consumable of {biz}: the chemical drums, their remaining liters, reorder levels — and exactly which services consume them.",
+      tasks: [
+        {
+          name: "Read the board",
+          steps: [
+            "“≈ Usable Volume” converts drums into liters so you can see real capacity.",
+            "The “Used By Services” column lists each service that draws from the item, with liters per job.",
+          ],
+        },
+        {
+          name: "Restock",
+          steps: [
+            "Supplies are managed from the shared Inventory & Stock module — add a new drum there and it appears here.",
+            "Low-stock and out-of-stock alarms also surface on the Dashboard alerts strip.",
+          ],
+        },
+      ],
+      faqs: [
+        {
+          q: "How do services use stock?",
+          match: ["usage", "liters", "draw", "consume"],
+          answer:
+            "Each service can link a chemical item and a liters-per-figure — completing a job draws exactly that amount (liters ÷ drum size) and the status flips to LOW/OUT automatically when thresholds hit.",
+        },
+      ],
+    },
+    STAFF: {
+      title: "Staff",
+      intro:
+        "The team at {biz}: who works here, what each person has washed, and the revenue they have handled. Access is managed by the Owner.",
+      tasks: [
+        {
+          name: "Build the performance board",
+          steps: [
+            "Assign staff on bookings or washes — every completed job credits the assigned person.",
+            "The table ranks jobs done and revenue handled per staff member automatically.",
+          ],
+        },
+      ],
+      faqs: [
+        {
+          q: "Who can add staff?",
+          match: ["add staff", "access", "manage"],
+          answer:
+            "Employee records come from the shared Employees module, and user accounts/roles for this branch are managed exclusively by the OWNER from the user directory — this module only consumes them.",
+        },
+      ],
+    },
+    REPORTS: {
+      title: "Finance & Reports",
+      intro:
+        "The numbers of {biz}: revenue, expenses, profit and margin, payment mix, per-service performance, customer value and the complete audit-grade activity log.",
+      tasks: [
+        {
+          name: "Read the financials",
+          steps: [
+            "Revenue, Expenses and Net Profit summarise the whole period; the bar chart compares the last 7 days.",
+            "Income and expense tables list every posting with method and category; everything is exportable from the shared Export Center.",
+          ],
+        },
+      ],
+      faqs: [
+        {
+          q: "Where do expenses come from?",
+          match: ["expense", "spend", "cost"],
+          answer:
+            "Use the rose “Expense” button (or “+ Log expense” here) for water bills, detergents, wages and so on — each entry posts an EXPENSE transaction immediately and flows into profit and reports.",
+        },
+      ],
+    },
+    CHECKLIST: COMMON.CHECKLIST,
+    DEFAULT: {
+      title: "Auto Car Wash",
+      intro:
+        "The full wash operating system of {biz}: customers, vehicles, services, bookings, the wash queue, staff, payments, stock, expenses, profit and reports — one linked machine.",
+      tasks: COMMON.DEFAULT.tasks,
+      faqs: COMMON.DEFAULT.faqs,
+    },
   },
+
   HARDWARE: {
     DASHBOARD: {
       title: "Hardware Store Dashboard",

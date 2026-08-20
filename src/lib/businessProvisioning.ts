@@ -1,6 +1,7 @@
 import { db } from "@/db";
 import {
   businessMetrics,
+  carWashServices,
   checklistTemplates,
   inventoryItems,
 } from "@/db/schema";
@@ -103,6 +104,96 @@ const GENERIC_KIT: StarterItem[] = [
   { name: "General Retail Stock", skuSuffix: "GEN-STOCK", category: "General Stock", quantity: 50, unit: "Units", costPriceGhs: 20, sellingPriceGhs: 35, minStockThreshold: 15 },
   { name: "Consumable Supplies", skuSuffix: "GEN-SUPPLY", category: "Consumables", quantity: 20, unit: "Units", costPriceGhs: 45, sellingPriceGhs: 65, minStockThreshold: 8 },
 ];
+
+// ─── Auto Car Wash default service catalogue ─────────────────────────────
+export interface WashServiceSeed {
+  name: string;
+  category: string; // WASH_PACKAGE, DETAILING, WAXING, POLISHING, INTERIOR_CLEANING, EXTERIOR_CLEANING
+  description: string;
+  priceGhs: number;
+  durationMinutes: number;
+  includesItems: string;
+  supplyUsageLiters: number; // shampoo/chemical drawn from the branch drum per job
+}
+
+export const CAR_WASH_SERVICES_DEFAULTS: WashServiceSeed[] = [
+  { name: "Express Exterior Wash", category: "EXTERIOR_CLEANING", description: "Quick drive-through quality exterior wash with rinse and air dry.", priceGhs: 15, durationMinutes: 20, includesItems: "Foam shampoo wash, high-pressure rinse", supplyUsageLiters: 1.5 },
+  { name: "Interior Deep Clean & Vacuum", category: "INTERIOR_CLEANING", description: "Thorough cabin refresh: full vacuum, seats & mats shampooed, plastics dressed, glass polished inside.", priceGhs: 45, durationMinutes: 60, includesItems: "Vacuum, seat & carpet shampoo, dashboard polish, interior glass cleaner", supplyUsageLiters: 2.5 },
+  { name: "Executive Wash & Wax", category: "WASH_PACKAGE", description: "Signature in-and-out package: foam wash, hand dry, dashboard wipe and wax finish.", priceGhs: 40, durationMinutes: 45, includesItems: "Foam shampoo, wax coat, tyre shine, dashboard wipe-down", supplyUsageLiters: 3 },
+  { name: "Interior Detailing Package", category: "DETAILING", description: "Deep interior clean: vacuum, upholstery shampoo, dashboard & trim dressing, odour neutraliser.", priceGhs: 70, durationMinutes: 90, includesItems: "Upholstery shampoo, dashboard polish, vacuum, air freshener", supplyUsageLiters: 4 },
+  { name: "Full Detailing (In & Out)", category: "DETAILING", description: "Complete showroom reset: exterior foam bath, clay bar, interior detail, engine bay touch-up.", priceGhs: 120, durationMinutes: 150, includesItems: "Foam shampoo, clay bar, upholstery shampoo, trim dressing, engine degreaser", supplyUsageLiters: 6 },
+  { name: "Waxing & Paint Sealant", category: "WAXING", description: "Hand-applied premium wax coat and paint sealant for deep gloss and protection.", priceGhs: 50, durationMinutes: 60, includesItems: "Carnauba wax, paint sealant, microfiber finish", supplyUsageLiters: 2 },
+  { name: "Machine Polishing & Buffing", category: "POLISHING", description: "Dual-action machine polish to remove swirl marks, oxidation and light scratches.", priceGhs: 60, durationMinutes: 75, includesItems: "Cutting compound, finishing polish, wax top-coat", supplyUsageLiters: 2.5 },
+  { name: "Engine Bay Cleaning", category: "CUSTOM", description: "Careful engine-bay degrease, steam clean and dressing.", priceGhs: 35, durationMinutes: 40, includesItems: "Engine degreaser, steam, plastic dressing", supplyUsageLiters: 1.5 },
+];
+
+/**
+ * Ensure a Car Wash unit has the default service catalogue, with chemical
+ * consumption auto-linked to the branch's shampoo/chemical stock item when
+ * one exists. Idempotent: any unit that already has services is left alone.
+ */
+export async function ensureCarWashServiceCatalogue(biz: {
+  id: number;
+  code: string;
+  category: string;
+}): Promise<number> {
+  if (biz.category !== "Car Wash") return 0;
+  const existing = await db
+    .select()
+    .from(carWashServices)
+    .where(eq(carWashServices.businessId, biz.id));
+  const stock = await db
+    .select()
+    .from(inventoryItems)
+    .where(eq(inventoryItems.businessId, biz.id));
+  const chem =
+    stock.find((i) => /SHAMPOO|CHEM/i.test(i.sku || "") || /SHAMPOO|CHEM/i.test(i.name || "")) || null;
+
+  // Units WITH a catalogue never have it replaced — but if a core service
+  // category is completely absent, top up just the missing-category defaults
+  // (keeps the menu complete without resurrecting individually-tuned offers).
+  if (existing.length > 0) {
+    const have = new Set(existing.map((s) => s.category));
+    let toppedUp = 0;
+    for (const s of CAR_WASH_SERVICES_DEFAULTS) {
+      if (have.has(s.category)) continue;
+      if (existing.some((e) => e.name === s.name)) continue;
+      await db.insert(carWashServices).values({
+        businessId: biz.id,
+        branchCode: biz.code,
+        name: s.name,
+        category: s.category,
+        description: s.description,
+        priceGhs: s.priceGhs,
+        durationMinutes: s.durationMinutes,
+        includesItems: s.includesItems,
+        supplyInventoryId: chem ? chem.id : null,
+        supplyUsageLiters: s.supplyUsageLiters,
+        active: true,
+      });
+      have.add(s.category);
+      toppedUp++;
+    }
+    return toppedUp;
+  }
+
+  for (const s of CAR_WASH_SERVICES_DEFAULTS) {
+    await db.insert(carWashServices).values({
+      businessId: biz.id,
+      branchCode: biz.code,
+      name: s.name,
+      category: s.category,
+      description: s.description,
+      priceGhs: s.priceGhs,
+      durationMinutes: s.durationMinutes,
+      includesItems: s.includesItems,
+      supplyInventoryId: chem ? chem.id : null,
+      supplyUsageLiters: s.supplyUsageLiters,
+      active: true,
+    });
+  }
+  return CAR_WASH_SERVICES_DEFAULTS.length;
+}
 
 /** Next sequential code for a category: BLOCK-02, BLOCK-03, … (race-tolerant). */
 export function nextBusinessCode(existingCodes: string[], category: string): string {
@@ -224,11 +315,20 @@ export async function provisionBusiness(biz: {
     templateCount = seeds.length;
   }
 
+  // 4. Auto Car Wash units get the default service catalogue (chemical
+  //    consumption auto-linked to the branch's chemical drum when present).
+  const servicesCreated = await ensureCarWashServiceCatalogue({
+    id: businessId,
+    code: biz.code,
+    category: biz.category,
+  });
+
   return {
     metricsCreated: existingMetrics.length === 0,
     starterItems: createdItems.length,
     starterKitCostGhs: Math.round(kitCost * 100) / 100,
     checklistTemplates: templateCount,
+    carWashServices: servicesCreated,
   };
 }
 
@@ -346,10 +446,18 @@ export async function reprovisionForTypeChange(biz: {
     createdTpls++;
   }
 
+  // Re-pointed INTO a Car Wash: make sure the service catalogue exists too.
+  const servicesCreated = await ensureCarWashServiceCatalogue({
+    id: businessId,
+    code: biz.code,
+    category: biz.category,
+  });
+
   return {
     kitItemsAdded: addedItems.length,
     kitCostAddedGhs: Math.round(addedKitCost * 100) / 100,
     checklistTemplatesCreated: createdTpls,
     checklistTemplatesDeactivated: deactivated,
+    carWashServices: servicesCreated,
   };
 }

@@ -24,6 +24,7 @@ import AquacultureModule from "./AquacultureModule";
 import ElectronicsShopModule from "./ElectronicsShopModule";
 import RestaurantKitchenModule from "./RestaurantKitchenModule";
 import HardwareStoreModule from "./HardwareStoreModule";
+import CarWashModule from "./CarWashModule";
 import BusinessDashboardModule from "./BusinessDashboardModule";
 import UniversalExportCenter from "./UniversalExportCenter";
 import { CurrencyCode } from "@/lib/currency";
@@ -668,12 +669,31 @@ export default function GoMinaApp() {
         );
       }
 
-      // Livestock & Car Wash units get the specialized ops-log dashboards.
-      if (moduleKey === "LIVESTOCK" || moduleKey === "WASH") {
-        const bucket =
-          moduleKey === "LIVESTOCK"
-            ? specializedLogs.livestock || []
-            : specializedLogs.carWash || [];
+      // Car Wash units get the full integrated Auto Wash module — daily
+      // sales, services & pricing, bookings, active washes, staff, payments,
+      // stock usage, expenses, profit, reports, alerts and activities, with
+      // Customer → Vehicle → Service → Staff → Sale/Payment → Inventory →
+      // Expenses → Profit → Reports all linked automatically.
+      if (moduleKey === "WASH") {
+        return (
+          <CarWashModule
+            currentUser={currentUser}
+            businessInfo={bizInfo}
+            businessMetrics={bizMetric}
+            inventory={inventory}
+            customers={customers}
+            transactions={transactions}
+            assets={assets}
+            employees={employees}
+            currentCurrency={currentCurrency}
+            onRefreshData={refreshAllData}
+          />
+        );
+      }
+
+      // Livestock units get the specialized ops-log dashboards.
+      if (moduleKey === "LIVESTOCK") {
+        const bucket = specializedLogs.livestock || [];
         // Only THIS unit's operations logs (bucket is shared per type).
         const logs = bucket.filter(
           (l: any) => !l.businessId || l.businessId === bizInfo.id
