@@ -18,6 +18,7 @@ import WorkerDashboard from "./WorkerDashboard";
 import BranchManagerWorkerPanel from "./BranchManagerWorkerPanel";
 import BranchManagerSalesView from "./BranchManagerSalesView";
 import EnterpriseUserPanel from "./EnterpriseUserPanel";
+import EnterpriseFinanceView from "./EnterpriseFinanceView";
 import PoultryFarmModule from "./PoultryFarmModule";
 import BlockFactoryModule from "./BlockFactoryModule";
 import AquacultureModule from "./AquacultureModule";
@@ -430,6 +431,7 @@ export default function GoMinaApp() {
       "TRANSACTIONS",
       "CUSTOMERS",
       "INVENTORY",
+      "FINANCE",
       "AI_ADVISOR",
       "SCENARIO_PLANNER",
       "INTEGRATIONS",
@@ -737,6 +739,23 @@ export default function GoMinaApp() {
           currentCurrency={currentCurrency}
           onRefreshData={refreshAllData}
           onSelectTab={setActiveTab}
+        />
+      );
+    }
+
+    // Shared Enterprise Module — Central Financial Report (Owner / GM only)
+    if (activeTab === "FINANCE") {
+      return (
+        <EnterpriseFinanceView
+          businesses={businesses}
+          metrics={liveMetrics}
+          transactions={transactions}
+          inventory={inventory}
+          customers={customers}
+          currentCurrency={currentCurrency}
+          isOnline={isOnline}
+          onRefreshData={refreshAllData}
+          currentUser={currentUser}
         />
       );
     }

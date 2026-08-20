@@ -194,6 +194,73 @@ const COMMON: Record<string, SectionGuide> = {
   },
 };
 
+/** Guide content for the SHARED “Finance & Reports” central module + the report inside it. */
+const CENTRAL_FINANCE_GUIDE: SectionGuide = {
+  title: "Central Financial Report",
+  intro:
+    "Head Office's money desk — every cedi earned, spent, collected and still owed across all businesses and registers, updating live as sales, purchases, expenses and payments are posted anywhere in GoMina 360.",
+  tasks: [
+    {
+      name: "Read the group's month at a glance",
+      steps: [
+        "Open “Finance & Reports” under Shared Enterprise Modules.",
+        "The Group Pulse cards at the top show this month's revenue, cash collected, group net profit with margin, and the best-performing unit.",
+        "Watch the % badge — it compares this month to last month automatically.",
+      ],
+    },
+    {
+      name: "Report for any period — days, months, years",
+      steps: [
+        "Use the Period pills (Today, Yesterday, Last 7 Days, This Month … All Time).",
+        "Switch “Trend By” between Days, Months and Years to reshape the chart.",
+        "Every figure — revenue, expenses, profit, payments, outstanding — recalculates instantly for the chosen window.",
+      ],
+    },
+    {
+      name: "Compare or isolate businesses and branches",
+      steps: [
+        "Pick a business (or a branch/register) from the scope selector.",
+        "The per-business table ranks every unit by revenue, expenses and profit; a branch split appears whenever more than one register is active.",
+        "Q1-2026 baseline figures are folded into All-Time so earlier history is never lost.",
+      ],
+    },
+    {
+      name: "Chase outstanding money & audit the ledger",
+      steps: [
+        "The Outstanding panel lists open invoices and pending MoMo/offline collections per business.",
+        "Scroll to the ledger for the newest postings with type, payment method and recorder.",
+        "Use the quick links to jump into Sales, Purchases, Inventory, Transactions or any module for action.",
+      ],
+    },
+  ],
+  faqs: [
+    {
+      q: "Do the numbers update automatically when someone posts a sale or expense elsewhere?",
+      match: ["real time", "real-time", "update", "automatic", "live", "refresh"],
+      answer:
+        "Yes. This report reads the same live ledger as every dashboard — the moment a sale, purchase, production posting, order, expense or payment is saved anywhere in GoMina 360, every card, trend and table here reflects it (the LIVE badge). You can also tap Refresh to force a reload.",
+    },
+    {
+      q: "What counts as outstanding?",
+      match: ["outstanding", "owed", "invoice", "pending", "collection"],
+      answer:
+        "Sent/unpaid invoices plus mobile-money or offline sales still pending verification. Once a payment is confirmed, the amount moves from Outstanding to Payments Collected automatically.",
+    },
+    {
+      q: "Why does All-Time differ from This Month?",
+      match: ["all time", "baseline", "q1", "history", "differ"],
+      answer:
+        "All-Time folds in each unit's Q1-2026 system baseline (clearly labelled in the baseline strip) plus every live posting since. Shorter windows count only the live ledger, so history stays intact without distorting the current period.",
+    },
+    {
+      q: "Who can open this module?",
+      match: ["who", "access", "permission", "worker", "manager"],
+      answer:
+        "Owners and General Managers. Branch managers see the same engine scoped to their own branch inside the Branch Sales Center, and workers see only their own sales activity.",
+    },
+  ],
+};
+
 export const GUIDES: Record<string, Record<string, SectionGuide>> = {
   /* ════════════════════════ POULTRY FARM ════════════════════════ */
   POULTRY: {
@@ -1823,6 +1890,8 @@ export const GUIDES: Record<string, Record<string, SectionGuide>> = {
         { q: "Is MoMo separated from cash?", match: ["momo", "cash", "method"], answer: "Yes — each transaction carries its method, so MoMo vs cash vs bank totals can be reconciled separately at close of day." },
       ],
     },
+    FINANCE: CENTRAL_FINANCE_GUIDE,
+    FINANCE_REPORT: CENTRAL_FINANCE_GUIDE,
   },
 
   /* ═══════════════ COMMAND CENTER / ROLES ═══════════════ */

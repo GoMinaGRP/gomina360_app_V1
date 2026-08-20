@@ -25,6 +25,7 @@ import {
   ShieldAlert,
   ShoppingCart,
   HardHat,
+  Landmark,
 } from "lucide-react";
 
 export type ActiveTab =
@@ -42,6 +43,7 @@ export type ActiveTab =
   | "ASSETS"
   | "INVENTORY"
   | "TRANSACTIONS"
+  | "FINANCE"
   | "AI_ADVISOR"
   | "SCENARIO_PLANNER"
   | "INTEGRATIONS"
@@ -202,6 +204,22 @@ export default function Sidebar({
               <div className="flex items-center space-x-2.5">
                 <ShoppingCart className="w-4 h-4 text-cyan-400" />
                 <span>Sales & Payments</span>
+              </div>
+              <span className="text-[9px] bg-cyan-500/20 text-cyan-300 px-1 py-0.5 rounded font-bold border border-cyan-500/30">ALL</span>
+            </button>
+
+            <button
+              onClick={() => onSelectTab("FINANCE")}
+              data-testid="sidebar-tab-finance"
+              className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-medium transition ${
+                activeTab === "FINANCE"
+                  ? "bg-cyan-500/15 text-cyan-400 font-bold border-l-2 border-cyan-400"
+                  : "hover:bg-slate-800/70 text-slate-300"
+              }`}
+            >
+              <div className="flex items-center space-x-2.5">
+                <Landmark className="w-4 h-4 text-cyan-400" />
+                <span>Finance & Reports</span>
               </div>
               <span className="text-[9px] bg-cyan-500/20 text-cyan-300 px-1 py-0.5 rounded font-bold border border-cyan-500/30">ALL</span>
             </button>
