@@ -261,6 +261,10 @@ export default function GoMinaApp() {
         netProfitGhs,
         cashFlowGhs,
         roiPercent,
+        // Lets the shared Financial Report recover the seeded Q1-2026 baseline
+        // hidden inside this blended row (baselineTxId = highest txn id present
+        // at session load, i.e. everything seeded/prior-session).
+        baselineTxId: baseId,
       };
     });
   }, [metrics, transactions, assets]);
@@ -709,6 +713,9 @@ export default function GoMinaApp() {
             onRefreshLogs={() => handleRefreshLogsForBusiness(bizInfo.code)}
             currentUser={currentUser}
             employees={employees}
+            transactions={transactions}
+            inventory={inventory}
+            customers={customers}
           />
         );
       }

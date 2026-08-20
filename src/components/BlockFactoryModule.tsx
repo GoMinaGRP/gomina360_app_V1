@@ -14,6 +14,7 @@ import {
 } from "recharts";
 import { CurrencyCode, formatMoney } from "@/lib/currency";
 import DailyChecklistPanel from "./DailyChecklistPanel";
+import FinancialReportSection from "./FinancialReportSection";
 
 interface Props {
   currentUser: any;
@@ -541,9 +542,38 @@ export default function BlockFactoryModule({
         </div>
       )}
 
-      {/* ══════════════ FINANCE ══════════════ */}
+      {/* ══════════════ FINANCE — complete Financial Report ══════════════ */}
       {tab === "FINANCE" && (
         <div className="space-y-5">
+          <FinancialReportSection
+            mode="business"
+            businessInfo={businessInfo}
+            businessMetric={businessMetrics}
+            transactions={transactions}
+            inventory={inventory}
+            currentCurrency={currentCurrency}
+            accent="cyan"
+            testid="fin-report-block"
+            aiModuleKey="BLOCK"
+            opsLinks={[
+              {
+                label: "Production batches",
+                value: String(production.length),
+                note: "Molding runs — each batch stocks good blocks into Inventory",
+                tone: "cyan",
+              },
+              {
+                label: "Customer orders",
+                value: `${orders.length} (${orders.filter((o: any) => o.status === "COMPLETED").length} completed)`,
+                tone: "emerald",
+              },
+              {
+                label: "Deliveries",
+                value: `${deliveries.length} (${deliveries.filter((d: any) => d.status === "DELIVERED").length} delivered)`,
+                tone: "sky",
+              },
+            ]}
+          />
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
             <Stat label="Revenue" value={formatMoney(finance.revenue, currentCurrency, true)} sub={`${finance.incomeByCategory.reduce((s, c) => s + 1, 0)} categories`} color="emerald" icon={TrendingUp} />
             <Stat label="Expenses" value={formatMoney(finance.expenses, currentCurrency, true)} sub={`${finance.expenseByCategory.reduce((s, c) => s + 1, 0)} categories`} color="rose" icon={TrendingDown} />

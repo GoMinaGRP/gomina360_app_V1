@@ -9,6 +9,7 @@ import {
 } from "lucide-react";
 import { CurrencyCode, formatMoney } from "@/lib/currency";
 import DailyChecklistPanel from "./DailyChecklistPanel";
+import FinancialReportSection from "./FinancialReportSection";
 
 type Props = {
   currentUser: any;
@@ -24,7 +25,7 @@ type Props = {
   onRefreshData: () => void;
 };
 
-type Tab = "DASHBOARD" | "MENU" | "STOCK" | "ORDERS" | "PURCHASES" | "STAFF";
+type Tab = "DASHBOARD" | "MENU" | "STOCK" | "ORDERS" | "PURCHASES" | "FINANCE" | "STAFF";
 type FormType = "SALE" | "EXPENSE" | "ITEM" | "ORDER" | "MENU_ITEM" | "WASTE" | "PURCHASE" | "SHIFT_LOG" | null;
 
 const TABS: { key: Tab; label: string; icon: any }[] = [
@@ -33,6 +34,7 @@ const TABS: { key: Tab; label: string; icon: any }[] = [
   { key: "STOCK", label: "Stock, Cost & Waste", icon: ShoppingBasket },
   { key: "ORDERS", label: "Sales & Orders", icon: ListOrdered },
   { key: "PURCHASES", label: "Purchases & Suppliers", icon: Truck },
+  { key: "FINANCE", label: "Finance & Reports", icon: Wallet },
   { key: "STAFF", label: "Staff & Checklist", icon: UserCog },
 ];
 
@@ -600,6 +602,51 @@ export default function RestaurantKitchenModule({
               </div>
             </Card>
           </div>
+        </div>
+      )}
+
+      {/* ══════════════ FINANCE — complete Financial Report ══════════════ */}
+      {tab === "FINANCE" && (
+        <div className="space-y-4">
+          <FinancialReportSection
+            mode="business"
+            businessInfo={businessInfo}
+            businessMetric={businessMetrics}
+            transactions={transactions}
+            inventory={inventory}
+            customers={customers}
+            currentCurrency={currentCurrency}
+            accent="rose"
+            testid="fin-report-food"
+            aiModuleKey="FOOD"
+            opsLinks={[
+              {
+                label: "Orders served",
+                value: `${orders.filter((o: any) => o.status === "SERVED").length} of ${orders.length}`,
+                note: "Served orders post revenue to this report automatically",
+                tone: "emerald",
+              },
+              {
+                label: "Purchases received",
+                value: formatMoney(
+                  purchases.filter((p: any) => p.status === "RECEIVED").reduce((s: number, p: any) => s + (p.totalGhs || 0), 0),
+                  currentCurrency,
+                  true
+                ),
+                tone: "rose",
+              },
+              {
+                label: "Food waste cost",
+                value: formatMoney(
+                  waste.reduce((s: number, w: any) => s + (w.costGhs || 0), 0),
+                  currentCurrency,
+                  true
+                ),
+                note: "Logged waste feeds cost analytics",
+                tone: "amber",
+              },
+            ]}
+          />
         </div>
       )}
 

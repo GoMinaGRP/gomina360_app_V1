@@ -13,6 +13,7 @@ import {
 } from "recharts";
 import { CurrencyCode, formatMoney } from "@/lib/currency";
 import DailyChecklistPanel from "./DailyChecklistPanel";
+import FinancialReportSection from "./FinancialReportSection";
 
 interface Props {
   currentUser: any;
@@ -636,13 +637,38 @@ export default function BusinessDashboardModule({
         </div>
       )}
 
-      {/* ══════════════ FINANCE ══════════════ */}
+      {/* ══════════════ FINANCE — complete Financial Report ══════════════ */}
       {tab === "FINANCE" && (
-        <FinanceTab
-          branchTx={branchTx} currentCurrency={currentCurrency}
-          starterKitActive={starterKitActive} starterKitValue={stockCostValue}
-          onSale={() => setShowForm("SALE")} onExpense={() => setShowForm("EXPENSE")} onRestock={() => { setRestockItemId(null); setShowForm("RESTOCK"); }}
-        />
+        <div className="space-y-4">
+          <div className="flex flex-wrap gap-2">
+            <button onClick={() => setShowForm("SALE")} className="px-3 py-2 rounded-lg bg-amber-600 hover:bg-amber-500 text-white text-xs font-bold flex items-center gap-1"><BadgeDollarSign className="w-3.5 h-3.5" />Record Sale / Payment</button>
+            <button onClick={() => setShowForm("EXPENSE")} className="px-3 py-2 rounded-lg bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold flex items-center gap-1"><Wallet className="w-3.5 h-3.5" />Record Expense</button>
+            <button onClick={() => { setRestockItemId(null); setShowForm("RESTOCK"); }} className="px-3 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold flex items-center gap-1"><PackagePlus className="w-3.5 h-3.5" />Purchase Stock</button>
+          </div>
+          {starterKitActive && stockCostValue > 0 && (
+            <div className="px-4 py-3 rounded-xl bg-indigo-500/10 border border-indigo-500/30 text-xs text-indigo-200">
+              The opening <b>starter kit ({formatMoney(stockCostValue, currentCurrency, true)} at cost)</b> was funded from the unit’s initial capital during auto-provisioning — it is reflected in the Command Center metrics for this unit.
+            </div>
+          )}
+          <FinancialReportSection
+            mode="business"
+            businessInfo={businessInfo}
+            businessMetric={businessMetrics}
+            transactions={transactions}
+            inventory={inventory}
+            customers={customers}
+            currentCurrency={currentCurrency}
+            accent={cfg.accent}
+            testid="fin-report-unit"
+            aiModuleKey="GENERIC"
+            opsLinks={[{
+              label: cfg.opsLabel.replace(/ Log$/, " entries"),
+              value: String(opsLogs.length),
+              note: "Operational log entries feeding this unit’s activities",
+              tone: "sky",
+            }]}
+          />
+        </div>
       )}
 
       {/* ══════════════ DAILY CHECKLIST ══════════════ */}
@@ -675,112 +701,6 @@ function Row({ k, v }: any) {
     <div className="flex items-center justify-between gap-3 p-2 rounded-lg bg-slate-900/70 border border-slate-700">
       <span className="text-slate-400">{k}</span>
       <span className="text-slate-200 font-semibold text-right">{v || "—"}</span>
-    </div>
-  );
-}
-
-function FinanceTab({ branchTx, currentCurrency, starterKitActive, starterKitValue, onSale, onExpense, onRestock }: any) {
-  const income = branchTx.filter((t: any) => t.type === "INCOME");
-  const expenses = branchTx.filter((t: any) => t.type === "EXPENSE");
-  const revenue = income.reduce((s: number, t: any) => s + (t.amountGhs || 0), 0);
-  const spent = expenses.reduce((s: number, t: any) => s + (t.amountGhs || 0), 0);
-  const group = (rows: any[]) => {
-    const m: Record<string, number> = {};
-    rows.forEach((t) => { m[t.category || "Other"] = (m[t.category || "Other"] || 0) + (t.amountGhs || 0); });
-    return Object.entries(m).map(([category, total]) => ({ category, total })).sort((a: any, b: any) => b.total - a.total);
-  };
-  const payMap: Record<string, number> = {};
-  branchTx.filter((t: any) => t.type !== "OPS_LOG").forEach((t: any) => { payMap[t.paymentMethod || "CASH"] = (payMap[t.paymentMethod || "CASH"] || 0) + (t.amountGhs || 0); });
-  const recent = [...branchTx].filter((t: any) => t.type !== "OPS_LOG").sort((a: any, b: any) => (b.id || 0) - (a.id || 0)).slice(0, 14);
-
-  const Stat = ({ label, value, sub, tone }: any) => (
-    <div className="bg-slate-800/90 border border-slate-700/80 rounded-xl p-4">
-      <div className="text-[10px] uppercase font-bold text-slate-400">{label}</div>
-      <div className={`text-xl font-black mt-1 ${tone}`}>{value}</div>
-      {sub && <div className="text-[10px] text-slate-500 mt-0.5">{sub}</div>}
-    </div>
-  );
-
-  return (
-    <div className="space-y-5">
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <Stat label="Revenue" value={formatMoney(revenue, currentCurrency, true)} sub={`${income.length} postings`} tone="text-emerald-400" />
-        <Stat label="Expenses" value={formatMoney(spent, currentCurrency, true)} sub={`${expenses.length} postings`} tone="text-rose-400" />
-        <Stat label="Net Profit" value={formatMoney(revenue - spent, currentCurrency, true)} tone={revenue - spent >= 0 ? "text-emerald-400" : "text-rose-400"} />
-        <Stat label="Margin" value={`${revenue > 0 ? (((revenue - spent) / revenue) * 100).toFixed(1) : "0.0"}%`} tone="text-cyan-400" sub="of revenue" />
-      </div>
-      {starterKitActive && starterKitValue > 0 && (
-        <div className="px-4 py-3 rounded-xl bg-indigo-500/10 border border-indigo-500/30 text-xs text-indigo-200">
-          The opening <b>starter kit ({formatMoney(starterKitValue, currentCurrency, true)} at cost)</b> was funded from the unit’s initial capital during auto-provisioning — it is reflected in the Command Center metrics for this unit.
-        </div>
-      )}
-      <div className="flex flex-wrap gap-2">
-        <button onClick={onSale} className="px-3 py-2 rounded-lg bg-amber-600 hover:bg-amber-500 text-white text-xs font-bold flex items-center gap-1"><BadgeDollarSign className="w-3.5 h-3.5" />Record Sale / Payment</button>
-        <button onClick={onExpense} className="px-3 py-2 rounded-lg bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold flex items-center gap-1"><Wallet className="w-3.5 h-3.5" />Record Expense</button>
-        <button onClick={onRestock} className="px-3 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold flex items-center gap-1"><PackagePlus className="w-3.5 h-3.5" />Purchase Stock</button>
-      </div>
-      <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
-        <div className="bg-slate-800/90 border border-slate-700/80 rounded-2xl overflow-hidden">
-          <div className="px-5 py-4 border-b border-slate-700"><h3 className="text-base font-bold text-white flex items-center gap-2"><TrendingUp className="w-5 h-5 text-emerald-400" />Income by Category</h3></div>
-          <div className="p-4 space-y-2">
-            {group(income).length === 0 && <p className="text-xs text-slate-500">No income recorded yet — post your first sale.</p>}
-            {group(income).map((c: any) => (
-              <div key={c.category} className="flex items-center justify-between text-xs p-2 rounded-lg bg-slate-900/70 border border-slate-700">
-                <span className="text-slate-300">{c.category}</span>
-                <span className="text-emerald-300 font-bold">{formatMoney(c.total, currentCurrency, true)}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-        <div className="bg-slate-800/90 border border-slate-700/80 rounded-2xl overflow-hidden">
-          <div className="px-5 py-4 border-b border-slate-700"><h3 className="text-base font-bold text-white flex items-center gap-2"><TrendingDown className="w-5 h-5 text-rose-400" />Expenses by Category</h3></div>
-          <div className="p-4 space-y-2">
-            {group(expenses).length === 0 && <p className="text-xs text-slate-500">No expenses recorded yet.</p>}
-            {group(expenses).map((c: any) => (
-              <div key={c.category} className="flex items-center justify-between text-xs p-2 rounded-lg bg-slate-900/70 border border-slate-700">
-                <span className="text-slate-300">{c.category}</span>
-                <span className="text-rose-300 font-bold">{formatMoney(c.total, currentCurrency, true)}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-        <div className="bg-slate-800/90 border border-slate-700/80 rounded-2xl overflow-hidden">
-          <div className="px-5 py-4 border-b border-slate-700"><h3 className="text-base font-bold text-white flex items-center gap-2"><Wallet className="w-5 h-5 text-cyan-400" />Payment Methods</h3></div>
-          <div className="p-4 space-y-2">
-            {Object.keys(payMap).length === 0 && <p className="text-xs text-slate-500">No transactions yet.</p>}
-            {Object.entries(payMap).map(([method, total]) => (
-              <div key={method} className="flex items-center justify-between text-xs p-2 rounded-lg bg-slate-900/70 border border-slate-700">
-                <span className="text-slate-300">{method.replace(/_/g, " ")}</span>
-                <span className="text-cyan-300 font-bold">{formatMoney(total as number, currentCurrency, true)}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
-      <div className="bg-slate-800/90 border border-slate-700/80 rounded-2xl overflow-hidden">
-        <div className="px-5 py-4 border-b border-slate-700"><h3 className="text-base font-bold text-white flex items-center gap-2"><Activity className="w-5 h-5 text-emerald-400" />Branch Transactions</h3></div>
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs">
-            <thead className="bg-slate-900/90 text-slate-400 uppercase text-[10px]">
-              <tr>{["Date", "Reference", "Type", "Category", "Method", "Amount", "Recorded By"].map((h) => <th key={h} className="px-4 py-3">{h}</th>)}</tr>
-            </thead>
-            <tbody className="divide-y divide-slate-700/60">
-              {recent.length === 0 && <tr><td colSpan={7} className="px-4 py-8 text-center text-slate-400">No transactions yet — sales and expenses appear here instantly.</td></tr>}
-              {recent.map((t: any) => (
-                <tr key={t.id} className="hover:bg-slate-700/40">
-                  <td className="px-4 py-3 text-slate-300">{t.date}</td>
-                  <td className="px-4 py-3 text-slate-400">{t.transactionNumber}</td>
-                  <td className="px-4 py-3"><span className={`font-bold ${t.type === "INCOME" ? "text-emerald-300" : "text-rose-300"}`}>{t.type}</span></td>
-                  <td className="px-4 py-3 text-slate-300">{t.category}</td>
-                  <td className="px-4 py-3 text-slate-300">{(t.paymentMethod || "").replace(/_/g, " ")}</td>
-                  <td className={`px-4 py-3 font-semibold ${t.type === "INCOME" ? "text-emerald-300" : "text-rose-300"}`}>{formatMoney(t.amountGhs, currentCurrency, true)}</td>
-                  <td className="px-4 py-3 text-slate-300">{t.recordedBy}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
     </div>
   );
 }

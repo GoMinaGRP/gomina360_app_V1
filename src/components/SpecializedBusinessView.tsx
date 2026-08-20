@@ -24,6 +24,7 @@ import {
 import { CurrencyCode, formatMoney } from "@/lib/currency";
 import { addToOfflineQueue } from "@/lib/offlineSync";
 import DailyChecklistPanel from "./DailyChecklistPanel";
+import FinancialReportSection from "./FinancialReportSection";
 
 interface SpecializedBusinessViewProps {
   businessCode: string;
@@ -35,6 +36,9 @@ interface SpecializedBusinessViewProps {
   onRefreshLogs: () => void;
   currentUser?: any;
   employees?: any[];
+  transactions?: any[];
+  inventory?: any[];
+  customers?: any[];
 }
 
 export default function SpecializedBusinessView({
@@ -47,6 +51,9 @@ export default function SpecializedBusinessView({
   onRefreshLogs,
   currentUser,
   employees,
+  transactions,
+  inventory,
+  customers,
 }: SpecializedBusinessViewProps) {
   const [showLogModal, setShowLogModal] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -688,6 +695,28 @@ export default function SpecializedBusinessView({
           </table>
         </div>
       </div>
+
+      {/* ══════════ FINANCIAL REPORT — complete, live-linked ══════════ */}
+      <FinancialReportSection
+        mode="business"
+        businessInfo={businessInfo}
+        businessMetric={businessMetrics}
+        transactions={transactions || []}
+        inventory={inventory || []}
+        customers={customers || []}
+        currentCurrency={currentCurrency}
+        accent="orange"
+        testid="fin-report-livestock"
+        aiModuleKey="LIVESTOCK"
+        opsLinks={[
+          {
+            label: "Operations logged",
+            value: String(specializedLogs.length),
+            note: "Daily herd/milking/grazing log entries for this unit",
+            tone: "amber",
+          },
+        ]}
+      />
 
       {/* ══════════ DAILY OPERATIONS CHECKLIST (unified) ══════════ */}
       <DailyChecklistPanel

@@ -14,6 +14,7 @@ import {
 import { CurrencyCode, formatMoney } from "@/lib/currency";
 import { analyzeAquaculture, AQUA_ALERT_STYLES, AQUA_METRIC_COLORS } from "@/lib/aquacultureAnalytics";
 import DailyChecklistPanel from "./DailyChecklistPanel";
+import FinancialReportSection from "./FinancialReportSection";
 
 interface Props {
   currentUser: any;
@@ -497,9 +498,39 @@ export default function AquacultureModule({
         </Card>
       )}
 
-      {/* ══════════ FINANCE ══════════ */}
+      {/* ══════════ FINANCE — complete Financial Report ══════════ */}
       {tab === "FINANCE" && (
         <div className="space-y-4">
+          <FinancialReportSection
+            mode="business"
+            businessInfo={businessInfo}
+            businessMetric={businessMetrics}
+            transactions={transactions}
+            inventory={inventory}
+            currentCurrency={currentCurrency}
+            accent="sky"
+            testid="fin-report-aqua"
+            aiModuleKey="AQUA"
+            opsLinks={[
+              {
+                label: "Harvests",
+                value: `${harvests.length} (${harvests.reduce((s: number, h: any) => s + (h.totalWeightKg || 0), 0).toLocaleString()} kg)`,
+                note: "Each harvest sale posts revenue here automatically",
+                tone: "emerald",
+              },
+              {
+                label: "Growing batches",
+                value: String(growingBatches.length),
+                tone: "sky",
+              },
+              {
+                label: "Feed spend",
+                value: formatMoney(feedLogs.reduce((s: number, f: any) => s + (f.totalCostGhs || 0), 0), currentCurrency, true),
+                note: "Logged feed cost across all ponds",
+                tone: "amber",
+              },
+            ]}
+          />
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
             <Stat label="Revenue Today" value={formatMoney(revenueToday, currentCurrency, true)} icon={TrendingUp} />
             <Stat label="Expenses Today" value={formatMoney(expensesToday, currentCurrency, true)} color="rose" icon={TrendingDown} />

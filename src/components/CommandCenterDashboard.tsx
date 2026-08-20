@@ -40,6 +40,7 @@ import {
 } from "recharts";
 import { CurrencyCode, formatMoney, convertGhs } from "@/lib/currency";
 import { ActiveTab } from "./Sidebar";
+import FinancialReportSection from "./FinancialReportSection";
 
 interface CommandCenterDashboardProps {
   businesses: any[];
@@ -995,6 +996,19 @@ export default function CommandCenterDashboard({
           </table>
         </div>
       </div>
+
+      {/* ══════════ ENTERPRISE FINANCIAL REPORT — all businesses & branches ══════════ */}
+      <FinancialReportSection
+        mode="enterprise"
+        businesses={businesses}
+        metrics={metrics}
+        transactions={transactions}
+        inventory={inventory}
+        currentCurrency={currentCurrency}
+        accent="emerald"
+        testid="fin-report-enterprise"
+        aiModuleKey="COMMAND_CENTER"
+      />
     </div>
   );
 }

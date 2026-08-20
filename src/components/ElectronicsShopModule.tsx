@@ -13,6 +13,7 @@ import {
 } from "recharts";
 import { CurrencyCode, formatMoney } from "@/lib/currency";
 import DailyChecklistPanel from "./DailyChecklistPanel";
+import FinancialReportSection from "./FinancialReportSection";
 
 type Props = {
   currentUser: any;
@@ -28,13 +29,14 @@ type Props = {
   onRefreshData: () => void;
 };
 
-type Tab = "DASHBOARD" | "PRODUCTS" | "ORDERS" | "SERVICE" | "STAFF" | "CHECKLIST";
+type Tab = "DASHBOARD" | "PRODUCTS" | "ORDERS" | "FINANCE" | "SERVICE" | "STAFF" | "CHECKLIST";
 type FormType = "SALE" | "EXPENSE" | "ITEM" | "ORDER" | "PURCHASE" | "SERIAL" | "WARRANTY" | "LOG" | null;
 
 const TABS: { key: Tab; label: string; icon: any }[] = [
   { key: "DASHBOARD", label: "Dashboard", icon: LayoutDashboard },
   { key: "PRODUCTS", label: "Products & Stock", icon: Boxes },
   { key: "ORDERS", label: "Orders & Purchases", icon: ClipboardList },
+  { key: "FINANCE", label: "Finance & Reports", icon: Wallet },
   { key: "SERVICE", label: "Warranty & Serials", icon: Wrench },
   { key: "STAFF", label: "Staff & Ops", icon: UserCog },
   { key: "CHECKLIST", label: "Daily Checklist", icon: ClipboardCheck },
@@ -727,6 +729,46 @@ export default function ElectronicsShopModule({
                 l.inStock ? "YES" : "NO",
               ])} />
           </Card>
+        </div>
+      )}
+
+      {/* ══════════════ FINANCE — complete Financial Report ══════════════ */}
+      {tab === "FINANCE" && (
+        <div className="space-y-4">
+          <FinancialReportSection
+            mode="business"
+            businessInfo={businessInfo}
+            businessMetric={businessMetrics}
+            transactions={transactions}
+            inventory={inventory}
+            customers={customers}
+            currentCurrency={currentCurrency}
+            accent="violet"
+            testid="fin-report-tech"
+            aiModuleKey="TECH"
+            opsLinks={[
+              {
+                label: "Orders delivered",
+                value: `${orders.filter((o: any) => o.status === "DELIVERED").length} of ${orders.length}`,
+                note: "Fulfilled orders deduct stock and post revenue automatically",
+                tone: "emerald",
+              },
+              {
+                label: "Supplier purchases received",
+                value: formatMoney(
+                  purchases.filter((p: any) => p.status === "RECEIVED").reduce((s: number, p: any) => s + (p.totalGhs || 0), 0),
+                  currentCurrency,
+                  true
+                ),
+                tone: "violet",
+              },
+              {
+                label: "Units sold (serials)",
+                value: String(serials.filter((s: any) => s.status === "SOLD").length),
+                tone: "sky",
+              },
+            ]}
+          />
         </div>
       )}
 

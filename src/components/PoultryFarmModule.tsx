@@ -17,6 +17,7 @@ import { addToOfflineQueue } from "@/lib/offlineSync";
 import { analyzePoultry } from "@/lib/poultryAnalytics";
 import PoultryAnalyticsAlerts from "./PoultryAnalyticsAlerts";
 import DailyChecklistPanel from "./DailyChecklistPanel";
+import FinancialReportSection from "./FinancialReportSection";
 
 interface Props {
   currentUser: any;
@@ -1194,9 +1195,40 @@ export default function PoultryFarmModule({
         </div>
       )}
 
-      {/* ══════════ FINANCE ══════════ */}
+      {/* ══════════ FINANCE — complete Financial Report ══════════ */}
       {tab === "FINANCE" && (
         <div className="space-y-4">
+          <FinancialReportSection
+            mode="business"
+            businessInfo={businessInfo}
+            businessMetric={businessMetrics}
+            transactions={transactions}
+            inventory={inventory}
+            customers={customers}
+            currentCurrency={currentCurrency}
+            accent="amber"
+            testid="fin-report-poultry"
+            aiModuleKey="POULTRY"
+            opsLinks={[
+              {
+                label: "Production logs",
+                value: String(production.length),
+                note: "Egg/broiler production batches auto-stocked into Inventory",
+                tone: "emerald",
+              },
+              {
+                label: "Trays produced",
+                value: production.reduce((s: number, p: any) => s + (p.traysProduced || 0), 0).toLocaleString(),
+                note: "Lifetime trays across all production batches",
+                tone: "amber",
+              },
+              {
+                label: "Active flocks",
+                value: String(flocks.filter((f: any) => f.status !== "DEPLETED").length),
+                tone: "sky",
+              },
+            ]}
+          />
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
             <Stat label="Revenue" value={formatMoney(revenue, currentCurrency, true)} color="emerald" icon={TrendingUp} />
             <Stat label="Expenses" value={formatMoney(expenses, currentCurrency, true)} color="rose" icon={TrendingDown} />

@@ -113,6 +113,63 @@ const COMMON: Record<string, SectionGuide> = {
     tasks: CHECKLIST_TASKS,
     faqs: CHECKLIST_FAQS,
   },
+  FINANCE_REPORT: {
+    title: "Financial Report",
+    intro:
+      "This is the complete written financial report of {biz}: revenue, sales, expenses, profit, payments, outstanding balances and trends — all pulled live from the same records as every other section, so it updates itself the moment a sale, purchase, production batch, order or expense is recorded.",
+    tasks: [
+      {
+        name: "Report on a period (days, months, years)",
+        steps: [
+          "Tap a period chip — Today, Last 7 Days, This Month, Last Month, Last 6 Months, Year to Date, Last Year or All Time.",
+          "Every card, chart and table below instantly recalculates for that range only.",
+          "Use the Trend-by buttons to view the chart by Days, Months or Years.",
+        ],
+        tip: "The Q1-2026 baseline strip shows the records the branch opened with; it folds into the All Time view automatically.",
+      },
+      {
+        name: "Compare businesses and branches",
+        steps: [
+          "On the Command Center report, use the Business / Branch picker to isolate one unit or view the consolidated group.",
+          "Inside a unit's own report, the Branch/Register picker filters by register code.",
+          "The per-business table ranks every branch by revenue, expenses, profit and margin for the chosen period.",
+        ],
+      },
+      {
+        name: "Chase outstanding money",
+        steps: [
+          "Check the Outstanding card: open invoices and payments still awaiting MoMo verification are listed with amounts.",
+          "Open the Sales & Payments center to mark an invoice paid — the report updates immediately.",
+        ],
+      },
+    ],
+    faqs: [
+      {
+        q: "Are these numbers live?",
+        match: ["live", "real", "update", "automatic", "refresh"],
+        answer:
+          "Yes. Sales, purchases, production, orders, expenses and payments all post straight into the financial ledger, and this report reads from it directly — numbers change the instant a record is saved anywhere in the app.",
+      },
+      {
+        q: "How do I see a specific month or year?",
+        match: ["month", "year", "days", "period", "filter", "date"],
+        answer:
+          "Use the period chips (This Month, Last Month, Year to Date, Last Year…) and set the trend to Months or Years. The cards and the chart recalculate together for the exact range.",
+      },
+      {
+        q: "What is counted as profit?",
+        match: ["profit", "margin", "net"],
+        answer:
+          "Net Profit = Revenue − Expenses inside the selected period. The margin percentage is profit as a share of revenue. On All Time, the Q1-2026 opening baseline is included; dated ranges report the live ledger only.",
+      },
+      {
+        q: "Where does outstanding money show?",
+        match: ["outstanding", "owed", "debt", "unpaid", "receivable"],
+        answer:
+          "The Outstanding & Receivables card lists unpaid or partially-paid invoices plus any mobile-money collections still awaiting verification, with the total at the top-right of the card.",
+      },
+    ],
+  },
   DEFAULT: {
     title: "This section",
     intro: "Here is how to use this part of {biz}.",
@@ -1308,6 +1365,7 @@ export const GUIDES: Record<string, Record<string, SectionGuide>> = {
       ],
     },
     CHECKLIST: COMMON.CHECKLIST,
+    FINANCE_REPORT: COMMON.FINANCE_REPORT,
     DEFAULT: {
       title: "Auto Car Wash",
       intro:
@@ -1493,6 +1551,7 @@ export const GUIDES: Record<string, Record<string, SectionGuide>> = {
         },
       ],
     },
+    FINANCE_REPORT: COMMON.FINANCE_REPORT,
     DEFAULT: {
       title: "Hardware & Building Materials",
       intro:

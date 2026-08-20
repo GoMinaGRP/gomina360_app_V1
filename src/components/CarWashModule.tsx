@@ -14,6 +14,7 @@ import {
 } from "recharts";
 import { CurrencyCode, formatMoney } from "@/lib/currency";
 import DailyChecklistPanel from "./DailyChecklistPanel";
+import FinancialReportSection from "./FinancialReportSection";
 
 type Props = {
   currentUser: any;
@@ -678,9 +679,39 @@ export default function CarWashModule({
         </div>
       )}
 
-      {/* ══════════════ FINANCE & REPORTS ══════════════ */}
+      {/* ══════════════ FINANCE & REPORTS — complete Financial Report ══════════════ */}
       {tab === "REPORTS" && (
         <div className="space-y-5">
+          <FinancialReportSection
+            mode="business"
+            businessInfo={businessInfo}
+            businessMetric={businessMetrics}
+            transactions={transactions}
+            inventory={inventory}
+            customers={customers}
+            currentCurrency={currentCurrency}
+            accent="teal"
+            testid="fin-report-wash"
+            aiModuleKey="WASH"
+            opsLinks={[
+              {
+                label: "Washes completed",
+                value: `${completedWashes.length} · ${formatMoney(completedWashes.reduce((s: number, w: any) => s + (w.priceGhs || 0), 0), currentCurrency, true)}`,
+                note: "Every completed wash posts revenue + consumes chemical stock automatically",
+                tone: "emerald",
+              },
+              {
+                label: "Bookings",
+                value: `${bookings.length} (${bookings.filter((b: any) => b.status === "BOOKED").length} open)`,
+                tone: "teal",
+              },
+              {
+                label: "Active services",
+                value: String(services.filter((s: any) => s.active !== false).length),
+                tone: "sky",
+              },
+            ]}
+          />
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
             <Stat testid="cw-stat-revenue" label="Revenue" value={formatMoney(revenue, currentCurrency, true)} sub={`${income.length} receipts`} color="emerald" icon={TrendingUp} />
             <Stat testid="cw-stat-expenses" label="Expenses" value={formatMoney(expenseTotal, currentCurrency, true)} sub={`${expenses.length} entries`} color="rose" icon={Wallet} />

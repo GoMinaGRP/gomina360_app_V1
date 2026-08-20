@@ -14,6 +14,7 @@ import {
 } from "recharts";
 import { CurrencyCode, formatMoney } from "@/lib/currency";
 import DailyChecklistPanel from "./DailyChecklistPanel";
+import FinancialReportSection from "./FinancialReportSection";
 
 type Props = {
   currentUser: any;
@@ -29,7 +30,7 @@ type Props = {
   onRefreshData: () => void;
 };
 
-type Tab = "DASHBOARD" | "STOCK" | "ORDERS" | "DELIVERIES" | "YARD_OPS" | "CHECKLIST";
+type Tab = "DASHBOARD" | "STOCK" | "ORDERS" | "DELIVERIES" | "FINANCE" | "YARD_OPS" | "CHECKLIST";
 type FormType = "SALE" | "EXPENSE" | "ITEM" | "ORDER" | "PURCHASE" | "DELIVERY" | "GRN" | null;
 
 const TABS: { key: Tab; label: string; icon: any }[] = [
@@ -37,6 +38,7 @@ const TABS: { key: Tab; label: string; icon: any }[] = [
   { key: "STOCK", label: "Stock & Materials", icon: Boxes },
   { key: "ORDERS", label: "Orders & Purchases", icon: ClipboardList },
   { key: "DELIVERIES", label: "Site Deliveries", icon: Truck },
+  { key: "FINANCE", label: "Finance & Reports", icon: Wallet },
   { key: "YARD_OPS", label: "Staff & Yard Ops", icon: UserCog },
   { key: "CHECKLIST", label: "Daily Checklist", icon: ClipboardCheck },
 ];
@@ -722,6 +724,46 @@ export default function HardwareStoreModule({
               ])} />
             <p className="px-4 pb-3 pt-1 text-[10px] text-slate-500">Every logged receipt tops up the matching stock item (or creates it) and books the landed cost to Finance — the yard log IS the stock-intake ledger.</p>
           </Card>
+        </div>
+      )}
+
+      {/* ══════════════ FINANCE — complete Financial Report ══════════════ */}
+      {tab === "FINANCE" && (
+        <div className="space-y-4">
+          <FinancialReportSection
+            mode="business"
+            businessInfo={businessInfo}
+            businessMetric={businessMetrics}
+            transactions={transactions}
+            inventory={inventory}
+            customers={customers}
+            currentCurrency={currentCurrency}
+            accent="amber"
+            testid="fin-report-hardware"
+            aiModuleKey="HARDWARE"
+            opsLinks={[
+              {
+                label: "Orders delivered",
+                value: `${orders.filter((o: any) => o.status === "DELIVERED").length} of ${orders.length}`,
+                note: "Fulfilled orders deduct stock and post revenue automatically",
+                tone: "emerald",
+              },
+              {
+                label: "Site deliveries completed",
+                value: String(deliveries.filter((d: any) => d.status === "DELIVERED").length),
+                tone: "amber",
+              },
+              {
+                label: "Purchases received",
+                value: formatMoney(
+                  purchases.filter((p: any) => p.status === "RECEIVED").reduce((s: number, p: any) => s + (p.totalGhs || 0), 0),
+                  currentCurrency,
+                  true
+                ),
+                tone: "violet",
+              },
+            ]}
+          />
         </div>
       )}
 

@@ -22,6 +22,7 @@ import {
   Building2,
   ClipboardEdit,
   BarChart3,
+  Landmark,
   Download,
   Eye,
   Repeat,
@@ -32,6 +33,7 @@ import { CurrencyCode, formatMoney } from "@/lib/currency";
 import { COMPANY_INFO } from "@/lib/companyInfo";
 import { addToOfflineQueue } from "@/lib/offlineSync";
 import SalesDocumentBuilder from "./SalesDocumentBuilder";
+import FinancialReportSection from "./FinancialReportSection";
 import { generateSalesDocumentPDF, printSalesDocument, downloadFile as downloadPDFFile } from "@/lib/salesDocument";
 import {
   BarChart,
@@ -77,7 +79,7 @@ export default function BranchManagerSalesView({
   onRefreshData,
   isExecutive = false,
 }: BranchManagerSalesViewProps) {
-  type SalesTab = "NEW_SALE" | "INVOICES" | "QUOTATIONS" | "ANALYTICS" | "PAYMENTS" | "RECEIPTS" | "RETURNS" | "CUSTOMERS" | "INVENTORY";
+  type SalesTab = "NEW_SALE" | "INVOICES" | "QUOTATIONS" | "ANALYTICS" | "FIN_REPORT" | "PAYMENTS" | "RECEIPTS" | "RETURNS" | "CUSTOMERS" | "INVENTORY";
   const [activeSubTab, setActiveSubTab] = useState<SalesTab>("NEW_SALE");
 
   // Sales documents (invoices, quotations, receipts)
@@ -549,6 +551,7 @@ export default function BranchManagerSalesView({
     { key: "QUOTATIONS", label: "Quotations", icon: ClipboardEdit },
     { key: "RECEIPTS", label: "Receipts", icon: Receipt },
     { key: "ANALYTICS", label: "Analytics", icon: BarChart3 },
+    { key: "FIN_REPORT", label: "Financial Report", icon: Landmark },
     { key: "PAYMENTS", label: "Payments", icon: CreditCard },
     { key: "RETURNS", label: "Returns", icon: RotateCcw },
     { key: "CUSTOMERS", label: "Customers", icon: Users },
@@ -1395,6 +1398,36 @@ export default function BranchManagerSalesView({
                 </div>
               )}
             </div>
+          )}
+
+          {/* ~~~~~~~~~~ FINANCIAL REPORT (complete, live-linked) ~~~~~~~~~~ */}
+          {activeSubTab === "FIN_REPORT" && (
+            <FinancialReportSection
+              mode="business"
+              businessInfo={activeBiz}
+              businessMetric={activeBizMetrics}
+              transactions={transactions}
+              inventory={inventory}
+              customers={customers}
+              salesDocuments={salesDocuments}
+              currentCurrency={currentCurrency}
+              accent="emerald"
+              testid="fin-report-branch"
+              aiModuleKey="SALES_CENTER"
+              opsLinks={[
+                {
+                  label: "Invoices issued",
+                  value: String(branchInvoices.length),
+                  note: `${branchInvoices.filter((i: any) => i.status === "PAID").length} fully paid`,
+                  tone: "emerald",
+                },
+                {
+                  label: "Quotations open",
+                  value: String(branchQuotations.filter((q: any) => !["CONVERTED", "REJECTED", "EXPIRED"].includes(q.status)).length),
+                  tone: "sky",
+                },
+              ]}
+            />
           )}
 
           {/* ~~~~~~~~~~ PAYMENTS ~~~~~~~~~~ */}
