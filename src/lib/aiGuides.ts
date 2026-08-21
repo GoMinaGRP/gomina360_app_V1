@@ -1970,6 +1970,56 @@ export const GUIDES: Record<string, Record<string, SectionGuide>> = {
     },
   },
 
+  /* ═══════════════ EMPLOYEES → PAYROLL COMMAND CENTER ═══════════════ */
+  PAYROLL: {
+    DEFAULT: {
+      title: "Payroll Command Center",
+      intro:
+        "The group's complete payroll desk: employees' base salaries, allowances, overtime and deductions roll into monthly runs that move DRAFT → REVIEWED → APPROVED → PAID. Paying posts real expense transactions, so every payment updates Transactions, the Financial Reports and each business dashboard automatically.",
+      tasks: [
+        {
+          name: "Run payroll end-to-end",
+          steps: [
+            "Open the Employees & Payroll module and click “Payroll Center”, then “New Payroll Run”.",
+            "Pick the business and month — a draft is built for every ACTIVE employee with base salary plus the month's overtime pulled from attendance.",
+            "Expand the run, adjust allowances/deductions where needed, then click “Mark Reviewed” → “Approve”.",
+            "Click “Pay All” (or the wallet icon on one entry), choose Cash, MTN MoMo, Bank Transfer or Other — done: net pay is recorded in the ledger instantly.",
+          ],
+        },
+        {
+          name: "Track attendance, leave & overtime",
+          steps: [
+            "Open the Attendance & OT tab and pick an employee, date and status (Present, Half day, Absent, Leave, Off day).",
+            "Enter working hours and any overtime hours; Leave rows carry a leave type (Annual, Sick, Maternity, Unpaid).",
+            "Overtime hours saved here are added automatically to that employee's next payroll run at 1.5× the hourly rate (monthly salary ÷ 208).",
+          ],
+        },
+        {
+          name: "Read paid vs outstanding",
+          steps: [
+            "The KPI strip shows Total Net Pay, Paid Out and Outstanding Payroll for the selected business (or all).",
+            "Inside a run, each employee row shows base, allowances, overtime, deductions and net with PENDING/PAID status.",
+            "Use the business filter at the top to isolate one branch's wage bill.",
+          ],
+        },
+        {
+          name: "Print payslips & export reports",
+          steps: [
+            "Expand a run and click the document icon on any employee row to open the payslip — print or save it as PDF.",
+            "The Reports & Charts tab shows the monthly payroll trend, cost composition (salaries/allowances/overtime/deductions) and paid-vs-outstanding per business.",
+            "Click “Download CSV” for the full payroll register with ledger references for audits.",
+          ],
+        },
+      ],
+      faqs: [
+        { q: "Who can approve and pay payroll?", match: ["permission", "who", "approve", "manager", "owner"], answer: "The OWNER always can. A manager (General/Branch) can run, review, approve and pay payroll only after the OWNER grants them record-management permission in Users & Access — and only for businesses inside their access scope. Workers have no payroll access." },
+        { q: "Where does a payment go after I pay?", match: ["finance", "transaction", "report", "update", "ledger"], answer: "Each payment creates a completed EXPENSE transaction (category “Staff Payroll”) against the employee's business and branch with the method used. Transactions & MoMo, the central Financial Report, business dashboards, payroll trends — everywhere updates immediately." },
+        { q: "How is overtime calculated?", match: ["overtime", "ot", "rate", "hourly"], answer: "Hourly rate = monthly base salary ÷ 208 (26 days × 8 hours). Overtime is paid at 1.5× that rate. Hours recorded in the Attendance & OT tab for the payroll month flow into the run automatically when it is created." },
+        { q: "Can a paid run be changed?", match: ["paid", "edit", "change", "delete", "vvoid", "reverse"], answer: "Paid entries and paid runs are locked for audit. Draft runs can be discarded entirely; an APPROVED run cannot be deleted — revert it by editing entries before payment, or leave it for the record." },
+      ],
+    },
+  },
+
   /* ═══════════════ COMMAND CENTER / ROLES ═══════════════ */
   COMMAND_CENTER: {
     COMMAND_CENTER: {

@@ -1067,6 +1067,72 @@ export const cctvCameras = pgTable("cctv_cameras", {
   updatedAt: timestamp("updated_at").defaultNow(),
 });
 
+// 19c. Enterprise Payroll — runs, per-employee entries & attendance.
+// Lifecycle: DRAFT → REVIEWED → APPROVED → PAID (payment posts a real EXPENSE
+// transaction so payroll flows into Finance & Reports automatically).
+// Permissions follow the existing shared-record model: the OWNER always;
+// managers only with the OWNER-granted canManageRecords flag and only inside
+// their accessible businesses (enforced server-side per request).
+export const payrollRuns = pgTable("payroll_runs", {
+  id: serial("id").primaryKey(),
+  period: text("period").notNull(), // "2026-08" — payroll month
+  businessId: integer("business_id").notNull(),
+  branchCode: text("branch_code").notNull(),
+  branchName: text("branch_name"),
+  status: text("status").notNull().default("DRAFT"), // DRAFT | REVIEWED | APPROVED | PAID
+  notes: text("notes"),
+  createdByUserId: integer("created_by_user_id"),
+  createdByName: text("created_by_name"),
+  reviewedByName: text("reviewed_by_name"),
+  reviewedAt: timestamp("reviewed_at"),
+  approvedByName: text("approved_by_name"),
+  approvedAt: timestamp("approved_at"),
+  paidAt: timestamp("paid_at"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const payrollEntries = pgTable("payroll_entries", {
+  id: serial("id").primaryKey(),
+  runId: integer("run_id").notNull(), // payroll_runs.id
+  employeeId: integer("employee_id").notNull(),
+  employeeName: text("employee_name").notNull(),
+  employeeRole: text("employee_role"),
+  businessId: integer("business_id").notNull(),
+  branchCode: text("branch_code").notNull(),
+  baseSalaryGhs: doublePrecision("base_salary_ghs").notNull(),
+  allowancesGhs: doublePrecision("allowances_ghs").notNull().default(0),
+  allowanceNote: text("allowance_note"),
+  overtimeHours: doublePrecision("overtime_hours").notNull().default(0),
+  overtimePayGhs: doublePrecision("overtime_pay_ghs").notNull().default(0),
+  deductionsGhs: doublePrecision("deductions_ghs").notNull().default(0),
+  deductionNote: text("deduction_note"),
+  netPayGhs: doublePrecision("net_pay_ghs").notNull(),
+  status: text("status").notNull().default("PENDING"), // PENDING | PAID
+  paymentMethod: text("payment_method"), // CASH | MTN_MOMO | BANK_TRANSFER | OTHER
+  paidAt: timestamp("paid_at"),
+  paidByName: text("paid_by_name"),
+  transactionId: integer("transaction_id"), // ledger link (transactions.id)
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const payrollAttendance = pgTable("payroll_attendance", {
+  id: serial("id").primaryKey(),
+  employeeId: integer("employee_id").notNull(),
+  employeeName: text("employee_name").notNull(),
+  businessId: integer("business_id").notNull(),
+  branchCode: text("branch_code").notNull(),
+  date: text("date").notNull(), // "2026-08-20"
+  status: text("status").notNull(), // PRESENT | HALF_DAY | ABSENT | LEAVE | OFF_DAY
+  hoursWorked: doublePrecision("hours_worked").notNull().default(0),
+  overtimeHours: doublePrecision("overtime_hours").notNull().default(0),
+  leaveType: text("leave_type"), // ANNUAL | SICK | MATERNITY | UNPAID | null
+  note: text("note"),
+  recordedByUserId: integer("recorded_by_user_id"),
+  recordedByName: text("recorded_by_name"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
 // 20. Asset Downloads Audit Trail
 // Tracks every asset record download with unique ID, QR code, and downloader details
 export const assetDownloads = pgTable("asset_downloads", {

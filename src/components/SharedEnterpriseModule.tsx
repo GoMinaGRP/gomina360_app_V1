@@ -27,6 +27,8 @@ import { REGION_NAMES } from "@/lib/ghanaLocations";
 import AssetRegistrationModal from "./AssetRegistrationModal";
 import QrScanModal from "./QrScanModal";
 import QrRecordModal from "./QrRecordModal";
+import PayrollCenter from "./PayrollCenter";
+import { Landmark } from "lucide-react";
 import { buildInventoryQr } from "@/lib/qrRegistry";
 import { generateAssetDownload, downloadFile, generateDownloadId, AssetDownloadFilters } from "@/lib/assetDownload";
 import { generateInventoryDownload, generateInventoryDownloadId, InventoryDownloadFilters } from "@/lib/inventoryDownload";
@@ -111,6 +113,7 @@ export default function SharedEnterpriseModule({
   // ─── QR registry: camera scan → open existing record / guided registration ───
   const [invQr, setInvQr] = useState("");
   const [qrScanOpen, setQrScanOpen] = useState(false);
+  const [showPayroll, setShowPayroll] = useState(false);
   const [qrScanTarget, setQrScanTarget] = useState<"lookup" | "inventory-form">("lookup");
   const [qrBusy, setQrBusy] = useState(false);
   const [qrError, setQrError] = useState("");
@@ -1194,6 +1197,16 @@ export default function SharedEnterpriseModule({
                 <span className="hidden sm:inline">CSV</span>
               </button>
             </div>
+          )}
+          {moduleType === "EMPLOYEES" && (
+            <button
+              onClick={() => setShowPayroll(true)}
+              className="flex items-center space-x-1.5 px-4 py-2.5 rounded-xl bg-teal-600 hover:bg-teal-500 text-white font-bold text-xs sm:text-sm shadow-lg transition"
+              data-testid="emp-payroll-open"
+            >
+              <Landmark className="w-4 h-4" />
+              <span>Payroll Center</span>
+            </button>
           )}
           <button
             onClick={() => {
@@ -2885,6 +2898,17 @@ export default function SharedEnterpriseModule({
           record={qrRecord.record}
           justRegistered={!!qrRecord.justRegistered}
           businesses={businesses}
+        />
+      )}
+
+      {/* Payroll Command Center (Employees & Payroll module) */}
+      {moduleType === "EMPLOYEES" && showPayroll && (
+        <PayrollCenter
+          currentUser={currentUser}
+          businesses={businesses}
+          employees={employees}
+          onChanged={onRefreshData}
+          onClose={() => setShowPayroll(false)}
         />
       )}
     </div>

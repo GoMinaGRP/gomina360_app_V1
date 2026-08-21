@@ -26,6 +26,9 @@ import {
   scenarioSimulations,
   integrations,
   cctvCameras,
+  payrollRuns,
+  payrollEntries,
+  payrollAttendance,
 } from "./schema";
 import { sql, eq } from "drizzle-orm";
 import { provisionBusiness, ensureCarWashServiceCatalogue } from "@/lib/businessProvisioning";
@@ -1412,6 +1415,50 @@ export async function seedDatabase() {
       createdByName: "Kwame Mina",
     },
   ]);
+
+  // 12c. Payroll baseline — attendance/leave/overtime + one August draft run
+  // (Doris Ansah, Poultry): base 4,500 + transport allowance 250 + 3 OT hrs
+  // (3 × 4,500/208 × 1.5 = 97.36) − welfare advance 150 → net 4,697.36.
+  await db.insert(payrollAttendance).values([
+    { employeeId: 1, employeeName: "Doris Ansah", businessId: 1, branchCode: "POULTRY-01", date: "2026-08-03", status: "PRESENT", hoursWorked: 8, overtimeHours: 0, recordedByUserId: 1, recordedByName: "Kwame Mina" },
+    { employeeId: 1, employeeName: "Doris Ansah", businessId: 1, branchCode: "POULTRY-01", date: "2026-08-04", status: "PRESENT", hoursWorked: 8, overtimeHours: 2, note: "Vaccination drive", recordedByUserId: 1, recordedByName: "Kwame Mina" },
+    { employeeId: 1, employeeName: "Doris Ansah", businessId: 1, branchCode: "POULTRY-01", date: "2026-08-05", status: "PRESENT", hoursWorked: 8, overtimeHours: 1, recordedByUserId: 1, recordedByName: "Kwame Mina" },
+    { employeeId: 1, employeeName: "Doris Ansah", businessId: 1, branchCode: "POULTRY-01", date: "2026-08-06", status: "LEAVE", hoursWorked: 0, overtimeHours: 0, leaveType: "ANNUAL", recordedByUserId: 1, recordedByName: "Kwame Mina" },
+    { employeeId: 1, employeeName: "Doris Ansah", businessId: 1, branchCode: "POULTRY-01", date: "2026-08-07", status: "PRESENT", hoursWorked: 8, overtimeHours: 0, recordedByUserId: 1, recordedByName: "Kwame Mina" },
+    { employeeId: 5, employeeName: "Patience Osei-Bonsu", businessId: 5, branchCode: "FOOD-01", date: "2026-08-10", status: "PRESENT", hoursWorked: 8, overtimeHours: 2, note: "Weekend event cover", recordedByUserId: 1, recordedByName: "Kwame Mina" },
+    { employeeId: 5, employeeName: "Patience Osei-Bonsu", businessId: 5, branchCode: "FOOD-01", date: "2026-08-11", status: "HALF_DAY", hoursWorked: 4, overtimeHours: 0, recordedByUserId: 1, recordedByName: "Kwame Mina" },
+    { employeeId: 5, employeeName: "Patience Osei-Bonsu", businessId: 5, branchCode: "FOOD-01", date: "2026-08-12", status: "PRESENT", hoursWorked: 8, overtimeHours: 0, recordedByUserId: 1, recordedByName: "Kwame Mina" },
+  ]);
+  const [seedPayRun] = await db
+    .insert(payrollRuns)
+    .values({
+      period: "2026-08",
+      businessId: 1,
+      branchCode: "POULTRY-01",
+      branchName: "Mina Akuafo Poultry Farm",
+      status: "DRAFT",
+      notes: "August 2026 salary cycle — awaiting review",
+      createdByUserId: 1,
+      createdByName: "Kwame Mina",
+    })
+    .returning();
+  await db.insert(payrollEntries).values({
+    runId: seedPayRun.id,
+    employeeId: 1,
+    employeeName: "Doris Ansah",
+    employeeRole: "Senior Farm Veterinarian",
+    businessId: 1,
+    branchCode: "POULTRY-01",
+    baseSalaryGhs: 4500,
+    allowancesGhs: 250,
+    allowanceNote: "transport",
+    overtimeHours: 3,
+    overtimePayGhs: 97.36,
+    deductionsGhs: 150,
+    deductionNote: "welfare advance",
+    netPayGhs: 4697.36,
+    status: "PENDING",
+  });
 
   // ─────────────────────────────────────────────────────────────────────────
   // Standardized Ghana location normalization (Region → District/MMDA → Town)
