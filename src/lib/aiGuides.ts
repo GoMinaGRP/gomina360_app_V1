@@ -1824,9 +1824,9 @@ export const GUIDES: Record<string, Record<string, SectionGuide>> = {
         {
           name: "Register an asset",
           steps: [
-            "Click “Register Asset”.",
+            "Click “Register Asset” — or “Scan QR” if the asset already carries a tag.",
             "Enter the name, category, branch, purchase cost and date.",
-            "Save — it starts depreciating on schedule and appears in branch reports.",
+            "Save — it starts depreciating on schedule, appears in branch reports, and gets a printable QR identity label.",
           ],
         },
         {
@@ -1846,11 +1846,18 @@ export const GUIDES: Record<string, Record<string, SectionGuide>> = {
       intro: "Every stock item in every GoMina business on one screen — the group-wide shelf with branch tags and statuses.",
       tasks: [
         {
-          name: "Add an item (SKU)",
+          name: "Add a stock item",
           steps: [
-            "Click “Add SKU Item”.",
+            "Click “Add Stock Item” — or scan the item's QR code first.",
             "Choose the owning business, then name, category, quantity, cost and selling price.",
-            "Save — it appears in that business's stock and sale pickers instantly.",
+            "Save — it appears in that business's stock and sale pickers instantly, with a printable QR label.",
+          ],
+        },
+        {
+          name: "Scan or find by QR code",
+          steps: [
+            "Click “Scan QR” in the header and point the camera at the tag (or type the code).",
+            "Known codes open the item record; new codes start a guided registration already linked to the right business and branch.",
           ],
         },
         {

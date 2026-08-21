@@ -13,7 +13,7 @@ import {
 import { desc, eq } from "drizzle-orm";
 import { computeStockStatus } from "@/lib/stock";
 import { canManageSharedRecords } from "@/lib/recordPermissions";
-import { getSessionInfo, canAccessBusiness, UNAUTHENTICATED, FORBIDDEN } from "@/lib/auth";
+import { getSessionInfo, canAccessBusiness, accessibleBusinessIds, UNAUTHENTICATED, FORBIDDEN } from "@/lib/auth";
 
 // Which enterprise entity a deletion-log row refers to.
 const MODULE_TABLE: Record<string, any> = {
@@ -31,6 +31,36 @@ export async function GET(request: Request) {
     const session = await getSessionInfo(request);
     if (!session) return UNAUTHENTICATED();
     const { searchParams } = new URL(request.url);
+
+    // ── QR registry lookup (camera scanner on Inventory & Assets) ──────
+    // /api/enterprise?qr=<content> → { found, kind: "inventory"|"asset", record }
+    // Scoped to the businesses the caller is allowed to see.
+    const qrRaw = searchParams.get("qr");
+    if (qrRaw !== null) {
+      const code = qrRaw.trim();
+      if (!code) return NextResponse.json({ success: true, found: false });
+      const allowed = await accessibleBusinessIds(session.user); // null ⇒ see all
+      const canSee = (bizId: number | null | undefined) =>
+        allowed == null || (bizId != null && allowed.includes(bizId));
+      const [item] = await db
+        .select()
+        .from(inventoryItems)
+        .where(eq(inventoryItems.qrCode, code))
+        .limit(1);
+      if (item && canSee(item.businessId)) {
+        return NextResponse.json({ success: true, found: true, kind: "inventory", record: item });
+      }
+      const [asset] = await db
+        .select()
+        .from(assets)
+        .where(eq(assets.qrCode, code))
+        .limit(1);
+      if (asset && canSee(asset.businessId)) {
+        return NextResponse.json({ success: true, found: true, kind: "asset", record: asset });
+      }
+      return NextResponse.json({ success: true, found: false });
+    }
+
     if (searchParams.get("deletionLogs") !== "1") {
       return NextResponse.json(
         { success: false, error: "Unsupported query." },
@@ -367,10 +397,32 @@ export async function POST(request: Request) {
         }
       }
 
+      // ── Unique QR tag — a scanned/generated QR must never point at two assets. ──
+      const assetQr = data.qrCode ? String(data.qrCode).trim().slice(0, 200) : "";
+      if (assetQr) {
+        const [qrDupe] = await db
+          .select()
+          .from(assets)
+          .where(eq(assets.qrCode, assetQr))
+          .limit(1);
+        if (qrDupe) {
+          return NextResponse.json(
+            {
+              success: false,
+              error: `This QR code is already registered to asset "${qrDupe.name}" (${qrDupe.assetCode}).`,
+              duplicateOf: { kind: "asset", id: qrDupe.id, name: qrDupe.name },
+            },
+            { status: 409 }
+          );
+        }
+      }
+
+      const assetQrValue = assetQr || null;
       const [inserted] = await db
         .insert(assets)
         .values({
           assetCode,
+          qrCode: assetQrValue,
           name: data.name || "Enterprise Equipment",
           description: data.description || null,
           businessId: businessIdNum,
@@ -445,6 +497,25 @@ export async function POST(request: Request) {
       const photosArr = Array.isArray(data.photos)
         ? data.photos.filter((p: any) => typeof p === "string" && p.length > 0)
         : [];
+      // ── Unique QR tag — scanned or auto-generated; never duplicated. ──
+      const invQr = data.qrCode ? String(data.qrCode).trim().slice(0, 200) : "";
+      if (invQr) {
+        const [qrDupe] = await db
+          .select()
+          .from(inventoryItems)
+          .where(eq(inventoryItems.qrCode, invQr))
+          .limit(1);
+        if (qrDupe) {
+          return NextResponse.json(
+            {
+              success: false,
+              error: `This QR code is already registered to stock item "${qrDupe.name}" (${qrDupe.sku}).`,
+              duplicateOf: { kind: "inventory", id: qrDupe.id, name: qrDupe.name },
+            },
+            { status: 409 }
+          );
+        }
+      }
       const [inserted] = await db
         .insert(inventoryItems)
         .values({
@@ -463,6 +534,9 @@ export async function POST(request: Request) {
           expiryDate: data.expiryDate || null,
           photo: typeof data.photo === "string" && data.photo ? data.photo : photosArr[0] || null,
           photos: photosArr,
+          qrCode: invQr || null,
+          registeredByName: data.registeredByName ? String(data.registeredByName).slice(0, 120) : null,
+          registeredByUserId: data.registeredByUserId ? Number(data.registeredByUserId) : null,
         })
         .returning();
       return NextResponse.json({ success: true, item: inserted });

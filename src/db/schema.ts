@@ -202,8 +202,13 @@ export const assets = pgTable("assets", {
   recorderName: text("recorder_name"), // name of the user who recorded the asset
   recordedAt: timestamp("recorded_at").defaultNow(), // automatic date/time stamp
   assetImages: jsonb("asset_images"), // array of uploaded image data URLs / URLs
+  /** QR identity tag — globally unique when set; scanned or auto-generated at
+   *  registration and printed on the asset tag. */
+  qrCode: text("qr_code"),
   createdAt: timestamp("created_at").defaultNow(),
-});
+}, (t) => [
+  uniqueIndex("assets_qr_code_unique").on(t.qrCode),
+]);
 
 // 7b. Complete Asset & Equipment audit log + approval workflow
 export const assetAuditLogs = pgTable("asset_audit_logs", {
@@ -246,8 +251,17 @@ export const inventoryItems = pgTable("inventory_items", {
   /** Primary product photo (data URL) + full set — uploaded or camera-captured. */
   photo: text("photo"),
   photos: jsonb("photos"),
+  /** QR identity tag — globally unique when set; scanned with the camera or
+   *  auto-generated at registration, printed on the stock label. */
+  qrCode: text("qr_code"),
+  /** Registration audit: who registered this stock item and when. */
+  registeredByName: text("registered_by_name"),
+  registeredByUserId: integer("registered_by_user_id"),
+  registeredAt: timestamp("registered_at").defaultNow(),
 }, (t) => [
   uniqueIndex("inventory_items_business_sku_unique").on(t.businessId, t.sku),
+  // Globally unique QR across the whole group — NULLs (legacy rows) may repeat.
+  uniqueIndex("inventory_items_qr_code_unique").on(t.qrCode),
 ]);
 
 // 8b. Inventory Downloads audit trail

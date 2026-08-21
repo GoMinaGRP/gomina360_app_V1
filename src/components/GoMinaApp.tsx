@@ -5,7 +5,7 @@ import Navbar from "./Navbar";
 import LoginScreen from "./LoginScreen";
 import Sidebar, { ActiveTab } from "./Sidebar";
 import CommandCenterDashboard from "./CommandCenterDashboard";
-import SpecializedBusinessView from "./SpecializedBusinessView";
+import LivestockModule from "./LivestockModule";
 import SharedEnterpriseModule from "./SharedEnterpriseModule";
 import AiAdvisorView from "./AiAdvisorView";
 import ScenarioPlannerView from "./ScenarioPlannerView";
@@ -697,7 +697,7 @@ export default function GoMinaApp() {
         );
       }
 
-      // Livestock units get the specialized ops-log dashboards.
+      // Livestock units get the full tabbed dashboard (Overview / Herd / Finance).
       if (moduleKey === "LIVESTOCK") {
         const bucket = specializedLogs.livestock || [];
         // Only THIS unit's operations logs (bucket is shared per type).
@@ -705,7 +705,7 @@ export default function GoMinaApp() {
           (l: any) => !l.businessId || l.businessId === bizInfo.id
         );
         return (
-          <SpecializedBusinessView
+          <LivestockModule
             businessCode={bizInfo.code}
             businessInfo={bizInfo}
             businessMetrics={bizMetric}

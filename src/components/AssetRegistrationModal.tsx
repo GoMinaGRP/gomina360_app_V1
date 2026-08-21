@@ -1,13 +1,17 @@
 "use client";
 
 import React, { useEffect, useMemo, useState } from "react";
-import { X, Wrench, Building2, MapPin, CheckCircle, ImagePlus, Clock, User } from "lucide-react";
+import { X, Wrench, Building2, MapPin, CheckCircle, ImagePlus, Clock, User, QrCode } from "lucide-react";
 import { formatLocation } from "@/lib/ghanaLocations";
+import QrScanModal from "./QrScanModal";
+import { buildAssetQr } from "@/lib/qrRegistry";
 
 interface AssetRegistrationModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSaved: () => void;
+  onSaved: (created?: any) => void;
+  /** QR content pre-attached by the module-level scanner (new registration). */
+  initialQr?: string;
   businesses: any[];
   currentUser: any;
   /** When set (Branch Manager), the business + branch are locked to this id. */
@@ -28,6 +32,7 @@ export default function AssetRegistrationModal({
   isOpen,
   onClose,
   onSaved,
+  initialQr = "",
   businesses,
   currentUser,
   lockedBusinessId = null,
@@ -37,6 +42,38 @@ export default function AssetRegistrationModal({
   // Required linkage
   const [businessId, setBusinessId] = useState<string>("");
   const [branchCode, setBranchCode] = useState<string>("");
+
+  // QR identity tag (camera-scanned or auto-generated over the asset code)
+  const [assetQr, setAssetQr] = useState(initialQr || "");
+  const [qrScanOpen, setQrScanOpen] = useState(false);
+  const [qrBusy, setQrBusy] = useState(false);
+
+  // Modal stays mounted (isOpen-controlled) — absorb a scanner preset on open.
+  useEffect(() => {
+    if (isOpen && initialQr) setAssetQr(initialQr);
+  }, [isOpen, initialQr]);
+
+  /** Scanned code: attach only if brand-new — otherwise say who owns it. */
+  const handleAssetQrScan = async (code: string) => {
+    setQrBusy(true);
+    try {
+      const res = await fetch(`/api/enterprise?qr=${encodeURIComponent(code)}`);
+      const d = await res.json().catch(() => null);
+      if (res.ok && d?.found) {
+        setErrorMsg(
+          `This QR code is already registered to ${d.kind === "asset" ? "asset" : "stock item"} "${d.record?.name}". Every QR must be unique — remove the old record first.`
+        );
+      } else {
+        setAssetQr(code);
+        setErrorMsg("");
+      }
+    } catch {
+      setErrorMsg("Registry lookup failed — try the scan again.");
+    } finally {
+      setQrBusy(false);
+      setQrScanOpen(false);
+    }
+  };
 
   // Unique asset code
   const [assetCode, setAssetCode] = useState("");
@@ -276,6 +313,9 @@ export default function AssetRegistrationModal({
             location: onSiteLocation,
             nextMaintenanceDate: nextMaintenance,
             registeredByUserId: currentUser?.id ?? null,
+            // QR identity: the scanned/attached tag, or a canonical tag derived
+            // from the final asset code (globally unique, server-enforced).
+            qrCode: assetQr.trim() || buildAssetQr(branchCode, assetCode.trim().toUpperCase()),
             // Inherit standardized Ghana location from the branch
             region: selectedBranch?.region,
             district: selectedBranch?.district,
@@ -289,7 +329,7 @@ export default function AssetRegistrationModal({
         setSuccessMsg(
           `Asset registered to ${selectedBranch?.name || "branch"}.`
         );
-        onSaved();
+        onSaved(data.item);
         // Close after a short beat so the user sees the confirmation
         setTimeout(() => onClose(), 900);
       } else {
@@ -454,6 +494,31 @@ export default function AssetRegistrationModal({
               {codeStatus === "idle" &&
                 "Must be unique across the entire enterprise"}
             </p>
+          </div>
+
+          {/* QR identity — scan with the camera; auto-generated from the code on save */}
+          <div className="bg-slate-800/50 border border-slate-700/60 rounded-lg p-3 space-y-2">
+            <div className="flex items-center justify-between">
+              <label className="text-[11px] font-semibold text-slate-400">QR Identity Tag</label>
+              <button
+                type="button"
+                onClick={() => setQrScanOpen(true)}
+                data-testid="ast-qr-scan-open"
+                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-cyan-600/20 border border-cyan-500/40 text-cyan-300 text-[11px] font-bold hover:bg-cyan-600/40 transition"
+              >
+                <QrCode className="w-3.5 h-3.5" /> Scan QR
+              </button>
+            </div>
+            {assetQr ? (
+              <div className="flex items-center justify-between gap-2" data-testid="ast-qr-chip">
+                <span className="font-mono text-[10px] text-cyan-200 break-all">{assetQr}</span>
+                <button type="button" onClick={() => setAssetQr("")} className="text-slate-500 hover:text-rose-400 text-xs font-bold px-1" title="Remove attached QR">✕</button>
+              </div>
+            ) : (
+              <p className="text-[10px] text-slate-500" data-testid="ast-qr-auto">
+                No scan attached — a unique label QR is generated automatically when you save.
+              </p>
+            )}
           </div>
 
           {/* Automatic recorder + timestamp */}
@@ -671,6 +736,15 @@ export default function AssetRegistrationModal({
           </div>
         </form>
       </div>
+
+      {/* Camera/manual QR scanner — attach a new tag, reject taken ones */}
+      <QrScanModal
+        open={qrScanOpen}
+        onClose={() => setQrScanOpen(false)}
+        onCode={handleAssetQrScan}
+        busy={qrBusy}
+        title="Scan Asset QR"
+      />
     </div>
   );
 }

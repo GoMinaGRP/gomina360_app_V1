@@ -25,9 +25,12 @@ import { addToOfflineQueue } from "@/lib/offlineSync";
 import LocationSelector, { LocationValue, LocationBadge } from "./LocationSelector";
 import { REGION_NAMES } from "@/lib/ghanaLocations";
 import AssetRegistrationModal from "./AssetRegistrationModal";
+import QrScanModal from "./QrScanModal";
+import QrRecordModal from "./QrRecordModal";
+import { buildInventoryQr } from "@/lib/qrRegistry";
 import { generateAssetDownload, downloadFile, generateDownloadId, AssetDownloadFilters } from "@/lib/assetDownload";
 import { generateInventoryDownload, generateInventoryDownloadId, InventoryDownloadFilters } from "@/lib/inventoryDownload";
-import { FileSpreadsheet, FileText, FileIcon, Download, SlidersHorizontal, X } from "lucide-react";
+import { FileSpreadsheet, FileText, FileIcon, Download, SlidersHorizontal, X, QrCode } from "lucide-react";
 
 interface SharedEnterpriseModuleProps {
   moduleType: "CUSTOMERS" | "SUPPLIERS" | "EMPLOYEES" | "ASSETS" | "INVENTORY" | "TRANSACTIONS";
@@ -104,6 +107,54 @@ export default function SharedEnterpriseModule({
   const [invMin, setInvMin] = useState<number>(10);
   const [invPhotos, setInvPhotos] = useState<string[]>([]);
   const [invPhotoErr, setInvPhotoErr] = useState("");
+
+  // ─── QR registry: camera scan → open existing record / guided registration ───
+  const [invQr, setInvQr] = useState("");
+  const [qrScanOpen, setQrScanOpen] = useState(false);
+  const [qrScanTarget, setQrScanTarget] = useState<"lookup" | "inventory-form">("lookup");
+  const [qrBusy, setQrBusy] = useState(false);
+  const [qrError, setQrError] = useState("");
+  const [qrRecord, setQrRecord] = useState<{ kind: "inventory" | "asset"; record: any; justRegistered?: boolean; } | null>(null);
+  const [assetQrPreset, setAssetQrPreset] = useState("");
+
+  /** Keep the required Branch/Register field valid: default it to the owning
+   *  business code whenever a flow opens the inventory form without one. */
+  const ensureInvBranch = () => {
+    if (moduleType !== "INVENTORY") return;
+    const biz = businesses.find((b: any) => String(b.id) === String(businessId));
+    if (!invBranch.trim() && biz?.code) setInvBranch(String(biz.code));
+  };
+
+  /** Scanned/typed code → registry lookup. Existing: open the record. New:
+   *  attach to the active form (or open the right registration form). */
+  const handleQrCode = async (code: string) => {
+    setQrBusy(true);
+    setQrError("");
+    try {
+      const res = await fetch(`/api/enterprise?qr=${encodeURIComponent(code)}`);
+      const d = await res.json().catch(() => null);
+      setQrScanOpen(false);
+      if (res.ok && d?.found && d.record) {
+        setQrRecord({ kind: d.kind === "asset" ? "asset" : "inventory", record: d.record });
+        return;
+      }
+      if (qrScanTarget === "inventory-form") {
+        ensureInvBranch();
+        setInvQr(code);
+      } else if (moduleType === "ASSETS") {
+        setAssetQrPreset(code);
+        setShowAssetModal(true);
+      } else {
+        setInvQr(code);
+        ensureInvBranch();
+        setShowModal(true);
+      }
+    } catch (e: any) {
+      setQrError(e?.message || "Registry lookup failed — try again.");
+    } finally {
+      setQrBusy(false);
+    }
+  };
 
   /** Accepts uploaded images or camera captures (data URLs), 5MB max each. */
   const handleInvPhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -627,9 +678,9 @@ export default function SharedEnterpriseModule({
       case "INVENTORY":
         return {
           title: "Unified Inventory & Stock Master",
-          subtitle: "Enterprise-wide SKU directory with automated min-stock threshold alerts.",
+          subtitle: "Enterprise-wide item directory with low-stock alerts and QR labels.",
           icon: <Package className="w-6 h-6 text-cyan-400" />,
-          buttonLabel: "Add SKU Item",
+          buttonLabel: "Add Stock Item",
         };
       case "TRANSACTIONS":
       default:
@@ -749,8 +800,17 @@ export default function SharedEnterpriseModule({
     } else if (moduleType === "INVENTORY") {
       entityType = "inventory";
       const invBiz = businesses.find((b: any) => String(b.id) === String(businessId));
+      // Every stock row carries a globally-unique QR identity: the scanned
+      // code when attached, else an auto-generated GM360-INV tag over the item
+      // code (generated here to the server pattern so the QR is deterministic).
+      const invSku = `SKU-${Math.floor(10000 + Math.random() * 90000)}`;
+      const qrValue = invQr || buildInventoryQr(invBiz?.code || "GM", invSku);
       data = {
         name,
+        sku: invSku,
+        qrCode: qrValue,
+        registeredByName: currentUser?.name || null,
+        registeredByUserId: currentUser?.id || null,
         businessId: Number(businessId),
         branchCode: invBranch.trim() || invBiz?.code || null,
         branchName: invBiz?.name || null,
@@ -779,12 +839,22 @@ export default function SharedEnterpriseModule({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ entityType, data }),
       });
+      const body = await res.json().catch(() => null);
       if (res.ok) {
         onRefreshData();
         setShowModal(false);
         setLocation({ region: "", district: "", town: "" });
         setInvPhotos([]);
         setInvPhotoErr("");
+        // Fresh registration → show the stored record with its printable QR label.
+        if (entityType === "inventory" && body?.item) {
+          setQrRecord({ kind: "inventory", record: body.item, justRegistered: true });
+        }
+        setInvQr("");
+        setQrError("");
+      } else {
+        // e.g. 409 duplicate QR — stay in the form and say why, plainly.
+        setQrError(body?.error || "Save failed — please check the details and try again.");
       }
     } catch (err) {
       console.error("Error saving entity:", err);
@@ -1014,6 +1084,16 @@ export default function SharedEnterpriseModule({
         </div>
 
         <div className="flex items-center space-x-3">
+          {(moduleType === "INVENTORY" || moduleType === "ASSETS") && (
+            <button
+              onClick={() => { setQrScanTarget("lookup"); setQrError(""); setQrScanOpen(true); }}
+              data-testid="shared-qr-lookup"
+              className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-bold shadow transition"
+              title="Scan a QR label with the camera to open the item or asset record"
+            >
+              <QrCode className="w-4 h-4" /> Scan QR
+            </button>
+          )}
           <AiSectionGuide moduleKey="SHARED" section={moduleType} variant="header" />
           {MANAGEABLE && isOwnerUser && (
             <button
@@ -1121,6 +1201,7 @@ export default function SharedEnterpriseModule({
               if (moduleType === "ASSETS") {
                 setShowAssetModal(true);
               } else {
+                ensureInvBranch();
                 setShowModal(true);
               }
             }}
@@ -1705,7 +1786,17 @@ export default function SharedEnterpriseModule({
                     (b) => b.id === ast.businessId
                   );
                   return (
-                    <tr key={ast.id} className="hover:bg-slate-700/50">
+                    <tr
+                      key={ast.id}
+                      className="hover:bg-slate-700/50 cursor-pointer"
+                      data-testid={`asset-row-${ast.id}`}
+                      title="Open record & QR label"
+                      onClick={(e) => {
+                        // Action buttons inside the row keep their own behaviour.
+                        if ((e.target as HTMLElement).closest("button")) return;
+                        setQrRecord({ kind: "asset", record: ast });
+                      }}
+                    >
                       <td className="px-4 py-3.5">
                         <span className="px-2 py-1 rounded bg-slate-900 border border-purple-500/40 text-purple-300 text-[11px] font-mono font-bold">
                           {ast.assetCode || "—"}
@@ -1870,7 +1961,7 @@ export default function SharedEnterpriseModule({
               <thead className="bg-slate-900/90 text-slate-400 uppercase font-semibold text-[11px] tracking-wider border-b border-slate-700">
                 <tr>
                   <th className="px-3 py-3 text-center">Photo</th>
-                  <th className="px-4 py-3">SKU & Item Name</th>
+                  <th className="px-4 py-3">Item Code & Item Name</th>
                   <th className="px-4 py-3">Category</th>
                   <th className="px-4 py-3">Business & Branch</th>
                   <th className="px-4 py-3 text-right">Qty & Unit</th>
@@ -1881,7 +1972,13 @@ export default function SharedEnterpriseModule({
               </thead>
               <tbody className="divide-y divide-slate-700/60">
                 {visibleInventory.map((inv) => (
-                  <tr key={inv.id} className="hover:bg-slate-700/50" data-testid={`inv-row-${inv.id}`}>
+                  <tr
+                    key={inv.id}
+                    className="hover:bg-slate-700/50 cursor-pointer"
+                    data-testid={`inv-row-${inv.id}`}
+                    title="Open record & QR label"
+                    onClick={() => setQrRecord({ kind: "inventory", record: inv })}
+                  >
                     <td className="px-3 py-2.5 text-center">
                       {inv.photo ? (
                         <img
@@ -1902,6 +1999,11 @@ export default function SharedEnterpriseModule({
                       <div className="text-[11px] font-mono text-emerald-400">
                         {inv.sku}
                       </div>
+                      {inv.qrCode && (
+                        <div className="text-[9px] font-mono text-cyan-500/80 flex items-center gap-1 mt-0.5">
+                          <QrCode className="w-2.5 h-2.5" /> QR
+                        </div>
+                      )}
                     </td>
                     <td className="px-4 py-3.5 text-slate-300">{inv.category}</td>
                     <td className="px-4 py-3.5 text-slate-300">
@@ -2248,6 +2350,32 @@ export default function SharedEnterpriseModule({
                         ))}
                       </datalist>
                     </div>
+                  </div>
+
+                  {/* QR identity — scan with the camera; auto-generated on save if none */}
+                  <div className="bg-slate-800/50 border border-slate-700/60 rounded-lg p-3 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <label className="text-xs font-semibold text-slate-400">QR Identity Tag</label>
+                      <button
+                        type="button"
+                        onClick={() => { setQrScanTarget("inventory-form"); setQrError(""); setQrScanOpen(true); }}
+                        data-testid="inv-qr-scan-open"
+                        className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-cyan-600/20 border border-cyan-500/40 text-cyan-300 text-[11px] font-bold hover:bg-cyan-600/40 transition"
+                      >
+                        <QrCode className="w-3.5 h-3.5" /> Scan QR
+                      </button>
+                    </div>
+                    {invQr ? (
+                      <div className="flex items-center justify-between gap-2" data-testid="inv-qr-chip">
+                        <span className="font-mono text-[10px] text-cyan-200 break-all">{invQr}</span>
+                        <button type="button" onClick={() => setInvQr("")} className="text-slate-500 hover:text-rose-400 text-xs font-bold px-1" title="Remove attached QR">✕</button>
+                      </div>
+                    ) : (
+                      <p className="text-[10px] text-slate-500" data-testid="inv-qr-auto">
+                        No scan attached — a unique label QR is generated automatically when you save.
+                      </p>
+                    )}
+                    {qrError && <p className="text-[10px] text-rose-400 font-semibold" data-testid="inv-qr-error">{qrError}</p>}
                   </div>
 
                   <div>
@@ -2727,11 +2855,38 @@ export default function SharedEnterpriseModule({
       <AssetRegistrationModal
         isOpen={showAssetModal}
         onClose={() => setShowAssetModal(false)}
-        onSaved={onRefreshData}
+        onSaved={(created: any) => {
+          onRefreshData();
+          setAssetQrPreset("");
+          if (created?.qrCode) {
+            setQrRecord({ kind: "asset", record: created, justRegistered: true });
+          }
+        }}
+        initialQr={assetQrPreset}
         businesses={businesses}
         currentUser={currentUser}
         lockedBusinessId={lockedBusinessId}
       />
+
+      {/* QR camera scanner + record/label viewer (inventory & assets) */}
+      <QrScanModal
+        open={qrScanOpen}
+        onClose={() => setQrScanOpen(false)}
+        onCode={handleQrCode}
+        busy={qrBusy}
+        error={qrError}
+        title={moduleType === "ASSETS" ? "Scan Asset QR" : "Scan Item QR"}
+      />
+      {qrRecord && (
+        <QrRecordModal
+          open
+          onClose={() => setQrRecord(null)}
+          kind={qrRecord.kind}
+          record={qrRecord.record}
+          justRegistered={!!qrRecord.justRegistered}
+          businesses={businesses}
+        />
+      )}
     </div>
   );
 }

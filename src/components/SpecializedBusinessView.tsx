@@ -39,6 +39,9 @@ interface SpecializedBusinessViewProps {
   transactions?: any[];
   inventory?: any[];
   customers?: any[];
+  /** LivestockModule hosts the Financial Report in its own FINANCE tab;
+   *  when true, the inline report at the bottom of this ops view is hidden. */
+  hideFinanceReport?: boolean;
 }
 
 export default function SpecializedBusinessView({
@@ -54,6 +57,7 @@ export default function SpecializedBusinessView({
   transactions,
   inventory,
   customers,
+  hideFinanceReport = false,
 }: SpecializedBusinessViewProps) {
   const [showLogModal, setShowLogModal] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -697,26 +701,28 @@ export default function SpecializedBusinessView({
       </div>
 
       {/* ══════════ FINANCIAL REPORT — complete, live-linked ══════════ */}
-      <FinancialReportSection
-        mode="business"
-        businessInfo={businessInfo}
-        businessMetric={businessMetrics}
-        transactions={transactions || []}
-        inventory={inventory || []}
-        customers={customers || []}
-        currentCurrency={currentCurrency}
-        accent="orange"
-        testid="fin-report-livestock"
-        aiModuleKey="LIVESTOCK"
-        opsLinks={[
-          {
-            label: "Operations logged",
-            value: String(specializedLogs.length),
-            note: "Daily herd/milking/grazing log entries for this unit",
-            tone: "amber",
-          },
-        ]}
-      />
+      {!hideFinanceReport && (
+        <FinancialReportSection
+          mode="business"
+          businessInfo={businessInfo}
+          businessMetric={businessMetrics}
+          transactions={transactions || []}
+          inventory={inventory || []}
+          customers={customers || []}
+          currentCurrency={currentCurrency}
+          accent="orange"
+          testid="fin-report-livestock"
+          aiModuleKey="LIVESTOCK"
+          opsLinks={[
+            {
+              label: "Operations logged",
+              value: String(specializedLogs.length),
+              note: "Daily herd/milking/grazing log entries for this unit",
+              tone: "amber",
+            },
+          ]}
+        />
+      )}
 
       {/* ══════════ DAILY OPERATIONS CHECKLIST (unified) ══════════ */}
       <DailyChecklistPanel
