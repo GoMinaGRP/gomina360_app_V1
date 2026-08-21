@@ -1,0 +1,632 @@
+// Supervisor & Auditor Control Center — API.
+// Reviews attach DIRECTLY to the existing worker records (transactions/sales,
+// inventory, employees, payroll runs & attendance, assets, CCTV cameras and
+// business operations/production logs); nothing here duplicates those
+// records. Scoping is enforced server-side on every read & write:
+//   OWNER                → every business, every module, controls all Auditor
+//                          permissions and may delegate to managers.
+//   GENERAL/BRANCH_MANAGER, SUPERVISOR → their accessible businesses
+//                          (supervisor scope); managers carrying the
+//                          canManageAuditors flag may also grant/revoke
+//                          Auditor access inside those businesses.
+//   AUDITOR (any other user with an active audit assignment) → strictly the
+//                          businesses + modules granted; everything else is
+//                          invisible to them.
+// Every mutation also writes an immutable audit_trail row.
+
+import { NextResponse } from "next/server";
+import { desc, eq } from "drizzle-orm";
+import { db } from "@/db";
+import {
+  users,
+  transactions,
+  inventoryItems,
+  employees,
+  assets,
+  businesses,
+  cctvCameras,
+  payrollRuns,
+  payrollEntries,
+  payrollAttendance,
+  livestockLogs,
+  restaurantLogs,
+  electronicsLogs,
+  carWashLogs,
+  hardwareLogs,
+  auditAssignments,
+  auditReviews,
+  auditTrail,
+  AUDIT_MODULES,
+} from "@/db/schema";
+import { getSessionInfo, accessibleBusinessIds, FORBIDDEN, UNAUTHENTICATED } from "@/lib/auth";
+
+const MODULES = [...AUDIT_MODULES] as string[];
+
+const REVIEW_ACTIONS = ["VERIFIED", "FLAGGED", "COMMENT", "CORRECTION_REQUESTED"] as const;
+const REVIEW_TO_TRAIL: Record<string, string> = {
+  VERIFIED: "VERIFY",
+  FLAGGED: "FLAG",
+  COMMENT: "COMMENT",
+  CORRECTION_REQUESTED: "REQUEST_CORRECTION",
+};
+
+type Scope = {
+  eligible: boolean;
+  level: "OWNER" | "SUPERVISOR" | "AUDITOR" | "NONE";
+  businessIds: number[] | null; // null = unrestricted (OWNER)
+  moduleByBusiness: Record<number, string[]>;
+  canGrant: boolean;
+};
+
+async function scopeFor(user: any): Promise<Scope> {
+  if (user.role === "OWNER") {
+    return { eligible: true, level: "OWNER", businessIds: null, moduleByBusiness: {}, canGrant: true };
+  }
+  const allowed = (await accessibleBusinessIds(user)) || [];
+  const isSupervisorRole = ["GENERAL_MANAGER", "BRANCH_MANAGER", "SUPERVISOR"].includes(user.role);
+  if (isSupervisorRole && allowed.length > 0) {
+    const moduleByBusiness: Record<number, string[]> = {};
+    for (const b of allowed) moduleByBusiness[b] = [...MODULES];
+    return {
+      eligible: true,
+      level: "SUPERVISOR",
+      businessIds: allowed,
+      moduleByBusiness,
+      canGrant: !!user.canManageAuditors,
+    };
+  }
+  const grants = await db
+    .select()
+    .from(auditAssignments)
+    .where(eq(auditAssignments.userId, user.id));
+  const active = grants.filter((g) => g.isActive);
+  if (active.length === 0) {
+    return { eligible: false, level: "NONE", businessIds: [], moduleByBusiness: {}, canGrant: false };
+  }
+  const moduleByBusiness: Record<number, string[]> = {};
+  for (const g of active) {
+    const mods = Array.isArray(g.modules) ? (g.modules as string[]) : [];
+    moduleByBusiness[g.businessId] = [...new Set([...(moduleByBusiness[g.businessId] || []), ...mods])];
+  }
+  return {
+    eligible: true,
+    level: "AUDITOR",
+    businessIds: [...new Set(active.map((g) => g.businessId))],
+    moduleByBusiness,
+    canGrant: false,
+  };
+}
+
+const modulesFor = (scope: Scope, businessId: number): string[] =>
+  scope.businessIds === null ? MODULES : scope.moduleByBusiness[businessId] || [];
+
+const canSee = (scope: Scope, businessId: number, module: string) =>
+  modulesFor(scope, businessId).includes(module);
+
+export type AuditRecordRow = {
+  key: string;
+  recordType: string;
+  recordSource: string | null;
+  recordId: number;
+  ref: string;
+  title: string;
+  detail: string;
+  module: string;
+  businessId: number;
+  branchCode: string | null;
+  workerName: string | null;
+  date: string;
+  amountGhs: number | null;
+  status: string | null;
+};
+
+const day10 = (v: any) => String(v ?? "").slice(0, 10);
+const tsDay = (v: any) => (v ? new Date(v).toISOString().slice(0, 10) : "");
+
+/** Pulls the reviewable universe for this caller from the EXISTING tables and
+ *  normalizes it into one shape the control center can browse. */
+async function collectRecords(scope: Scope): Promise<AuditRecordRow[]> {
+  const bizRows = await db.select().from(businesses);
+  const codeOf = new Map(bizRows.map((b) => [b.id, b.code]));
+  const branchOf = (businessId: number, branchCode?: string | null) => branchCode || codeOf.get(businessId) || null;
+  const keep = (businessId: number, module: string) => scope.businessIds === null || canSee(scope, businessId, module);
+  const rows: AuditRecordRow[] = [];
+  const push = (r: AuditRecordRow) => { if (keep(r.businessId, r.module)) rows.push(r); };
+
+  // FINANCE — transactions & MoMo (INCOME = sales, EXPENSE/INVESTMENT/TRANSFER)
+  const txns = await db.select().from(transactions).orderBy(desc(transactions.id)).limit(240);
+  for (const t of txns) {
+    push({
+      key: `TRANSACTION:transactions:${t.id}`, recordType: "TRANSACTION", recordSource: "transactions", recordId: t.id,
+      ref: t.transactionNumber, title: `${t.type} · ${t.category} — GH₵ ${Number(t.amountGhs).toLocaleString("en-US", { minimumFractionDigits: 2 })}`,
+      detail: `${t.paymentMethod} · ${t.description}`,
+      module: "FINANCE", businessId: t.businessId, branchCode: branchOf(t.businessId, t.branchCode),
+      workerName: t.recordedBy, date: day10(t.date) || tsDay(t.createdAt), amountGhs: t.amountGhs, status: t.status || "COMPLETED",
+    });
+  }
+
+  // INVENTORY — stock items
+  const items = await db.select().from(inventoryItems).orderBy(desc(inventoryItems.id)).limit(200);
+  for (const i of items) {
+    push({
+      key: `INVENTORY_ITEM:inventory_items:${i.id}`, recordType: "INVENTORY_ITEM", recordSource: "inventory_items", recordId: i.id,
+      ref: i.sku, title: `${i.name} — ${i.quantity} ${i.unit}`,
+      detail: `${i.category} · threshold ${i.minStockThreshold} ${i.unit}`,
+      module: "INVENTORY", businessId: i.businessId, branchCode: branchOf(i.businessId, i.branchCode),
+      workerName: null, date: "", amountGhs: null, status: i.status || "IN_STOCK",
+    });
+  }
+
+  // EMPLOYEES
+  const emps = await db.select().from(employees).orderBy(desc(employees.id)).limit(200);
+  for (const e of emps) {
+    push({
+      key: `EMPLOYEE:employees:${e.id}`, recordType: "EMPLOYEE", recordSource: "employees", recordId: e.id,
+      ref: `EMP-${e.id}`, title: `${e.name} — ${e.role}`,
+      detail: `Salary GH₵ ${Number(e.salaryGhs).toLocaleString("en-US", { minimumFractionDigits: 2 })} · hired ${e.hireDate} · ${e.branch}`,
+      module: "EMPLOYEES", businessId: e.businessId, branchCode: codeOf.get(e.businessId) || null,
+      workerName: e.name, date: day10(e.hireDate), amountGhs: e.salaryGhs, status: e.status || "ACTIVE",
+    });
+  }
+
+  // PAYROLL — runs (entries folded in for totals)
+  const runs = await db.select().from(payrollRuns).orderBy(desc(payrollRuns.id)).limit(120);
+  const entries = await db.select().from(payrollEntries).limit(600);
+  const byRun = new Map<number, { count: number; net: number }>();
+  for (const en of entries) {
+    const cur = byRun.get(en.runId) || { count: 0, net: 0 };
+    cur.count += 1; cur.net += en.netPayGhs || 0;
+    byRun.set(en.runId, cur);
+  }
+  for (const r of runs) {
+    const agg = byRun.get(r.id) || { count: 0, net: 0 };
+    push({
+      key: `PAYROLL_RUN:payroll_runs:${r.id}`, recordType: "PAYROLL_RUN", recordSource: "payroll_runs", recordId: r.id,
+      ref: `PR-${r.id} · ${r.period}`, title: `Payroll ${r.period} — ${agg.count} employee(s), net GH₵ ${agg.net.toLocaleString("en-US", { minimumFractionDigits: 2 })}`,
+      detail: r.notes || `Created by ${r.createdByName}`,
+      module: "PAYROLL", businessId: r.businessId, branchCode: branchOf(r.businessId, r.branchCode),
+      workerName: r.createdByName, date: day10(r.createdAt ? (r.createdAt as any).toISOString?.() ?? r.createdAt : r.period + "-01"),
+      amountGhs: agg.net, status: r.status,
+    });
+  }
+
+  // ATTENDANCE
+  const att = await db.select().from(payrollAttendance).orderBy(desc(payrollAttendance.id)).limit(300);
+  for (const a of att) {
+    push({
+      key: `PAYROLL_ATTENDANCE:payroll_attendance:${a.id}`, recordType: "PAYROLL_ATTENDANCE", recordSource: "payroll_attendance", recordId: a.id,
+      ref: `ATT-${a.id}`, title: `${a.employeeName} · ${a.date} · ${a.status}${a.leaveType ? ` (${a.leaveType})` : ""}`,
+      detail: `${a.hoursWorked}h worked · ${a.overtimeHours}h OT${a.note ? ` · ${a.note}` : ""}`,
+      module: "ATTENDANCE", businessId: a.businessId, branchCode: branchOf(a.businessId, a.branchCode),
+      workerName: a.employeeName, date: day10(a.date), amountGhs: null, status: a.status,
+    });
+  }
+
+  // ASSETS
+  const assetRows = await db.select().from(assets).orderBy(desc(assets.id)).limit(120);
+  for (const a of assetRows) {
+    push({
+      key: `ASSET:assets:${a.id}`, recordType: "ASSET", recordSource: "assets", recordId: a.id,
+      ref: a.assetCode || `AST-${a.id}`, title: `${a.name} — ${a.assetType} · ${a.condition}`,
+      detail: `Value GH₵ ${Number(a.currentValueGhs || 0).toLocaleString("en-US", { minimumFractionDigits: 2 })} · ${a.location}`,
+      module: "ASSETS", businessId: a.businessId, branchCode: branchOf(a.businessId, a.branchCode),
+      workerName: a.recorderName, date: tsDay(a.recordedAt), amountGhs: a.currentValueGhs, status: a.condition,
+    });
+  }
+
+  // CCTV
+  const cams = await db.select().from(cctvCameras).orderBy(desc(cctvCameras.id)).limit(120);
+  for (const c of cams) {
+    push({
+      key: `CCTV_CAMERA:cctv_cameras:${c.id}`, recordType: "CCTV_CAMERA", recordSource: "cctv_cameras", recordId: c.id,
+      ref: `CAM-${c.id}`, title: `${c.name} — ${c.brand} · ${c.cameraType}`,
+      detail: `${c.location} · ${c.connectionType}${c.lastTestResult ? ` · last test: ${c.lastTestResult}` : ""}`,
+      module: "CCTV", businessId: c.businessId, branchCode: branchOf(c.businessId, c.branchCode),
+      workerName: c.createdByName, date: tsDay(c.createdAt), amountGhs: null, status: c.status,
+    });
+  }
+
+  // OPERATIONS — daily operations / production logs per business line
+  const opsPush = (src: string, id: number, businessId: number, ref: string, title: string, detail: string, worker: string | null, date: string) =>
+    push({
+      key: `OPERATION_LOG:${src}:${id}`, recordType: "OPERATION_LOG", recordSource: src, recordId: id,
+      ref, title, detail, module: "OPERATIONS", businessId, branchCode: branchOf(businessId, null),
+      workerName: worker, date: day10(date), amountGhs: null, status: "LOGGED",
+    });
+  for (const l of await db.select().from(livestockLogs).orderBy(desc(livestockLogs.id)).limit(120))
+    opsPush("livestock_logs", l.id, l.businessId, l.tagNumber, `${l.animalType} ${l.tagNumber} — ${l.weightKg}kg`, `Breed ${l.breed} · vaccination ${l.vaccinationStatus}${l.pregnantStatus ? " · pregnant" : ""}`, null, l.recordedDate);
+  for (const l of await db.select().from(restaurantLogs).orderBy(desc(restaurantLogs.id)).limit(120))
+    opsPush("restaurant_logs", l.id, l.businessId, `SHIFT-${l.shiftDate}-${l.id}`, `Kitchen shift ${l.shiftDate} — ${l.totalOrders} orders`, `Popular: ${l.mostPopularDish} · waste ${l.wastePercent}% · MoMo GH₵ ${l.momoReceiptsGhs} / cash GH₵ ${l.cashReceiptsGhs}`, null, l.shiftDate);
+  for (const l of await db.select().from(electronicsLogs).orderBy(desc(electronicsLogs.id)).limit(120))
+    opsPush("electronics_logs", l.id, l.businessId, l.serialNumber, `${l.productName} — ${l.brand}`, `Warranty ${l.warrantyMonths}mo · retail GH₵ ${l.retailPriceGhs} · ${l.inStock ? "in stock" : "sold out"}`, null, l.lastCheckedDate);
+  for (const l of await db.select().from(carWashLogs).orderBy(desc(carWashLogs.id)).limit(120))
+    opsPush("car_wash_logs", l.id, l.businessId, `SHIFT-${l.shiftDate}-${l.id}`, `Car wash shift ${l.shiftDate} — ${l.vehiclesWashed} vehicles`, `Revenue GH₵ ${l.totalRevenueGhs} · chemicals ${l.chemicalUsedLiters}L`, null, l.recordedDate || l.shiftDate);
+  for (const l of await db.select().from(hardwareLogs).orderBy(desc(hardwareLogs.id)).limit(120))
+    opsPush("hardware_logs", l.id, l.businessId, l.receiveNoteNumber, `${l.itemName} × ${l.quantityReceived} ${l.unit}`, `Supplier ${l.supplierName} · condition ${l.condition}`, l.receivedBy, l.recordedDate);
+
+  return rows;
+}
+
+/** Loads reviews visible to this caller (business + module scoped). */
+async function scopedReviews(scope: Scope) {
+  const all = await db.select().from(auditReviews).orderBy(desc(auditReviews.id)).limit(500);
+  if (scope.businessIds === null) return all;
+  const ids = scope.businessIds;
+  return all.filter((r) => r.businessId != null && ids.includes(r.businessId) && canSee(scope, r.businessId, r.module));
+}
+
+async function scopedTrail(scope: Scope) {
+  const all = await db.select().from(auditTrail).orderBy(desc(auditTrail.id)).limit(300);
+  if (scope.businessIds === null) return all;
+  const ids = scope.businessIds;
+  return all.filter((t) => t.businessId == null || ids.includes(t.businessId));
+}
+
+function buildReport(records: AuditRecordRow[], reviews: any[]) {
+  const monthKey = (d: any) => String(d || "").slice(0, 7);
+  const reviewKey = (r: any) => `${r.recordType}:${r.recordSource || ""}:${r.recordId}`;
+  const latestByRecord = new Map<string, any>();
+  for (const r of reviews) if (!latestByRecord.has(reviewKey(r))) latestByRecord.set(reviewKey(r), r); // reviews arrive DESC
+
+  const totals = {
+    records: records.length,
+    reviewedRecords: [...latestByRecord.keys()].filter((k) => records.some((rec) => rec.key === k)).length,
+    reviews: reviews.length,
+    verified: reviews.filter((r) => r.action === "VERIFIED").length,
+    openIssues: reviews.filter((r) => r.status === "OPEN").length,
+    resolvedIssues: reviews.filter((r) => r.status === "RESOLVED").length,
+    flaggedAmount: 0,
+    corrections: reviews.filter((r) => r.action === "CORRECTION_REQUESTED").length,
+  };
+
+  const recByKey = new Map(records.map((r) => [r.key, r]));
+  const discrepancies = reviews
+    .filter((r) => r.status === "OPEN" && (r.action === "FLAGGED" || r.action === "CORRECTION_REQUESTED"))
+    .map((r) => {
+      const rec = recByKey.get(`${r.recordType}:${r.recordSource || ""}:${r.recordId}`);
+      return {
+        reviewId: r.id, recordType: r.recordType, recordId: r.recordId, ref: r.recordRef, title: r.recordTitle,
+        action: r.action, reason: r.reason, businessId: r.businessId, branchCode: r.branchCode,
+        amountGhs: rec?.amountGhs ?? null, raisedBy: r.reviewerName, raisedAt: r.createdAt,
+      };
+    });
+  totals.flaggedAmount = discrepancies.filter((d) => d.recordType === "TRANSACTION").reduce((s, d) => s + (d.amountGhs || 0), 0);
+
+  const byModule = MODULES.map((m) => {
+    const recs = records.filter((r) => r.module === m);
+    const revs = reviews.filter((r) => r.module === m);
+    const reviewedKeys = new Set(revs.map(reviewKey));
+    return {
+      module: m,
+      records: recs.length,
+      reviews: revs.length,
+      verified: revs.filter((r) => r.action === "VERIFIED").length,
+      openIssues: revs.filter((r) => r.status === "OPEN").length,
+      reviewedPct: recs.length ? Math.round((recs.filter((r) => reviewedKeys.has(r.key)).length / recs.length) * 100) : 0,
+    };
+  }).filter((m) => m.records > 0 || m.reviews > 0);
+
+  const bizIds = [...new Set([...records.map((r) => r.businessId), ...reviews.map((r) => r.businessId)])];
+  const byBusiness = bizIds.map((b) => ({
+    businessId: b,
+    records: records.filter((r) => r.businessId === b).length,
+    reviews: reviews.filter((r) => r.businessId === b).length,
+    openIssues: reviews.filter((r) => r.businessId === b && r.status === "OPEN").length,
+    resolvedIssues: reviews.filter((r) => r.businessId === b && r.status === "RESOLVED").length,
+    verified: reviews.filter((r) => r.businessId === b && r.action === "VERIFIED").length,
+  }));
+
+  // last 6 months trend of review activity + issues raised
+  const months: string[] = [];
+  const now = new Date();
+  for (let i = 5; i >= 0; i--) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    months.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`);
+  }
+  const trend = months.map((m) => ({
+    month: m,
+    reviews: reviews.filter((r) => monthKey(r.createdAt && (r.createdAt as any).toISOString ? (r.createdAt as any).toISOString() : r.createdAt) === m).length,
+    issues: reviews.filter((r) => (r.action === "FLAGGED" || r.action === "CORRECTION_REQUESTED") && monthKey((r.createdAt as any)?.toISOString ? (r.createdAt as any).toISOString() : r.createdAt) === m).length,
+    resolved: reviews.filter((r) => r.status === "RESOLVED" && monthKey((r.resolvedAt as any)?.toISOString ? (r.resolvedAt as any).toISOString() : r.resolvedAt) === m).length,
+  }));
+
+  const perf = new Map<number, any>();
+  for (const r of reviews) {
+    const p = perf.get(r.reviewerUserId) || { name: r.reviewerName, role: r.reviewerRole, reviews: 0, verifications: 0, flags: 0, corrections: 0, comments: 0 };
+    p.reviews += 1;
+    if (r.action === "VERIFIED") p.verifications += 1;
+    if (r.action === "FLAGGED") p.flags += 1;
+    if (r.action === "CORRECTION_REQUESTED") p.corrections += 1;
+    if (r.action === "COMMENT") p.comments += 1;
+    perf.set(r.reviewerUserId, p);
+  }
+  for (const r of reviews.filter((x) => x.status === "RESOLVED" && x.resolvedByUserId)) {
+    const p = perf.get(r.resolvedByUserId);
+    if (p) p.resolved = (p.resolved || 0) + 1;
+  }
+  // cycle time: issue raised → resolved
+  const cycleHrs = reviews
+    .filter((r) => r.status === "RESOLVED" && r.resolvedAt && r.createdAt)
+    .map((r) => (new Date(r.resolvedAt as any).getTime() - new Date(r.createdAt as any).getTime()) / 3600000);
+  const avgResolveHrs = cycleHrs.length ? Math.round((cycleHrs.reduce((a, b) => a + b, 0) / cycleHrs.length) * 10) / 10 : null;
+
+  return { totals, byModule, byBusiness, trend, performance: [...perf.values()], discrepancies, avgResolveHrs };
+}
+
+const matches = (txt: string | null | undefined, q: string) => (txt || "").toLowerCase().includes(q);
+
+export async function GET(request: Request) {
+  try {
+    const session = await getSessionInfo(request);
+    if (!session) return UNAUTHENTICATED();
+    const { user } = session;
+    const scope = await scopeFor(user);
+
+    const url = new URL(request.url);
+    if (url.searchParams.get("meta") === "1") {
+      return NextResponse.json({ success: true, eligible: scope.eligible, level: scope.level, canGrant: scope.canGrant, businessIds: scope.businessIds, moduleByBusiness: scope.moduleByBusiness });
+    }
+    if (!scope.eligible) return FORBIDDEN("You have no Supervisor or Auditor access. The OWNER grants Auditor permissions.");
+
+    const fBusiness = Number(url.searchParams.get("businessId") || 0) || null;
+    const fModule = (url.searchParams.get("module") || "").toUpperCase();
+    const fType = (url.searchParams.get("recordType") || "").toUpperCase();
+    const fBranch = (url.searchParams.get("branchCode") || "").toLowerCase();
+    const fWorker = (url.searchParams.get("worker") || "").toLowerCase();
+    const fStatus = (url.searchParams.get("status") || "").toUpperCase();
+    const fq = (url.searchParams.get("q") || "").toLowerCase();
+    const from = url.searchParams.get("from") || "";
+    const to = url.searchParams.get("to") || "";
+
+    let records = await collectRecords(scope);
+    let reviews = await scopedReviews(scope);
+    let log = await scopedTrail(scope);
+
+    if (fBusiness) {
+      records = records.filter((r) => r.businessId === fBusiness);
+      reviews = reviews.filter((r) => r.businessId === fBusiness);
+      log = log.filter((t) => t.businessId === fBusiness || t.businessId == null);
+    }
+    if (fModule) { records = records.filter((r) => r.module === fModule); reviews = reviews.filter((r) => r.module === fModule); }
+    if (fType) records = records.filter((r) => r.recordType === fType);
+    if (fBranch) records = records.filter((r) => matches(r.branchCode, fBranch));
+    if (fWorker) { records = records.filter((r) => matches(r.workerName, fWorker)); reviews = reviews.filter((r) => matches(r.workerName || "", fWorker)); }
+    if (fq) {
+      records = records.filter((r) => matches(r.ref, fq) || matches(r.title, fq) || matches(r.detail, fq));
+      reviews = reviews.filter((r) => matches(r.recordRef, fq) || matches(r.recordTitle, fq) || matches(r.reason, fq) || matches(r.comment, fq) || matches(r.reviewerName, fq));
+      log = log.filter((t) => matches(t.targetLabel, fq) || matches(t.actorName, fq) || matches(t.action, fq) || matches(t.reason, fq) || matches(t.detail, fq));
+    }
+    if (from) { records = records.filter((r) => !r.date || r.date >= from); reviews = reviews.filter((r) => day10((r.createdAt as any)?.toISOString?.() ?? r.createdAt) >= from); log = log.filter((t) => day10((t.createdAt as any)?.toISOString?.() ?? t.createdAt) >= from); }
+    if (to) { records = records.filter((r) => !r.date || r.date <= to); reviews = reviews.filter((r) => day10((r.createdAt as any)?.toISOString?.() ?? r.createdAt) <= to); log = log.filter((t) => day10((t.createdAt as any)?.toISOString?.() ?? t.createdAt) <= to); }
+
+    // review-state per record (UNREVIEWED | VERIFIED | OPEN | RESOLVED | INFO)
+    const stateOf = new Map<string, string>();
+    const sorted = [...reviews].sort((a, b) => a.id - b.id);
+    const stateRank = (s: string) => (s === "OPEN" ? 4 : s === "RESOLVED" ? 3 : s === "VERIFIED" ? 2 : 1);
+    for (const r of sorted) {
+      const k = `${r.recordType}:${r.recordSource || ""}:${r.recordId}`;
+      const prev = stateOf.get(k);
+      if (!prev || stateRank(r.status) >= stateRank(prev)) stateOf.set(k, r.status);
+    }
+    let recordsOut = records.map((r) => ({ ...r, reviewState: stateOf.get(r.key) || "UNREVIEWED" }));
+    if (fStatus) recordsOut = recordsOut.filter((r) => r.reviewState === fStatus);
+    recordsOut.sort((a, b) => (b.date || "").localeCompare(a.date || "") || b.recordId - a.recordId);
+    recordsOut = recordsOut.slice(0, 250);
+
+    let grants: any[] = [];
+    let grantUsers: any[] = [];
+    if (scope.canGrant) {
+      const g = await db.select().from(auditAssignments).orderBy(desc(auditAssignments.id));
+      grants = scope.businessIds === null ? g : g.filter((x) => scope.businessIds!.includes(x.businessId));
+      const all = await db.select().from(users);
+      grantUsers = all
+        .filter((u) => u.role !== "OWNER" && u.isActive)
+        .filter((u) => scope.businessIds === null || ["GENERAL_MANAGER"].includes(u.role) || u.assignedBusinessId == null || scope.businessIds!.includes(u.assignedBusinessId))
+        .map((u) => ({ id: u.id, name: u.name, role: u.role, email: u.email, assignedBusinessId: u.assignedBusinessId, canManageAuditors: !!u.canManageAuditors }));
+    }
+
+    // Businesses the caller may see (auditors can be granted businesses that
+    // are NOT in their day-job scope, so send the names too).
+    const bizAll = await db.select({ id: businesses.id, name: businesses.name, code: businesses.code }).from(businesses);
+    const bizList = scope.businessIds === null ? bizAll : bizAll.filter((b) => scope.businessIds!.includes(b.id));
+
+    const report = buildReport(records, reviews);
+    return NextResponse.json({ success: true, scope: { eligible: true, level: scope.level, canGrant: scope.canGrant, businessIds: scope.businessIds, moduleByBusiness: scope.moduleByBusiness }, bizList, records: recordsOut, reviews, log, grants, grantUsers, report });
+  } catch (error: any) {
+    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+  }
+}
+
+/** Resolves the record the review targets DIRECTLY from the source table —
+ *  business, branch, module, ref, title and worker are derived server-side so
+ *  review records always stay linked to the real worker record. */
+async function resolveRecord(recordType: string, recordSource: string | null, recordId: number) {
+  const first = async (rows: any[]) => rows[0] || null;
+  switch (recordType) {
+    case "TRANSACTION": {
+      const r = await first(await db.select().from(transactions).where(eq(transactions.id, recordId)));
+      return r && { businessId: r.businessId, branchCode: r.branchCode, module: "FINANCE", ref: r.transactionNumber, title: `${r.type} · ${r.category} — GH₵ ${Number(r.amountGhs).toLocaleString("en-US", { minimumFractionDigits: 2 })}`, workerName: r.recordedBy };
+    }
+    case "INVENTORY_ITEM": {
+      const r = await first(await db.select().from(inventoryItems).where(eq(inventoryItems.id, recordId)));
+      return r && { businessId: r.businessId, branchCode: r.branchCode, module: "INVENTORY", ref: r.sku, title: `${r.name} — ${r.quantity} ${r.unit}`, workerName: null };
+    }
+    case "EMPLOYEE": {
+      const r = await first(await db.select().from(employees).where(eq(employees.id, recordId)));
+      return r && { businessId: r.businessId, branchCode: null, module: "EMPLOYEES", ref: `EMP-${r.id}`, title: `${r.name} — ${r.role}`, workerName: r.name };
+    }
+    case "PAYROLL_RUN": {
+      const r = await first(await db.select().from(payrollRuns).where(eq(payrollRuns.id, recordId)));
+      return r && { businessId: r.businessId, branchCode: r.branchCode, module: "PAYROLL", ref: `PR-${r.id} · ${r.period}`, title: `Payroll ${r.period} (${r.status})`, workerName: r.createdByName };
+    }
+    case "PAYROLL_ATTENDANCE": {
+      const r = await first(await db.select().from(payrollAttendance).where(eq(payrollAttendance.id, recordId)));
+      return r && { businessId: r.businessId, branchCode: r.branchCode, module: "ATTENDANCE", ref: `ATT-${r.id}`, title: `${r.employeeName} · ${r.date} · ${r.status}`, workerName: r.employeeName };
+    }
+    case "ASSET": {
+      const r = await first(await db.select().from(assets).where(eq(assets.id, recordId)));
+      return r && { businessId: r.businessId, branchCode: r.branchCode, module: "ASSETS", ref: r.assetCode || `AST-${r.id}`, title: `${r.name} — ${r.assetType} · ${r.condition}`, workerName: r.recorderName };
+    }
+    case "CCTV_CAMERA": {
+      const r = await first(await db.select().from(cctvCameras).where(eq(cctvCameras.id, recordId)));
+      return r && { businessId: r.businessId, branchCode: r.branchCode, module: "CCTV", ref: `CAM-${r.id}`, title: `${r.name} — ${r.brand} · ${cFriendly(r)}`, workerName: r.createdByName };
+    }
+    case "OPERATION_LOG": {
+      const table: any = { livestock_logs: livestockLogs, restaurant_logs: restaurantLogs, electronics_logs: electronicsLogs, car_wash_logs: carWashLogs, hardware_logs: hardwareLogs }[recordSource || ""];
+      if (!table) return null;
+      const r = await first(await db.select().from(table).where(eq(table.id, recordId)));
+      if (!r) return null;
+      const ref = r.tagNumber || r.serialNumber || r.receiveNoteNumber || `SHIFT-${r.shiftDate}-${r.id}`;
+      return { businessId: r.businessId, branchCode: null, module: "OPERATIONS", ref, title: `Operations log ${ref}`, workerName: r.receivedBy || null };
+    }
+    default:
+      return null;
+  }
+}
+const cFriendly = (c: any) => `${c.cameraType} @ ${c.location}`;
+
+async function writeTrail(actor: any, entry: { action: string; targetType: string; targetLabel: string; recordType?: string | null; recordId?: number | null; businessId?: number | null; branchCode?: string | null; reason?: string | null; detail?: string | null }) {
+  await db.insert(auditTrail).values({
+    actorUserId: actor.id,
+    actorName: actor.name,
+    actorRole: actor.role,
+    action: entry.action,
+    targetType: entry.targetType,
+    targetLabel: entry.targetLabel,
+    recordType: entry.recordType ?? null,
+    recordId: entry.recordId ?? null,
+    businessId: entry.businessId ?? null,
+    branchCode: entry.branchCode ?? null,
+    reason: entry.reason ?? null,
+    detail: entry.detail ?? null,
+  });
+}
+
+export async function POST(request: Request) {
+  try {
+    const session = await getSessionInfo(request);
+    if (!session) return UNAUTHENTICATED();
+    const { user } = session;
+    const body = await request.json();
+    const scope = await scopeFor(user);
+    if (!scope.eligible) return FORBIDDEN("You have no Supervisor or Auditor access.");
+
+    // ── Grant / manage Auditor access ─────────────────────────────────────
+    if (body.action === "GRANT") {
+      if (!scope.canGrant) return FORBIDDEN("Only the OWNER (or a manager the OWNER authorized) manages Auditor access.");
+      const targetId = Number(body.userId);
+      const businessId = Number(body.businessId);
+      const mods = (Array.isArray(body.modules) ? body.modules : []).map((m: any) => String(m).toUpperCase()).filter((m: string) => MODULES.includes(m));
+      if (!targetId || !businessId || mods.length === 0) {
+        return NextResponse.json({ success: false, error: "Pick a user, a business and at least one module to audit." }, { status: 400 });
+      }
+      if (scope.businessIds !== null && !scope.businessIds.includes(businessId)) {
+        return FORBIDDEN("You can only grant Auditor access inside the businesses you manage.");
+      }
+      const [target] = await db.select().from(users).where(eq(users.id, targetId));
+      if (!target || !target.isActive) return NextResponse.json({ success: false, error: "User not found or inactive." }, { status: 404 });
+      if (target.role === "OWNER") return NextResponse.json({ success: false, error: "The OWNER already controls all audits." }, { status: 400 });
+      const bizRows = await db.select().from(businesses);
+      const biz = bizRows.find((b) => b.id === businessId);
+      if (!biz) return NextResponse.json({ success: false, error: "Business not found." }, { status: 404 });
+
+      const existing = (await db.select().from(auditAssignments).where(eq(auditAssignments.userId, targetId))).find((g) => g.businessId === businessId);
+      const branchCode = body.branchCode ? String(body.branchCode).trim() : null;
+      const note = body.note ? String(body.note).trim() : null;
+      if (existing) {
+        const [updated] = await db.update(auditAssignments)
+          .set({ modules: mods, branchCode, note, isActive: true, grantedByUserId: user.id, grantedByName: user.name, grantedByRole: user.role, userName: target.name, userRole: target.role, updatedAt: new Date() })
+          .where(eq(auditAssignments.id, existing.id)).returning();
+        await writeTrail(user, { action: "UPDATE_GRANT", targetType: "GRANT", targetLabel: `${target.name} → ${biz.name}`, businessId, branchCode, detail: `Modules: ${mods.join(", ")}${branchCode ? ` · branch ${branchCode}` : ""}${note ? ` · ${note}` : ""}` });
+        return NextResponse.json({ success: true, grant: updated, updated: true });
+      }
+      const [grant] = await db.insert(auditAssignments).values({
+        userId: targetId, userName: target.name, userRole: target.role,
+        businessId, branchCode, modules: mods, note,
+        grantedByUserId: user.id, grantedByName: user.name, grantedByRole: user.role,
+      }).returning();
+      await writeTrail(user, { action: "GRANT_ACCESS", targetType: "GRANT", targetLabel: `${target.name} → ${biz.name}`, businessId, branchCode, detail: `Modules: ${mods.join(", ")}${note ? ` · ${note}` : ""}` });
+      return NextResponse.json({ success: true, grant });
+    }
+
+    // ── Review an existing record ─────────────────────────────────────────
+    const recordType = String(body.recordType || "").toUpperCase();
+    const recordId = Number(body.recordId);
+    const action = String(body.action || "").toUpperCase();
+    if (!REVIEW_ACTIONS.includes(action as any)) {
+      return NextResponse.json({ success: false, error: "Unknown review action." }, { status: 400 });
+    }
+    const rec = await resolveRecord(recordType, body.recordSource ? String(body.recordSource) : null, recordId);
+    if (!rec) return NextResponse.json({ success: false, error: "Record not found." }, { status: 404 });
+    if (!canSee(scope, rec.businessId, rec.module)) {
+      return FORBIDDEN("That record is outside the businesses or modules you are authorized to audit.");
+    }
+    const reason = String(body.reason || "").trim();
+    const comment = String(body.comment || "").trim();
+    const evidence = String(body.evidence || "").trim();
+    if ((action === "FLAGGED" || action === "CORRECTION_REQUESTED") && !reason) {
+      return NextResponse.json({ success: false, error: "A reason is required when flagging an issue or requesting a correction." }, { status: 400 });
+    }
+    if (!comment && !reason) {
+      return NextResponse.json({ success: false, error: "Add a comment or reason for the review." }, { status: 400 });
+    }
+    const status = action === "VERIFIED" ? "VERIFIED" : action === "COMMENT" ? "INFO" : "OPEN";
+    const [review] = await db.insert(auditReviews).values({
+      recordType, recordSource: body.recordSource ? String(body.recordSource) : null, recordId,
+      recordRef: rec.ref, recordTitle: rec.title, module: rec.module,
+      businessId: rec.businessId, branchCode: rec.branchCode, workerName: rec.workerName,
+      action, status, reason: reason || null, comment: comment || null, evidence: evidence || null,
+      reviewerUserId: user.id, reviewerName: user.name, reviewerRole: user.role,
+    }).returning();
+    await writeTrail(user, { action: REVIEW_TO_TRAIL[action], targetType: "RECORD", targetLabel: rec.ref || rec.title, recordType, recordId, businessId: rec.businessId, branchCode: rec.branchCode, reason: reason || null, detail: comment || evidence || null });
+    return NextResponse.json({ success: true, review });
+  } catch (error: any) {
+    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+  }
+}
+
+export async function PATCH(request: Request) {
+  try {
+    const session = await getSessionInfo(request);
+    if (!session) return UNAUTHENTICATED();
+    const { user } = session;
+    const body = await request.json();
+    const scope = await scopeFor(user);
+    if (!scope.eligible) return FORBIDDEN("You have no Supervisor or Auditor access.");
+    const action = String(body.action || "").toUpperCase();
+
+    if (action === "RESOLVE") {
+      const [row] = await db.select().from(auditReviews).where(eq(auditReviews.id, Number(body.reviewId)));
+      if (!row) return NextResponse.json({ success: false, error: "Issue not found." }, { status: 404 });
+      if (!canSee(scope, row.businessId, row.module)) {
+        return FORBIDDEN("That issue is outside the businesses or modules you are authorized to audit.");
+      }
+      if (row.status !== "OPEN") {
+        return NextResponse.json({ success: false, error: "Only an open issue can be resolved." }, { status: 400 });
+      }
+      const note = String(body.resolution || "").trim();
+      if (!note) return NextResponse.json({ success: false, error: "Add a resolution note — how was it fixed?" }, { status: 400 });
+      const [updated] = await db.update(auditReviews)
+        .set({ status: "RESOLVED", resolvedByUserId: user.id, resolvedByName: user.name, resolvedAt: new Date(), resolutionNote: note })
+        .where(eq(auditReviews.id, row.id)).returning();
+      await writeTrail(user, { action: "RESOLVE", targetType: "RECORD", targetLabel: row.recordRef || row.recordTitle, recordType: row.recordType, recordId: row.recordId, businessId: row.businessId, branchCode: row.branchCode, reason: row.reason, detail: note });
+      return NextResponse.json({ success: true, review: updated });
+    }
+
+    if (action === "REVOKE_GRANT") {
+      if (!scope.canGrant) return FORBIDDEN("Only the OWNER (or a manager the OWNER authorized) manages Auditor access.");
+      const [grant] = await db.select().from(auditAssignments).where(eq(auditAssignments.id, Number(body.grantId)));
+      if (!grant) return NextResponse.json({ success: false, error: "Grant not found." }, { status: 404 });
+      if (scope.businessIds !== null && !scope.businessIds.includes(grant.businessId)) {
+        return FORBIDDEN("You can only manage Auditor access inside the businesses you manage.");
+      }
+      const [updated] = await db.update(auditAssignments).set({ isActive: false, updatedAt: new Date() }).where(eq(auditAssignments.id, grant.id)).returning();
+      await writeTrail(user, { action: "REVOKE_ACCESS", targetType: "GRANT", targetLabel: `${grant.userName} → business #${grant.businessId}`, businessId: grant.businessId, branchCode: grant.branchCode, detail: "Auditor access revoked" });
+      return NextResponse.json({ success: true, grant: updated });
+    }
+
+    return NextResponse.json({ success: false, error: "Unknown action." }, { status: 400 });
+  } catch (error: any) {
+    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+  }
+}

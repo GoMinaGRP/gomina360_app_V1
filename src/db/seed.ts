@@ -29,6 +29,9 @@ import {
   payrollRuns,
   payrollEntries,
   payrollAttendance,
+  auditAssignments,
+  auditReviews,
+  auditTrail,
 } from "./schema";
 import { sql, eq } from "drizzle-orm";
 import { provisionBusiness, ensureCarWashServiceCatalogue } from "@/lib/businessProvisioning";
@@ -1459,6 +1462,67 @@ export async function seedDatabase() {
     netPayGhs: 4697.36,
     status: "PENDING",
   });
+
+  // 12d. Supervisor & Auditor baseline — one auditor grant (Comfort Agbenyega,
+  // Aqua worker → may audit the Poultry books: finance, payroll & attendance),
+  // one verification + one open flag from the OWNER, and the matching trail
+  // rows. Reviews attach to the EXISTING transactions — nothing duplicated.
+  await db.insert(auditAssignments).values({
+    userId: 13, // Comfort Agbenyega (WORKER, Aquaculture)
+    userName: "Comfort Agbenyega",
+    userRole: "WORKER",
+    businessId: 1,
+    branchCode: null, // all poultry branches
+    modules: ["FINANCE", "PAYROLL", "ATTENDANCE"],
+    note: "Poultry books & payroll QA review",
+    grantedByUserId: 1,
+    grantedByName: "Kwame Mina",
+    grantedByRole: "OWNER",
+  });
+  await db.insert(auditReviews).values([
+    {
+      recordType: "TRANSACTION", recordSource: "transactions", recordId: 1,
+      recordRef: "TRX-2026-1001", recordTitle: "INCOME · Egg Wholesale Supply — GH₵ 16,500.00",
+      module: "FINANCE", businessId: 1, branchCode: "POULTRY-01", workerName: "Emmanuel Osei",
+      action: "VERIFIED", status: "VERIFIED",
+      reason: "Quarter-start spot check — matched the MoMo statement",
+      reviewerUserId: 1, reviewerName: "Kwame Mina", reviewerRole: "OWNER",
+      createdAt: new Date("2026-08-18T10:30:00.000Z"),
+    },
+    {
+      recordType: "TRANSACTION", recordSource: "transactions", recordId: 4,
+      recordRef: "TRX-2026-1004", recordTitle: "INCOME · Restaurant Daily Receipts — GH₵ 8,450.00",
+      module: "FINANCE", businessId: 5, branchCode: "FOOD-01", workerName: "Chef Esi Mensah",
+      action: "FLAGGED", status: "OPEN",
+      reason: "Weekend total looks 12% above trend with no matching deposit slip",
+      comment: "Chef Esi — please attach the bank deposit slip for the weekend receipts.",
+      reviewerUserId: 1, reviewerName: "Kwame Mina", reviewerRole: "OWNER",
+      createdAt: new Date("2026-08-19T09:15:00.000Z"),
+    },
+  ]);
+  await db.insert(auditTrail).values([
+    {
+      actorUserId: 1, actorName: "Kwame Mina", actorRole: "OWNER",
+      action: "GRANT_ACCESS", targetType: "GRANT", targetLabel: "Comfort Agbenyega → Mina Akuafo Poultry Farm",
+      businessId: 1, branchCode: null, detail: "Modules: FINANCE, PAYROLL, ATTENDANCE · Poultry books & payroll QA review",
+      createdAt: new Date("2026-08-18T10:24:00.000Z"),
+    },
+    {
+      actorUserId: 1, actorName: "Kwame Mina", actorRole: "OWNER",
+      action: "VERIFY", targetType: "RECORD", targetLabel: "TRX-2026-1001",
+      recordType: "TRANSACTION", recordId: 1, businessId: 1, branchCode: "POULTRY-01",
+      reason: "Quarter-start spot check — matched the MoMo statement",
+      createdAt: new Date("2026-08-18T10:30:00.000Z"),
+    },
+    {
+      actorUserId: 1, actorName: "Kwame Mina", actorRole: "OWNER",
+      action: "FLAG", targetType: "RECORD", targetLabel: "TRX-2026-1004",
+      recordType: "TRANSACTION", recordId: 4, businessId: 5, branchCode: "FOOD-01",
+      reason: "Weekend total looks 12% above trend with no matching deposit slip",
+      detail: "Chef Esi — please attach the bank deposit slip for the weekend receipts.",
+      createdAt: new Date("2026-08-19T09:15:00.000Z"),
+    },
+  ]);
 
   // ─────────────────────────────────────────────────────────────────────────
   // Standardized Ghana location normalization (Region → District/MMDA → Town)

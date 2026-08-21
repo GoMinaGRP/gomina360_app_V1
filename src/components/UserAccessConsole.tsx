@@ -62,6 +62,7 @@ export default function UserAccessConsole({ isOpen, onClose, businesses, current
   const [canExportData, setCanExportData] = useState(false);
   const [canManageRecords, setCanManageRecords] = useState(false);
   const [canManageCctv, setCanManageCctv] = useState(false);
+  const [canManageAuditors, setCanManageAuditors] = useState(false);
   const [extraAccess, setExtraAccess] = useState<number[]>([]);
   const [isActive, setIsActive] = useState(true);
   const [canDelegateUsers, setCanDelegateUsers] = useState(false);
@@ -144,6 +145,8 @@ export default function UserAccessConsole({ isOpen, onClose, businesses, current
     setCanManageStock(false);
     setCanExportData(false);
     setCanManageRecords(false);
+    setCanManageCctv(false);
+    setCanManageAuditors(false);
     setExtraAccess([]);
     setIsActive(true);
     setError("");
@@ -166,6 +169,7 @@ export default function UserAccessConsole({ isOpen, onClose, businesses, current
     setCanExportData(Boolean(u.canExportData));
     setCanManageRecords(Boolean(u.canManageRecords));
     setCanManageCctv(Boolean(u.canManageCctv));
+    setCanManageAuditors(Boolean(u.canManageAuditors));
     setExtraAccess(u.extraAccessIds || []);
     setIsActive(u.isActive !== false);
     setError("");
@@ -187,6 +191,7 @@ export default function UserAccessConsole({ isOpen, onClose, businesses, current
           password: password || undefined,
           canRecordSales, canRecordExpenses, canManageStock, canExportData, canManageRecords,
           canManageCctv: isOwner ? canManageCctv : undefined,
+          canManageAuditors: isOwner ? canManageAuditors : undefined,
           canManageUsers: isOwner ? canDelegateUsers : undefined,
           extraAccessIds: extraAccess,
         }),
@@ -226,6 +231,7 @@ export default function UserAccessConsole({ isOpen, onClose, businesses, current
           isActive,
           canRecordSales, canRecordExpenses, canManageStock, canExportData, canManageRecords,
           canManageCctv: isOwner ? canManageCctv : undefined,
+          canManageAuditors: isOwner ? canManageAuditors : undefined,
           canManageUsers: isOwner ? canDelegateUsers : undefined,
           extraAccessIds: extraAccess,
           newPassword: isOwner && password ? password : undefined,
@@ -282,6 +288,8 @@ export default function UserAccessConsole({ isOpen, onClose, businesses, current
           value
             ? tint === "cyan"
               ? "bg-cyan-500/20 text-cyan-300 border-cyan-500/40"
+              : tint === "teal"
+              ? "bg-teal-500/20 text-teal-300 border-teal-500/40"
               : "bg-emerald-500/20 text-emerald-300 border-emerald-500/40"
             : "bg-slate-700/70 text-slate-400 border-slate-600"
         }`}
@@ -360,6 +368,9 @@ export default function UserAccessConsole({ isOpen, onClose, businesses, current
           )}
           {isOwner && (
             <Toggle label="Manage CCTV cameras" value={canManageCctv} onChange={setCanManageCctv} testid="perm-cctv" tint="cyan" />
+          )}
+          {isOwner && (role === "BRANCH_MANAGER" || role === "GENERAL_MANAGER") && (
+            <Toggle label="Manage auditor access (Audit & Review)" value={canManageAuditors} onChange={setCanManageAuditors} testid="perm-auditors" tint="teal" />
           )}
           {isOwner && (role === "BRANCH_MANAGER" || role === "GENERAL_MANAGER") && (
             <Toggle

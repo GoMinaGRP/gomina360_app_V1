@@ -44,6 +44,12 @@ export const users = pgTable("users", {
   // assignment + explicit grants). The OWNER always manages every camera
   // group-wide. Grant/revoke is OWNER-only.
   canManageCctv: boolean("can_manage_cctv").default(false),
+  // OWNER-granted Auditor-access delegation: lets a manager grant, scope and
+  // revoke Auditor access — deciding what auditors may review and which
+  // businesses/branches they can audit — strictly inside the manager's own
+  // accessible businesses. The OWNER always controls every Auditor
+  // permission group-wide. Grant/revoke is OWNER-only.
+  canManageAuditors: boolean("can_manage_auditors").default(false),
   // ── Secure login ──────────────────────────────────────────────────────
   // scrypt password hash (format "scrypt:<salt_hex>:<hash_hex>"); null until
   // the OWNER sets a password for the account.
@@ -1135,6 +1141,91 @@ export const payrollAttendance = pgTable("payroll_attendance", {
 
 // 20. Asset Downloads Audit Trail
 // Tracks every asset record download with unique ID, QR code, and downloader details
+// 19d. Supervisor & Auditor Control Center.
+// Reviews attach DIRECTLY to the existing worker records (transactions &
+// sales, inventory, employees, payroll runs & attendance, assets, CCTV,
+// operations/production logs) — no duplicate checklists are ever created.
+// The audit_trail table keeps a complete, immutable log of every action
+// taken inside the center (reviews, resolutions, access grants, delegation).
+export const AUDIT_MODULES = [
+  "OPERATIONS",
+  "FINANCE",
+  "INVENTORY",
+  "EMPLOYEES",
+  "PAYROLL",
+  "ATTENDANCE",
+  "ASSETS",
+  "CCTV",
+] as const;
+
+/** Auditor access grants. The OWNER may grant anyone; a manager carrying the
+ *  canManageAuditors flag may grant only inside their accessible businesses.
+ *  `modules` limits what the auditor is allowed to see and review;auditors
+ *  never see anything outside their grants. */
+export const auditAssignments = pgTable("audit_assignments", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").notNull(), // the auditor (an existing GoMina user)
+  userName: text("user_name").notNull(),
+  userRole: text("user_role").notNull(),
+  businessId: integer("business_id").notNull(), // business being audited
+  branchCode: text("branch_code"), // null = every branch of the business
+  modules: jsonb("modules").notNull(), // AUDIT_MODULES subset
+  note: text("note"),
+  isActive: boolean("is_active").notNull().default(true),
+  grantedByUserId: integer("granted_by_user_id").notNull(),
+  grantedByName: text("granted_by_name").notNull(),
+  grantedByRole: text("granted_by_role").notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+/** A review action on an existing record. FLAGGED / CORRECTION_REQUESTED rows
+ *  live with status OPEN until a reviewer or supervisor resolves them
+ *  (resolution note + actor + timestamp are stamped on the same row). */
+export const auditReviews = pgTable("audit_reviews", {
+  id: serial("id").primaryKey(),
+  recordType: text("record_type").notNull(), // TRANSACTION | INVENTORY_ITEM | EMPLOYEE | PAYROLL_RUN | PAYROLL_ATTENDANCE | ASSET | CCTV_CAMERA | OPERATION_LOG
+  recordSource: text("record_source"), // underlying table for OPERATION_LOG rows
+  recordId: integer("record_id").notNull(),
+  recordRef: text("record_ref"), // natural key: TRX number, SKU, asset code, GRN…
+  recordTitle: text("record_title").notNull(), // snapshot so the trail survives edits
+  module: text("module").notNull(), // one of AUDIT_MODULES
+  businessId: integer("business_id").notNull(),
+  branchCode: text("branch_code"),
+  workerName: text("worker_name"), // employee/recorder the record belongs to
+  action: text("action").notNull(), // VERIFIED | FLAGGED | COMMENT | CORRECTION_REQUESTED
+  status: text("status").notNull().default("INFO"), // OPEN | RESOLVED | VERIFIED | INFO
+  reason: text("reason"), // why flagged / why correction requested / verification basis
+  comment: text("comment"),
+  evidence: text("evidence"), // evidence note / photo or document URL
+  reviewerUserId: integer("reviewer_user_id").notNull(),
+  reviewerName: text("reviewer_name").notNull(),
+  reviewerRole: text("reviewer_role").notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+  resolvedByUserId: integer("resolved_by_user_id"),
+  resolvedByName: text("resolved_by_name"),
+  resolvedAt: timestamp("resolved_at"),
+  resolutionNote: text("resolution_note"),
+});
+
+/** Immutable log of everything that happens inside the Audit Center. */
+export const auditTrail = pgTable("audit_trail", {
+  id: serial("id").primaryKey(),
+  actorUserId: integer("actor_user_id").notNull(),
+  actorName: text("actor_name").notNull(),
+  actorRole: text("actor_role").notNull(),
+  action: text("action").notNull(), // VERIFY | FLAG | COMMENT | REQUEST_CORRECTION | RESOLVE | GRANT_ACCESS | UPDATE_GRANT | REVOKE_ACCESS | DELEGATE | REVOKE_DELEGATION
+  targetType: text("target_type").notNull(), // RECORD | USER | GRANT
+  targetLabel: text("target_label").notNull(), // e.g. "TRX-2026-1001" or "Comfort Agbenyega"
+  recordType: text("record_type"),
+  recordId: integer("record_id"),
+  businessId: integer("business_id"),
+  branchCode: text("branch_code"),
+  reason: text("reason"),
+  detail: text("detail"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
 export const assetDownloads = pgTable("asset_downloads", {
   id: serial("id").primaryKey(),
   downloadId: text("download_id").notNull().unique(), // Unique download identifier (e.g., DL-2024-AST-001)

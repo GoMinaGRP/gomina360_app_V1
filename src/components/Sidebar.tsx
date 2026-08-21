@@ -23,6 +23,7 @@ import {
   BarChart3,
   ChevronRight,
   ShieldAlert,
+  ShieldCheck,
   ShoppingCart,
   HardHat,
   Landmark,
@@ -60,6 +61,7 @@ interface SidebarProps {
   onSelectTab: (tab: ActiveTab) => void;
   businesses: any[];
   currentUser: any;
+  auditEligible?: boolean;
 }
 
 export default function Sidebar({
@@ -67,6 +69,7 @@ export default function Sidebar({
   onSelectTab,
   businesses,
   currentUser,
+  auditEligible,
 }: SidebarProps) {
   const isBusinessManager = currentUser?.role === "BRANCH_MANAGER";
   const isWorker = currentUser?.role === "WORKER";
@@ -362,6 +365,35 @@ export default function Sidebar({
               </div>
             </button>
           </div>
+        </div>
+      )}
+
+      {/* Oversight & Assurance — Supervisors & Auditors. Executives and
+          managers act as supervisors inside their scope; any user the OWNER
+          (or a delegated manager) granted Auditor access to also sees this —
+          strictly limited to their authorized businesses & modules. */}
+      {(isExecutive || isBusinessManager || currentUser?.role === "SUPERVISOR" || currentUser?.canManageAuditors || auditEligible) && (
+        <div className="px-3 py-2">
+          <div className="px-3 py-1 text-[11px] font-bold uppercase tracking-wider text-slate-400">
+            Oversight & Assurance
+          </div>
+          <button
+            onClick={() => onSelectTab("AUDIT")}
+            data-testid="audit-tab"
+            className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-medium transition ${
+              activeTab === "AUDIT"
+                ? "bg-gradient-to-r from-teal-500/20 to-cyan-500/20 text-teal-300 font-bold border-l-2 border-teal-400"
+                : "hover:bg-slate-800/70 text-slate-300"
+            }`}
+          >
+            <div className="flex items-center space-x-2.5">
+              <ShieldCheck className="w-4 h-4 text-teal-400" />
+              <span>Audit & Review</span>
+            </div>
+            <span className="text-[9px] bg-teal-500/20 text-teal-300 px-1 py-0.5 rounded font-bold">
+              QA
+            </span>
+          </button>
         </div>
       )}
 

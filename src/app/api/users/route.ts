@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { db } from "@/db";
-import { users, userSessions, userBusinessAccess } from "@/db/schema";
+import { users, userSessions, userBusinessAccess, auditTrail } from "@/db/schema";
 import { desc, eq, inArray } from "drizzle-orm";
 import {
   getSessionInfo,
@@ -83,6 +83,7 @@ export async function POST(request: Request) {
       canManageRecords,
       canManageUsers,
       canManageCctv,
+      canManageAuditors,
       password,
       extraAccessIds,
     } = body;
@@ -147,8 +148,11 @@ export async function POST(request: Request) {
     if (!!canManageCctv && !isOwner) {
       return FORBIDDEN("Only the OWNER can grant CCTV management permission.");
     }
+    if (!!canManageAuditors && !isOwner) {
+      return FORBIDDEN("Only the OWNER can delegate auditor-access management.");
+    }
     // Non-OWNER can never create other elevated roles.
-    if (!isOwner && (!!canManageRecords || !!canManageCctv || ["OWNER", "GENERAL_MANAGER"].includes(role))) {
+    if (!isOwner && (!!canManageRecords || !!canManageCctv || !!canManageAuditors || ["OWNER", "GENERAL_MANAGER"].includes(role))) {
       return FORBIDDEN("Insufficient privilege.");
     }
 
@@ -190,6 +194,8 @@ export async function POST(request: Request) {
         canManageRecords: isOwner ? Boolean(canManageRecords ?? false) : false,
         // CCTV management is likewise OWNER-granted only.
         canManageCctv: isOwner ? Boolean(canManageCctv ?? false) : false,
+        // Auditor-access delegation is equally OWNER-granted only.
+        canManageAuditors: isOwner ? Boolean(canManageAuditors ?? false) : false,
         // Delegation flag is OWNER-granted and only meaningful on managers.
         canManageUsers:
           isOwner && ["GENERAL_MANAGER", "BRANCH_MANAGER"].includes(role)
@@ -207,6 +213,15 @@ export async function POST(request: Request) {
         extraAccessIds.map(Number).filter((n) => Number.isFinite(n)),
         me.id
       );
+    }
+
+    if (isOwner && canManageAuditors) {
+      await db.insert(auditTrail).values({
+        actorUserId: me.id, actorName: me.name, actorRole: me.role,
+        action: "DELEGATE", targetType: "USER", targetLabel: newUser.name,
+        businessId: newUser.assignedBusinessId ?? null, branchCode: null,
+        reason: null, detail: `${newUser.name} (${newUser.role}) may manage Auditor access for their assigned branches`,
+      });
     }
 
     return NextResponse.json({
@@ -248,6 +263,7 @@ export async function PATCH(request: Request) {
       canManageRecords,
       canManageUsers,
       canManageCctv,
+      canManageAuditors,
       newPassword,
       extraAccessIds,
     } = body;
@@ -291,9 +307,10 @@ export async function PATCH(request: Request) {
         if (
           (canManageRecords !== undefined && Boolean(canManageRecords) !== !!targetUser.canManageRecords) ||
           (canManageUsers !== undefined && Boolean(canManageUsers) !== !!targetUser.canManageUsers) ||
-          (canManageCctv !== undefined && Boolean(canManageCctv) !== !!targetUser.canManageCctv)
+          (canManageCctv !== undefined && Boolean(canManageCctv) !== !!targetUser.canManageCctv) ||
+          (canManageAuditors !== undefined && Boolean(canManageAuditors) !== !!targetUser.canManageAuditors)
         ) {
-          return FORBIDDEN("Only the OWNER can grant record-management, user-management or CCTV powers.");
+          return FORBIDDEN("Only the OWNER can grant record-management, user-management, CCTV or auditor-delegation powers.");
         }
         if (newPassword !== undefined) {
           return FORBIDDEN("Only the OWNER can reset passwords.");
@@ -313,6 +330,9 @@ export async function PATCH(request: Request) {
         }
         if (canManageCctv !== undefined) {
           return FORBIDDEN("Only the OWNER can grant or remove CCTV management permission.");
+        }
+        if (canManageAuditors !== undefined) {
+          return FORBIDDEN("Only the OWNER can delegate auditor-access management.");
         }
         if (role !== undefined && !["BRANCH_MANAGER", "SUPERVISOR", "ACCOUNTANT", "WORKER"].includes(role)) {
           return FORBIDDEN("GENERAL_MANAGER cannot assign elevated roles.");
@@ -384,9 +404,29 @@ export async function PATCH(request: Request) {
           isOwner && canManageCctv !== undefined
             ? Boolean(canManageCctv)
             : targetUser.canManageCctv,
+        // Auditor-access delegation likewise: OWNER may flip it, everyone
+        // else merely echoes the stored value.
+        canManageAuditors:
+          isOwner && canManageAuditors !== undefined
+            ? Boolean(canManageAuditors)
+            : targetUser.canManageAuditors,
       })
       .where(eq(users.id, Number(userId)))
       .returning();
+
+    // Auditor-access delegation flips land on the immutable audit trail.
+    if (isOwner && canManageAuditors !== undefined && Boolean(canManageAuditors) !== !!targetUser.canManageAuditors) {
+      await db.insert(auditTrail).values({
+        actorUserId: me.id, actorName: me.name, actorRole: me.role,
+        action: canManageAuditors ? "DELEGATE" : "REVOKE_DELEGATION",
+        targetType: "USER", targetLabel: updatedUser.name,
+        businessId: updatedUser.assignedBusinessId ?? null, branchCode: null,
+        reason: null,
+        detail: canManageAuditors
+          ? `${updatedUser.name} (${updatedUser.role}) may manage Auditor access for their assigned branches`
+          : `Auditor-access delegation removed from ${updatedUser.name}`,
+      });
+    }
 
     if (isOwner && typeof newPassword === "string" && newPassword.trim().length >= 4) {
       await setUserPassword(targetUser.id, newPassword.trim());

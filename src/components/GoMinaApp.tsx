@@ -19,6 +19,7 @@ import BranchManagerWorkerPanel from "./BranchManagerWorkerPanel";
 import BranchManagerSalesView from "./BranchManagerSalesView";
 import EnterpriseUserPanel from "./EnterpriseUserPanel";
 import EnterpriseFinanceView from "./EnterpriseFinanceView";
+import AuditCommandCenter from "./AuditCommandCenter";
 import PoultryFarmModule from "./PoultryFarmModule";
 import BlockFactoryModule from "./BlockFactoryModule";
 import AquacultureModule from "./AquacultureModule";
@@ -42,6 +43,10 @@ export default function GoMinaApp() {
   const [metrics, setMetrics] = useState<any[]>([]);
   const [usersList, setUsersList] = useState<any[]>([]);
   const [currentUser, setCurrentUser] = useState<any>(null);
+  // Whether the signed-in user holds Supervisor / Auditor access (server
+  // decides via /api/audit?meta=1 — OWNER always; managers per role; other
+  // users only when an active Auditor grant exists).
+  const [auditEligible, setAuditEligible] = useState(false);
   const [customers, setCustomers] = useState<any[]>([]);
   const [suppliers, setSuppliers] = useState<any[]>([]);
   const [employees, setEmployees] = useState<any[]>([]);
@@ -285,6 +290,18 @@ export default function GoMinaApp() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentUser?.id]);
 
+  // Supervisor & Auditor eligibility — the server decides (OWNER always;
+  // supervisor roles inside their business scope; everyone else only while an
+  // active Auditor grant exists). Recomputed whenever the signed-in user changes.
+  useEffect(() => {
+    setAuditEligible(false);
+    if (!currentUser?.id) return;
+    fetch("/api/audit?meta=1")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => setAuditEligible(!!d?.eligible))
+      .catch(() => setAuditEligible(false));
+  }, [currentUser?.id]);
+
   const handleRefreshLogsForBusiness = async (businessCode: string) => {
     try {
       const res = await fetch(`/api/logs/${businessCode}`);
@@ -332,6 +349,31 @@ export default function GoMinaApp() {
     const isExecutive =
       currentUser?.role === "OWNER" || currentUser?.role === "GENERAL_MANAGER";
     const isBranchManager = currentUser?.role === "BRANCH_MANAGER";
+
+    // Supervisor & Auditor Control Center — takes precedence over the WORKER /
+    // BRANCH_MANAGER workspace interception, because ANY role may hold an
+    // Auditor grant (server-verified eligibility). The API itself enforces
+    // exactly which businesses and modules each auditor may see.
+    if (activeTab === "AUDIT") {
+      const canAudit =
+        auditEligible ||
+        ["OWNER", "GENERAL_MANAGER", "BRANCH_MANAGER", "SUPERVISOR"].includes(currentUser?.role || "") ||
+        !!currentUser?.canManageAuditors;
+      if (!canAudit) {
+        return (
+          <div className="flex items-center justify-center min-h-[60vh] p-8">
+            <div className="bg-amber-900/20 border border-amber-500/30 rounded-2xl p-8 max-w-md text-center space-y-3">
+              <h2 className="text-lg font-bold text-amber-300">Access Restricted</h2>
+              <p className="text-sm text-slate-300">
+                The Audit & Review center is available to Supervisors and authorized Auditors only. The OWNER controls Auditor permissions.
+              </p>
+            </div>
+          </div>
+        );
+      }
+      return <AuditCommandCenter currentUser={currentUser} businesses={businesses} />;
+    }
+
 
     // WORKER role: self-contained workspace. All tools (record sale, create
     // customer, view branch inventory, my activity) live inside WorkerDashboard,
@@ -913,6 +955,7 @@ export default function GoMinaApp() {
           onSelectTab={setActiveTab}
           businesses={businesses}
           currentUser={currentUser}
+          auditEligible={auditEligible}
         />
 
         <main className="flex-1 overflow-y-auto bg-slate-950/95 pb-12">
