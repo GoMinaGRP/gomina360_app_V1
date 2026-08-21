@@ -61,6 +61,7 @@ export default function UserAccessConsole({ isOpen, onClose, businesses, current
   const [canManageStock, setCanManageStock] = useState(false);
   const [canExportData, setCanExportData] = useState(false);
   const [canManageRecords, setCanManageRecords] = useState(false);
+  const [canManageCctv, setCanManageCctv] = useState(false);
   const [extraAccess, setExtraAccess] = useState<number[]>([]);
   const [isActive, setIsActive] = useState(true);
   const [canDelegateUsers, setCanDelegateUsers] = useState(false);
@@ -164,6 +165,7 @@ export default function UserAccessConsole({ isOpen, onClose, businesses, current
     setCanManageStock(Boolean(u.canManageStock));
     setCanExportData(Boolean(u.canExportData));
     setCanManageRecords(Boolean(u.canManageRecords));
+    setCanManageCctv(Boolean(u.canManageCctv));
     setExtraAccess(u.extraAccessIds || []);
     setIsActive(u.isActive !== false);
     setError("");
@@ -184,6 +186,7 @@ export default function UserAccessConsole({ isOpen, onClose, businesses, current
           assignedBusinessId: assignedBusinessId === "" ? null : assignedBusinessId,
           password: password || undefined,
           canRecordSales, canRecordExpenses, canManageStock, canExportData, canManageRecords,
+          canManageCctv: isOwner ? canManageCctv : undefined,
           canManageUsers: isOwner ? canDelegateUsers : undefined,
           extraAccessIds: extraAccess,
         }),
@@ -222,6 +225,7 @@ export default function UserAccessConsole({ isOpen, onClose, businesses, current
           assignedBusinessId: assignedBusinessId === "" ? null : assignedBusinessId,
           isActive,
           canRecordSales, canRecordExpenses, canManageStock, canExportData, canManageRecords,
+          canManageCctv: isOwner ? canManageCctv : undefined,
           canManageUsers: isOwner ? canDelegateUsers : undefined,
           extraAccessIds: extraAccess,
           newPassword: isOwner && password ? password : undefined,
@@ -353,6 +357,9 @@ export default function UserAccessConsole({ isOpen, onClose, businesses, current
           <Toggle label="Export data" value={canExportData} onChange={setCanExportData} testid="perm-export" />
           {isOwner && (
             <Toggle label="Manage & delete shared records" value={canManageRecords} onChange={setCanManageRecords} testid="perm-records" tint="cyan" />
+          )}
+          {isOwner && (
+            <Toggle label="Manage CCTV cameras" value={canManageCctv} onChange={setCanManageCctv} testid="perm-cctv" tint="cyan" />
           )}
           {isOwner && (role === "BRANCH_MANAGER" || role === "GENERAL_MANAGER") && (
             <Toggle

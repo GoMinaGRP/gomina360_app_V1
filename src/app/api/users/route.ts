@@ -82,6 +82,7 @@ export async function POST(request: Request) {
       canExportData,
       canManageRecords,
       canManageUsers,
+      canManageCctv,
       password,
       extraAccessIds,
     } = body;
@@ -143,8 +144,11 @@ export async function POST(request: Request) {
     if (!!canManageRecords && !isOwner) {
       return FORBIDDEN("Only the OWNER can grant record-management permission.");
     }
+    if (!!canManageCctv && !isOwner) {
+      return FORBIDDEN("Only the OWNER can grant CCTV management permission.");
+    }
     // Non-OWNER can never create other elevated roles.
-    if (!isOwner && (!!canManageRecords || ["OWNER", "GENERAL_MANAGER"].includes(role))) {
+    if (!isOwner && (!!canManageRecords || !!canManageCctv || ["OWNER", "GENERAL_MANAGER"].includes(role))) {
       return FORBIDDEN("Insufficient privilege.");
     }
 
@@ -184,6 +188,8 @@ export async function POST(request: Request) {
           ? true
           : Boolean(canExportData ?? false),
         canManageRecords: isOwner ? Boolean(canManageRecords ?? false) : false,
+        // CCTV management is likewise OWNER-granted only.
+        canManageCctv: isOwner ? Boolean(canManageCctv ?? false) : false,
         // Delegation flag is OWNER-granted and only meaningful on managers.
         canManageUsers:
           isOwner && ["GENERAL_MANAGER", "BRANCH_MANAGER"].includes(role)
@@ -241,6 +247,7 @@ export async function PATCH(request: Request) {
       canExportData,
       canManageRecords,
       canManageUsers,
+      canManageCctv,
       newPassword,
       extraAccessIds,
     } = body;
@@ -283,9 +290,10 @@ export async function PATCH(request: Request) {
         // always round-trips full state).
         if (
           (canManageRecords !== undefined && Boolean(canManageRecords) !== !!targetUser.canManageRecords) ||
-          (canManageUsers !== undefined && Boolean(canManageUsers) !== !!targetUser.canManageUsers)
+          (canManageUsers !== undefined && Boolean(canManageUsers) !== !!targetUser.canManageUsers) ||
+          (canManageCctv !== undefined && Boolean(canManageCctv) !== !!targetUser.canManageCctv)
         ) {
-          return FORBIDDEN("Only the OWNER can grant record-management or user-management powers.");
+          return FORBIDDEN("Only the OWNER can grant record-management, user-management or CCTV powers.");
         }
         if (newPassword !== undefined) {
           return FORBIDDEN("Only the OWNER can reset passwords.");
@@ -302,6 +310,9 @@ export async function PATCH(request: Request) {
       } else if (isGM) {
         if (canManageRecords !== undefined) {
           return FORBIDDEN("Only the OWNER can grant or remove record-management permission.");
+        }
+        if (canManageCctv !== undefined) {
+          return FORBIDDEN("Only the OWNER can grant or remove CCTV management permission.");
         }
         if (role !== undefined && !["BRANCH_MANAGER", "SUPERVISOR", "ACCOUNTANT", "WORKER"].includes(role)) {
           return FORBIDDEN("GENERAL_MANAGER cannot assign elevated roles.");
@@ -367,6 +378,12 @@ export async function PATCH(request: Request) {
               ? Boolean(canManageUsers)
               : false
             : targetUser.canManageUsers,
+        // CCTV management: only the OWNER may change it (non-owner edits were
+        // already rejected above unless the value was echoed unchanged).
+        canManageCctv:
+          isOwner && canManageCctv !== undefined
+            ? Boolean(canManageCctv)
+            : targetUser.canManageCctv,
       })
       .where(eq(users.id, Number(userId)))
       .returning();

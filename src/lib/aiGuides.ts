@@ -1901,6 +1901,75 @@ export const GUIDES: Record<string, Record<string, SectionGuide>> = {
     FINANCE_REPORT: CENTRAL_FINANCE_GUIDE,
   },
 
+  /* ═══════════════ INTEGRATION HUB → CCTV ═══════════════ */
+  CCTV: {
+    DEFAULT: {
+      title: "CCTV Security Command",
+      intro:
+        "Every camera in the group, organised strictly as Business → Branch → Cameras. Register IP cameras, PTZ units, Wi-Fi cameras and full NVR/DVR systems with their brand, model and connection details; test connections, reassign or retire units — and control exactly which managers may touch which branches.",
+      tasks: [
+        {
+          name: "Add a camera",
+          steps: [
+            "Open Integration Hub and click “CCTV Security Command Center”.",
+            "Click “Add Camera”, pick the owning Business, and confirm the Branch code (auto-filled).",
+            "Enter the camera name, physical location, brand, camera type and model.",
+            "Fill in the connection details (see “Connect…” below) and save — the card appears under that branch instantly.",
+          ],
+        },
+        {
+          name: "Connect IP cameras, NVRs & DVRs",
+          steps: [
+            "Choose the connection type: PoE + RTSP, ONVIF, Wi-Fi, Cloud P2P, Coax/BNC, or an NVR/DVR channel.",
+            "For IP cameras (Hikvision, Dahua, Uniview, Axis, Reolink, VIGI…) enter the camera IP and port (usually 554) or paste the full RTSP stream URL.",
+            "For NVR/DVR systems register the recorder itself (host + port, e.g. 37777 for Dahua) — its channels inherit the same endpoint.",
+            "Device username/password are stored securely and never displayed again — a ✓ marker shows credentials are saved.",
+          ],
+        },
+        {
+          name: "Test a connection",
+          steps: [
+            "Click “Test” on any camera card you manage.",
+            "The hub performs a handshake against the stored stream URL or host:port and reports the result on the card.",
+            "A passing test flips the camera ONLINE with the verified timestamp; a failing one lists exactly which detail is missing.",
+          ],
+        },
+        {
+          name: "Update or reassign a camera",
+          steps: [
+            "Click “Edit” on the camera card.",
+            "Change any field — name, location, brand, model, connection details, or status (Online / Offline / Maintenance).",
+            "To move a camera to another business or branch, change the Business/branch fields — the record, its test history and permissions follow automatically.",
+          ],
+          tip: "Managers can only reassign cameras between branches they are authorised for; the OWNER can move anything anywhere.",
+        },
+        {
+          name: "Troubleshoot an OFFLINE camera",
+          steps: [
+            "Run “Test” — the result message tells you what is missing (stream URL, host/IP or port).",
+            "Verify the camera has power and network (PoE switch link light, or Wi-Fi signal), then confirm the IP/port in Edit.",
+            "Use Status = Maintenance while a unit is being serviced so dashboards stop flagging it as a fault.",
+            "If the camera moved subnets, update the host field and test again.",
+          ],
+        },
+        {
+          name: "Remove a camera & grant a manager CCTV access",
+          steps: [
+            "To remove: click “Remove”, then confirm. The card disappears from the branch immediately.",
+            "To share the workload: the OWNER opens Users & Access, edits the manager and switches on “Manage CCTV cameras”.",
+            "That manager can now add, test, edit and remove cameras — but only inside the businesses/branches they already have access to. The OWNER always keeps control of every camera.",
+          ],
+        },
+      ],
+      faqs: [
+        { q: "Which brands and systems are supported?", match: ["brand", "hikvision", "dahua", "uniview", "axis", "reolink", "support"], answer: "Any of them. Built-in choices cover Hikvision, Dahua, Uniview, Axis, Reolink, TP-Link VIGI, EZVIZ and Annke — plus “Other / Generic” for anything else. Standalone IP/PTZ/Wi-Fi cameras and full NVR or DVR systems (or individual recorder channels) are all first-class." },
+        { q: "My camera test failed — what now?", match: ["test", "failed", "offline", "connect", "troubleshoot"], answer: "The failure message names the missing piece. You need either a full stream URL (rtsp://…) or a host/IP plus port. Check power and network on the device, update the fields under Edit, then Test again." },
+        { q: "Who can add or remove cameras?", match: ["permission", "who", "manager", "delete", "remove", "access"], answer: "The OWNER manages every camera in every branch. A manager manages cameras only after the OWNER switches on “Manage CCTV cameras” in Users & Access — and only for businesses/branches already in that manager's access scope." },
+        { q: "Are device passwords visible to everyone?", match: ["password", "credential", "secret", "visible"], answer: "No. Passwords are write-only: they are stored for the connection handshake but never returned to any screen. Cards show a ✓ marker when a credential is on file; re-enter it in Edit only when changing it." },
+      ],
+    },
+  },
+
   /* ═══════════════ COMMAND CENTER / ROLES ═══════════════ */
   COMMAND_CENTER: {
     COMMAND_CENTER: {

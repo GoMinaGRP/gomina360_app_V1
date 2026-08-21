@@ -381,6 +381,9 @@ export default function GoMinaApp() {
         "WORKERS_MANAGE",
         "BRANCH_ASSETS",
       ]);
+      // Managers the OWNER trusted with CCTV may open the Integrations Hub,
+      // where the CCTV Command Center stays scoped to their authorised branches.
+      if (currentUser?.canManageCctv) allowed.add("INTEGRATIONS");
       if (ownBranch?.code) allowed.add(ownBranch.code);
       if (!allowed.has(activeTab)) {
         const bizMetric = liveMetrics.find((m) => m.businessId === ownBranch?.id);
@@ -437,7 +440,10 @@ export default function GoMinaApp() {
       "INTEGRATIONS",
       "USERS_MANAGE",
     ];
-    if (!isExecutive && executiveOnlyTabs.includes(activeTab)) {
+    // CCTV-granted managers reach ONLY the Integrations Hub (their CCTV scope);
+    // every other executive module stays locked.
+    const cctvManagerEntry = !isExecutive && !!currentUser?.canManageCctv && activeTab === "INTEGRATIONS";
+    if (!isExecutive && executiveOnlyTabs.includes(activeTab) && !cctvManagerEntry) {
       return (
         <div className="flex items-center justify-center min-h-[60vh] p-8">
           <div className="bg-amber-900/20 border border-amber-500/30 rounded-2xl p-8 max-w-md text-center space-y-3">
@@ -819,6 +825,8 @@ export default function GoMinaApp() {
         <IntegrationsHubView
           integrations={integrations}
           onRefreshIntegrations={refreshAllData}
+          currentUser={currentUser}
+          businesses={businesses}
         />
       );
     }

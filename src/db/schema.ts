@@ -39,6 +39,11 @@ export const users = pgTable("users", {
   // managers, assign role/business/branch/permissions, and edit or deactivate
   // users inside their own accessible branch scope. Grant/revoke is OWNER-only.
   canManageUsers: boolean("can_manage_users").default(false),
+  // OWNER-granted CCTV management: lets a manager add, edit, test, reassign and
+  // remove cameras — strictly inside the businesses they can access (primary
+  // assignment + explicit grants). The OWNER always manages every camera
+  // group-wide. Grant/revoke is OWNER-only.
+  canManageCctv: boolean("can_manage_cctv").default(false),
   // ── Secure login ──────────────────────────────────────────────────────
   // scrypt password hash (format "scrypt:<salt_hex>:<hash_hex>"); null until
   // the OWNER sets a password for the account.
@@ -1029,6 +1034,37 @@ export const integrations = pgTable("integrations", {
   status: text("status").notNull(), // 'CONNECTED', 'READY_TO_CONNECT', 'OFFLINE_SYNCING'
   lastSync: text("last_sync").notNull(),
   configJson: jsonb("config_json"),
+});
+
+// 19b. CCTV Security Cameras — organised Business → Branch → Cameras.
+// The OWNER manages every camera; managers manage only cameras in businesses
+// they can access AND only after the OWNER grants them canManageCctv.
+export const cctvCameras = pgTable("cctv_cameras", {
+  id: serial("id").primaryKey(),
+  businessId: integer("business_id").notNull(), // owning business (businesses.id)
+  branchCode: text("branch_code").notNull(), // branch/register code, e.g. POULTRY-01
+  branchName: text("branch_name"),
+  name: text("name").notNull(), // camera name, e.g. "Yard & Feed Storage Camera"
+  location: text("location").notNull(), // physical mounting point
+  brand: text("brand").notNull(), // HIKVISION | DAHUA | UNIVIEW | AXIS | REOLINK | TP_LINK_VIGI | EZVIZ | ANNKE | OTHER
+  cameraType: text("camera_type").notNull(), // IP_CAMERA | PTZ_IP_CAMERA | WIFI_CAMERA | NVR_SYSTEM | DVR_SYSTEM | NVR_CHANNEL | DVR_CHANNEL | ANALOG_CAMERA
+  model: text("model"),
+  connectionType: text("connection_type").notNull(), // POE_RTSP | ONVIF | WIFI | CLOUD_P2P | COAXIAL_BNC | NVR_CHANNEL | DVR_CHANNEL
+  host: text("host"), // IP address / hostname / cloud device ID
+  port: integer("port"), // e.g. 554 (RTSP), 80/443 (HTTP), 37777 (Dahua)
+  streamUrl: text("stream_url"), // full RTSP/HTTP stream URL when known
+  username: text("username"),
+  password: text("password"), // device credential — never returned by the GET API
+  snapshotUrl: text("snapshot_url"), // preview/demo frame for the live monitor
+  status: text("status").notNull().default("ONLINE"), // ONLINE | OFFLINE | MAINTENANCE
+  notes: text("notes"),
+  lastTestAt: timestamp("last_test_at"),
+  lastTestResult: text("last_test_result"),
+  createdByUserId: integer("created_by_user_id"),
+  createdByName: text("created_by_name"),
+  updatedByName: text("updated_by_name"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
 });
 
 // 20. Asset Downloads Audit Trail

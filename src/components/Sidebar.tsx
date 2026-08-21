@@ -365,13 +365,16 @@ export default function Sidebar({
         </div>
       )}
 
-      {/* Strategic Decision Support & Integrations — Owner / General Manager only */}
-      {isExecutive && (
+      {/* Strategic Decision Support & Integrations — Owner / General Manager only.
+          Managers the OWNER has trusted with CCTV management also see this
+          section, strictly for the Integrations Hub (their CCTV scope). */}
+      {(isExecutive || currentUser?.canManageCctv) && (
         <div className="px-3 py-2">
           <div className="px-3 py-1 text-[11px] font-bold uppercase tracking-wider text-slate-400">
             Decision Support & Hub
           </div>
           <div className="space-y-1 mt-1">
+            {isExecutive && (
             <button
               onClick={() => onSelectTab("AI_ADVISOR")}
               className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-medium transition ${
@@ -388,7 +391,9 @@ export default function Sidebar({
                 AI
               </span>
             </button>
+            )}
 
+            {isExecutive && (
             <button
               onClick={() => onSelectTab("SCENARIO_PLANNER")}
               className={`w-full flex items-center space-x-2.5 px-3 py-2 rounded-lg text-xs font-medium transition ${
@@ -400,6 +405,7 @@ export default function Sidebar({
               <Sliders className="w-4 h-4 text-teal-400" />
               <span>Scenario Planning</span>
             </button>
+            )}
 
             <button
               onClick={() => onSelectTab("INTEGRATIONS")}

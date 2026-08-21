@@ -16,54 +16,23 @@ import {
   Eye,
   Camera,
 } from "lucide-react";
+import CctvCommandCenter from "./CctvCommandCenter";
 
 interface IntegrationsHubViewProps {
   integrations: any[];
   onRefreshIntegrations: () => void;
+  currentUser?: any;
+  businesses?: any[];
 }
 
 export default function IntegrationsHubView({
   integrations,
   onRefreshIntegrations,
+  currentUser = null,
+  businesses = [],
 }: IntegrationsHubViewProps) {
   const [syncingId, setSyncingId] = useState<number | null>(null);
   const [showCctvModal, setShowCctvModal] = useState(false);
-  const [selectedCamera, setSelectedCamera] = useState("CAM-01: Nsawam Poultry Farm (Yard & Feed Storage)");
-
-  const cameras = [
-    {
-      id: "CAM-01",
-      title: "Nsawam Poultry Farm (Yard & Feed Storage)",
-      branch: "Mina Akuafo Poultry",
-      status: "LIVE • 1080p 30fps",
-      imgUrl:
-        "https://images.unsplash.com/photo-1548550023-2bdb3c5beed7?w=800&auto=format&fit=crop",
-    },
-    {
-      id: "CAM-02",
-      title: "Spintex Concrete Production Bay A",
-      branch: "Mina Concrete & Blocks",
-      status: "LIVE • 1080p 30fps",
-      imgUrl:
-        "https://images.unsplash.com/photo-1504307651254-35680f356dfd?w=800&auto=format&fit=crop",
-    },
-    {
-      id: "CAM-03",
-      title: "Akosombo Volta Basin Cage Array #4",
-      branch: "Mina Volta Tilapia & Catfish",
-      status: "LIVE • 4K AI Tracking",
-      imgUrl:
-        "https://images.unsplash.com/photo-1516214104703-d870798883c5?w=800&auto=format&fit=crop",
-    },
-    {
-      id: "CAM-04",
-      title: "Kwame Nkrumah Circle Electronics Showroom",
-      branch: "Mina Tech & Electronics Hub",
-      status: "LIVE • 1080p 30fps",
-      imgUrl:
-        "https://images.unsplash.com/photo-1558002038-1055907df827?w=800&auto=format&fit=crop",
-    },
-  ];
 
   const handleAction = async (id: number, action: "SYNC_NOW" | "TOGGLE_CONNECT") => {
     setSyncingId(id);
@@ -126,9 +95,10 @@ export default function IntegrationsHubView({
           <button
             onClick={() => setShowCctvModal(true)}
             className="flex items-center space-x-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-rose-600 to-red-700 hover:from-rose-500 hover:to-red-600 text-white font-bold text-xs sm:text-sm shadow-lg transition"
+            data-testid="hub-cctv-open"
           >
             <Video className="w-4 h-4" />
-            <span>24/7 Live CCTV Monitor (7 Branches)</span>
+            <span>CCTV Security Command Center</span>
           </button>
         </div>
       </div>
@@ -213,81 +183,13 @@ export default function IntegrationsHubView({
         })}
       </div>
 
-      {/* Interactive 24/7 CCTV Multi-Branch Security Monitor Modal */}
+      {/* CCTV Security Command — Business → Branch → Cameras registry & live monitor */}
       {showCctvModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-md p-4">
-          <div className="bg-slate-900 border border-slate-700 rounded-2xl overflow-hidden w-full max-w-5xl shadow-2xl flex flex-col max-h-[90vh]">
-            <div className="px-5 py-4 border-b border-slate-800 flex items-center justify-between bg-slate-950">
-              <div className="flex items-center space-x-2.5">
-                <div className="w-3 h-3 rounded-full bg-rose-500 animate-ping"></div>
-                <h3 className="text-lg font-bold text-white">
-                  Hikvision 24/7 Multi-Branch Security Monitor
-                </h3>
-                <span className="px-2 py-0.5 rounded bg-rose-500/20 text-rose-300 text-[10px] font-bold border border-rose-500/30">
-                  LIVE AI VIDEO MESH
-                </span>
-              </div>
-
-              <button
-                onClick={() => setShowCctvModal(false)}
-                className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold transition"
-              >
-                Close Monitor
-              </button>
-            </div>
-
-            <div className="p-5 overflow-y-auto space-y-4">
-              {/* Selected main preview */}
-              <div className="relative rounded-xl overflow-hidden border-2 border-slate-700 bg-black aspect-video max-h-[420px] mx-auto flex items-center justify-center group shadow-2xl">
-                <img
-                  src={
-                    cameras.find((c) => c.title === selectedCamera)?.imgUrl ||
-                    cameras[0].imgUrl
-                  }
-                  alt="Live CCTV"
-                  className="w-full h-full object-cover"
-                />
-                <div className="absolute top-3 left-3 flex items-center space-x-2 bg-black/75 backdrop-blur-sm px-3 py-1 rounded-lg border border-white/10">
-                  <div className="w-2.5 h-2.5 rounded-full bg-rose-500 animate-pulse"></div>
-                  <span className="text-xs font-bold text-white">
-                    {selectedCamera}
-                  </span>
-                </div>
-                <div className="absolute bottom-3 right-3 bg-black/75 backdrop-blur-sm px-3 py-1 rounded-lg text-xs font-mono text-emerald-400 border border-emerald-500/30">
-                  1080P • AI MOTION TRACKING ON
-                </div>
-              </div>
-
-              {/* Camera Switcher Grid */}
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                {cameras.map((cam) => (
-                  <button
-                    key={cam.id}
-                    onClick={() => setSelectedCamera(cam.title)}
-                    className={`p-2.5 rounded-xl border text-left transition ${
-                      selectedCamera === cam.title
-                        ? "bg-slate-800 border-rose-500 ring-2 ring-rose-500/30"
-                        : "bg-slate-900 border-slate-700 hover:bg-slate-800"
-                    }`}
-                  >
-                    <div className="flex items-center justify-between text-xs font-bold text-slate-200">
-                      <span>{cam.id}</span>
-                      <span className="text-[10px] text-rose-400 font-mono">
-                        REC
-                      </span>
-                    </div>
-                    <div className="text-xs font-semibold text-white mt-1 truncate">
-                      {cam.title}
-                    </div>
-                    <div className="text-[10px] text-slate-400 mt-0.5">
-                      {cam.branch}
-                    </div>
-                  </button>
-                ))}
-              </div>
-            </div>
-          </div>
-        </div>
+        <CctvCommandCenter
+          currentUser={currentUser}
+          businesses={businesses}
+          onClose={() => setShowCctvModal(false)}
+        />
       )}
     </div>
   );
