@@ -35,6 +35,7 @@ import { CurrencyCode } from "@/lib/currency";
 import { getOfflineQueue } from "@/lib/offlineSync";
 import { installSessionBridge, setSessionToken, clearSessionToken } from "@/lib/sessionBridge";
 import { Loader2 } from "lucide-react";
+import { setCompanyLogo } from "@/lib/logos";
 
 export default function GoMinaApp() {
   const [loading, setLoading] = useState(true);
@@ -118,6 +119,7 @@ export default function GoMinaApp() {
         // otherwise a stale notice would keep covering the working app.
         setError(null);
         setBusinesses(data.businesses || []);
+        setCompanyLogo(data.companyLogo || null);
         setMetrics(data.metrics || []);
         setUsersList(data.users || []);
         // Keep the signed-in user object in sync with freshly fetched rows

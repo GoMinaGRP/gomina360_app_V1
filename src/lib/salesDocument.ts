@@ -1,5 +1,6 @@
 import { formatMoney, CurrencyCode } from './currency';
 import { COMPANY_INFO, companyAddressBlock } from './companyInfo';
+import { resolveLogo } from './logos';
 import QRCode from 'qrcode';
 
 export interface SalesDocumentData {
@@ -107,24 +108,40 @@ export async function generateSalesDocumentPDF(data: SalesDocumentData): Promise
   doc.setFillColor(...style.color);
   doc.rect(0, 0, pageW, 8, 'F');
 
+  // ── Logo: branch logo → business logo → company logo (automatic per
+  //     the record's business + branch) ──
+  let textX = 14;
+  const logo = resolveLogo(businessInfo as any, document.branchCode);
+  if (logo) {
+    try {
+      const props = doc.getImageProperties(logo);
+      const boxW = 26, boxH = 18;
+      const scale = Math.min(boxW / props.width, boxH / props.height);
+      const w = props.width * scale;
+      const h = props.height * scale;
+      doc.addImage(logo, props.fileType || 'JPEG', 14, 11, w, h);
+      textX = 14 + w + 5;
+    } catch { /* a corrupt image never blocks document generation */ }
+  }
+
   // ── Company information block ──
   let y = 14;
   doc.setTextColor(0, 0, 0);
   doc.setFontSize(16);
   doc.setFont('helvetica', 'bold');
-  doc.text(COMPANY_INFO.name, 14, y);
+  doc.text(COMPANY_INFO.name, textX, y);
 
   doc.setFontSize(8);
   doc.setFont('helvetica', 'normal');
   doc.setTextColor(100, 100, 100);
   y += 5;
-  doc.text(COMPANY_INFO.tagline, 14, y);
+  doc.text(COMPANY_INFO.tagline, textX, y);
   y += 4;
-  doc.text(`${COMPANY_INFO.address}, ${COMPANY_INFO.city}, ${COMPANY_INFO.region} — ${COMPANY_INFO.country}`, 14, y);
+  doc.text(`${COMPANY_INFO.address}, ${COMPANY_INFO.city}, ${COMPANY_INFO.region} — ${COMPANY_INFO.country}`, textX, y);
   y += 4;
-  doc.text(`Tel: ${COMPANY_INFO.phone}  |  Email: ${COMPANY_INFO.email}  |  Web: ${COMPANY_INFO.website}`, 14, y);
+  doc.text(`Tel: ${COMPANY_INFO.phone}  |  Email: ${COMPANY_INFO.email}  |  Web: ${COMPANY_INFO.website}`, textX, y);
   y += 4;
-  doc.text(`Reg: ${COMPANY_INFO.registrationNumber}  |  TIN: ${COMPANY_INFO.taxId}`, 14, y);
+  doc.text(`Reg: ${COMPANY_INFO.registrationNumber}  |  TIN: ${COMPANY_INFO.taxId}`, textX, y);
 
   // ── Document type badge (top right) ──
   doc.setFontSize(22);

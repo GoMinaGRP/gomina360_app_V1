@@ -32,6 +32,7 @@ import { EmployeeRegistration, EmployeeProfile } from "./EmployeeCenter";
 import { Landmark } from "lucide-react";
 import { buildInventoryQr } from "@/lib/qrRegistry";
 import { generateAssetDownload, downloadFile, generateDownloadId, AssetDownloadFilters } from "@/lib/assetDownload";
+import { resolveLogo } from "@/lib/logos";
 import { generateInventoryDownload, generateInventoryDownloadId, InventoryDownloadFilters } from "@/lib/inventoryDownload";
 import { FileSpreadsheet, FileText, FileIcon, Download, SlidersHorizontal, X, QrCode } from "lucide-react";
 
@@ -557,6 +558,12 @@ export default function SharedEnterpriseModule({
         downloaderBranchName: userBusiness?.name,
         currency: currentCurrency,
         filters,
+        // Correct-business logo: the filtered business (its branch override
+        // when a branch is selected); company logo for all-business reports.
+        logo: resolveLogo(
+          dlFilterBusinessId === "ALL" ? null : businesses.find((b: any) => String(b.id) === String(dlFilterBusinessId)) || null,
+          dlFilterBranchCode === "ALL" ? null : dlFilterBranchCode
+        ),
       });
 
       // Record download in database
@@ -637,6 +644,12 @@ export default function SharedEnterpriseModule({
         downloaderBranchName: userBusiness?.name,
         currency: currentCurrency,
         filters,
+        // Correct-business logo: the filtered business (its branch override
+        // when a branch is selected); company logo for all-business reports.
+        logo: resolveLogo(
+          dlFilterBusinessId === "ALL" ? null : businesses.find((b: any) => String(b.id) === String(dlFilterBusinessId)) || null,
+          dlFilterBranchCode === "ALL" ? null : dlFilterBranchCode
+        ),
       });
 
       // Record download

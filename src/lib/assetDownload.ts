@@ -23,6 +23,7 @@ export interface AssetDownloadData {
   downloaderBranchName?: string;
   currency: CurrencyCode;
   filters?: AssetDownloadFilters;
+  logo?: string | null; // resolved business/company logo for the report header
 }
 
 export interface AssetDownloadResult {
@@ -198,7 +199,8 @@ async function generatePDF(
     downloaderBranchCode?: string;
     downloaderBranchName?: string;
   },
-  filters?: AssetDownloadFilters
+  filters?: AssetDownloadFilters,
+  logo?: string | null
 ): Promise<Blob> {
   const { default: jsPDF } = await import('jspdf');
   const { default: autoTable } = await import('jspdf-autotable');
@@ -210,10 +212,24 @@ async function generatePDF(
   // ── Brand header band ──
   doc.setFillColor(16, 185, 129); // emerald-500
   doc.rect(0, 0, pageW, 18, 'F');
+  let headX = 14;
+  if (logo) {
+    try {
+      const props = doc.getImageProperties(logo);
+      const scale = Math.min(12 / props.width, 12 / props.height);
+      const w = props.width * scale;
+      const h = props.height * scale;
+      doc.setFillColor(255, 255, 255);
+      doc.roundedRect(13, 3, w + 2, h + 2, 1.2, 1.2, 'F');
+      doc.addImage(logo, props.fileType || 'JPEG', 14, 4, w, h);
+      headX = 14 + w + 6;
+    } catch { /* logo is best-effort */ }
+    doc.setFillColor(16, 185, 129); // restore band color for later use
+  }
   doc.setTextColor(255, 255, 255);
   doc.setFontSize(14);
   doc.setFont('helvetica', 'bold');
-  doc.text('GoMina 360 — Enterprise Asset Register Report', 14, 12);
+  doc.text('GoMina 360 — Enterprise Asset Register Report', headX, 12);
   doc.setFontSize(9);
   doc.text('Confidential Business Document', pageW - 14, 12, { align: 'right' });
 
@@ -448,7 +464,8 @@ export async function generateAssetDownload(data: AssetDownloadData): Promise<As
           downloaderBranchCode,
           downloaderBranchName,
         },
-        data.filters
+        data.filters,
+        data.logo
       );
       fileName = `assets-${downloadId}-${timestamp}.pdf`;
       break;

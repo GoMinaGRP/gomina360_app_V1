@@ -115,7 +115,23 @@ export const businesses = pgTable("businesses", {
   initialCapitalGhs: doublePrecision("initial_capital_ghs").notNull(),
   monthlyTargetRevenueGhs: doublePrecision("monthly_target_revenue_ghs").notNull(),
   iconName: text("icon_name").default("Building2"),
+  // Branding — business logo (base64 data URL) and per-branch overrides.
+  // Resolution on documents: branch logo → business logo → company logo.
+  logo: text("logo"),
+  branchLogos: jsonb("branch_logos"), // { "BRANCH-CODE": "data:image/..." }
   createdAt: timestamp("created_at").defaultNow(),
+});
+
+/** Group-wide company settings (single live row, id=1) — the GoMina
+ *  company logo used as the ultimate fallback on every generated document,
+ *  and on group-level reports that span multiple businesses. */
+export const companySettings = pgTable("company_settings", {
+  id: serial("id").primaryKey(),
+  companyLogo: text("company_logo"),
+  updatedByUserId: integer("updated_by_user_id"),
+  updatedByName: text("updated_by_name"),
+  updatedByRole: text("updated_by_role"),
+  updatedAt: timestamp("updated_at").defaultNow(),
 });
 
 // 3. Overall Financial Performance & Performance Metrics per Business

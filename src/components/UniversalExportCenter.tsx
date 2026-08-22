@@ -23,6 +23,7 @@ import {
   UniversalExportMeta,
   UniversalExportType,
 } from "@/lib/universalExport";
+import { resolveLogo } from "@/lib/logos";
 
 interface Props {
   activeModule: string;
@@ -379,6 +380,7 @@ export default function UniversalExportCenter({ activeModule, currentUser, busin
     businessName: business?.name || null,
     branchCode: business?.code || null,
     branchName: business?.name || null,
+    logo: resolveLogo(business, business?.code || null),
     filters: exportFilters,
     recordCount,
   });

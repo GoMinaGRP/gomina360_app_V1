@@ -30,6 +30,7 @@ import {
   payrollEntries,
   payrollAttendance,
   payrollStatutoryConfig,
+  companySettings,
   employeeHistory,
   auditAssignments,
   auditReviews,
@@ -1518,6 +1519,14 @@ export async function seedDatabase() {
       updatedByName: "Kwame Mina",
       updatedByRole: "OWNER",
     })
+    .onConflictDoNothing();
+
+  // 12c-logo. Company settings — one live row (id=1) holding the GoMina
+  // company logo (group fallback for every generated document). Uploaded
+  // later by the OWNER in Manage Businesses → Logos.
+  await db
+    .insert(companySettings)
+    .values({ id: 1, companyLogo: null })
     .onConflictDoNothing();
 
   // 12d. Supervisor & Auditor baseline — one auditor grant (Comfort Agbenyega,

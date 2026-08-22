@@ -42,6 +42,7 @@ import {
   Cell,
 } from "recharts";
 import AiSectionGuide from "./AiSectionGuide";
+import { resolveLogo, getCompanyLogo } from "@/lib/logos";
 
 /**
  * Payroll Command Center — the complete payroll management system behind the
@@ -385,10 +386,31 @@ export default function PayrollCenter({ currentUser, businesses, employees, onCh
     const autoTable = (await import("jspdf-autotable")).default;
     const doc = new jsPDF({ orientation: "landscape" });
     const rows = reportRows(list);
+    // Logo: the run's business/branch (single-run downloads), the filtered
+    // business, or the company logo for the combined report.
+    let pdfLogo: string | null = null;
+    if (list.length === 1) {
+      pdfLogo = resolveLogo(businesses.find((b) => b.id === list[0].businessId), list[0].branchCode);
+    } else if (bizFilter !== "ALL") {
+      pdfLogo = resolveLogo(businesses.find((b) => String(b.id) === String(bizFilter)), null);
+    } else {
+      pdfLogo = getCompanyLogo();
+    }
+    let titleX = 14;
+    if (pdfLogo) {
+      try {
+        const props = doc.getImageProperties(pdfLogo);
+        const scale = Math.min(20 / props.width, 13 / props.height);
+        const w = props.width * scale;
+        const h = props.height * scale;
+        doc.addImage(pdfLogo, props.fileType || "JPEG", 14, 4, w, h);
+        titleX = 14 + w + 4;
+      } catch { /* logo is best-effort */ }
+    }
     doc.setFontSize(14);
-    doc.text("GoMina 360 — Payroll Report", 14, 12);
+    doc.text("GoMina 360 — Payroll Report", titleX, 12);
     doc.setFontSize(8);
-    doc.text(`Generated ${new Date().toLocaleString()} · ${rows.length} entr${rows.length === 1 ? "y" : "ies"} · SSNIT T1 ${statutory?.config?.ssnitEmployeePct}%EE/${statutory?.config?.ssnitEmployerPct}%ER · Tier-2 ${statutory?.config?.tier2Pct}% (${statutory?.config?.tier2Bearer})`, 14, 17);
+    doc.text(`Generated ${new Date().toLocaleString()} · ${rows.length} entr${rows.length === 1 ? "y" : "ies"} · SSNIT T1 ${statutory?.config?.ssnitEmployeePct}%EE/${statutory?.config?.ssnitEmployerPct}%ER · Tier-2 ${statutory?.config?.tier2Pct}% (${statutory?.config?.tier2Bearer})`, titleX, 17);
     autoTable(doc, {
       startY: 21,
       styles: { fontSize: 6.5, cellPadding: 1 },
@@ -432,12 +454,14 @@ export default function PayrollCenter({ currentUser, businesses, employees, onCh
 
   const printSlip = (run: any, e: any) => {
     const biz = businesses.find((b) => b.id === e.businessId);
+    const slipLogo = resolveLogo(biz, e.branchCode);
     const html = `<!doctype html><html><head><title>Payslip — ${e.employeeName} — ${periodLabel(run.period)}</title>
       <style>body{font-family:Arial,sans-serif;color:#0f172a;padding:32px;max-width:640px;margin:auto}
       h1{font-size:20px;margin:0}h2{font-size:14px;color:#475569;margin:4px 0 16px}
       table{width:100%;border-collapse:collapse;margin-top:12px}td,th{border:1px solid #cbd5e1;padding:8px;font-size:13px;text-align:left}
       .num{text-align:right}.net{background:#ecfdf5;font-weight:bold}.muted{color:#64748b;font-size:12px}
       .badge{display:inline-block;padding:2px 10px;border:1px solid #0f172a;border-radius:999px;font-size:11px}</style></head><body>
+      ${slipLogo ? `<img src="${slipLogo}" alt="logo" style="max-height:64px;max-width:170px;object-fit:contain;margin-bottom:8px"/>` : ""}
       <h1>GoMina 360 — Payslip</h1>
       <h2>${biz?.name || ""} · Branch ${e.branchCode} · ${periodLabel(run.period)}</h2>
       <p><b>${e.employeeName}</b> — ${e.employeeRole || "Staff"} <span class="badge">${e.status}</span></p>
@@ -1235,9 +1259,12 @@ export default function PayrollCenter({ currentUser, businesses, employees, onCh
         <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
           <div className="bg-white text-slate-900 rounded-2xl w-full max-w-lg shadow-2xl overflow-hidden" data-testid="prl-slip">
             <div className="bg-slate-900 text-white px-5 py-4 flex items-center justify-between">
-              <div>
-                <h4 className="font-bold">GoMina 360 — Payslip</h4>
-                <p className="text-[11px] text-slate-300">{businesses.find((b) => b.id === slip.entry.businessId)?.name} · {slip.entry.branchCode} · {periodLabel(slip.run.period)}</p>
+              <div className="flex items-center gap-3">
+                {(() => { const l = resolveLogo(businesses.find((b) => b.id === slip.entry.businessId), slip.entry.branchCode); return l ? <img src={l} alt="logo" className="h-10 w-10 rounded-lg object-contain bg-white p-0.5" data-testid="prl-slip-logo" /> : null; })()}
+                <div>
+                  <h4 className="font-bold">GoMina 360 — Payslip</h4>
+                  <p className="text-[11px] text-slate-300">{businesses.find((b) => b.id === slip.entry.businessId)?.name} · {slip.entry.branchCode} · {periodLabel(slip.run.period)}</p>
+                </div>
               </div>
               <button onClick={() => setSlip(null)} className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700" aria-label="Close" data-testid="prl-slip-close"><X className="w-4 h-4" /></button>
             </div>

@@ -18,6 +18,7 @@ export interface UniversalExportMeta {
   businessName?: string | null;
   branchCode?: string | null;
   branchName?: string | null;
+  logo?: string | null; // resolved business/branch/company logo (data URL)
   filters?: Record<string, any>;
   recordCount: number;
 }
@@ -108,11 +109,24 @@ async function generatePdf(records: any[], meta: UniversalExportMeta, qrData: st
   doc.setFillColor(15, 23, 42);
   doc.rect(0, 0, pageW, 22, "F");
   doc.setTextColor(255, 255, 255);
+  let headX = 12;
+  if (meta.logo) {
+    try {
+      const props = doc.getImageProperties(meta.logo);
+      const scale = Math.min(15 / props.width, 15 / props.height);
+      const w = props.width * scale;
+      const h = props.height * scale;
+      doc.setFillColor(255, 255, 255);
+      doc.roundedRect(11, 3.5, w + 2, h + 2, 1.2, 1.2, "F");
+      doc.addImage(meta.logo, props.fileType || "JPEG", 12, 4.5, w, h);
+      headX = 12 + w + 6;
+    } catch { /* logo is best-effort, never blocks the export */ }
+  }
   doc.setFont("helvetica", "bold");
   doc.setFontSize(18);
-  doc.text("GoMina 360", 12, 10);
+  doc.text("GoMina 360", headX, 10);
   doc.setFontSize(11);
-  doc.text(`${meta.moduleLabel} — ${meta.exportType === "DASHBOARD" ? "Dashboard Summary" : "Detailed Report"}`, 12, 17);
+  doc.text(`${meta.moduleLabel} — ${meta.exportType === "DASHBOARD" ? "Dashboard Summary" : "Detailed Report"}`, headX, 17);
   doc.setFontSize(8);
   doc.text(`Export ID: ${meta.exportId}`, pageW - 12, 9, { align: "right" });
   doc.text(`Generated: ${new Date(meta.exportedAt).toLocaleString()}`, pageW - 12, 15, { align: "right" });

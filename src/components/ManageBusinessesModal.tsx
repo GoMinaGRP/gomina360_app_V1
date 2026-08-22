@@ -5,6 +5,7 @@ import {
   AlertTriangle,
   ArrowLeft,
   Building2,
+  Image as ImageIcon,
   MapPin,
   Pencil,
   Plus,
@@ -15,6 +16,32 @@ import {
   X,
 } from "lucide-react";
 import LocationSelector, { LocationValue } from "./LocationSelector";
+
+/** Resize an uploaded image to a compact base64 data-URL (≤512px JPEG) —
+ *  the same convention used for employee photos and document uploads. */
+async function logoFileToDataUrl(file: File | Blob, max = 512): Promise<string> {
+  const dataUrl = await new Promise<string>((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => resolve(String(r.result));
+    r.onerror = reject;
+    r.readAsDataURL(file);
+  });
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => {
+      const scale = Math.min(1, max / Math.max(img.width, img.height));
+      const w = Math.round(img.width * scale) || 1;
+      const h = Math.round(img.height * scale) || 1;
+      const c = document.createElement("canvas");
+      c.width = w;
+      c.height = h;
+      c.getContext("2d")!.drawImage(img, 0, 0, w, h);
+      resolve(c.toDataURL("image/jpeg", 0.85));
+    };
+    img.onerror = () => resolve(dataUrl);
+    img.src = dataUrl;
+  });
+}
 
 const CATEGORIES = [
   "Poultry Farm",
@@ -46,7 +73,7 @@ interface ManageBusinessesModalProps {
   onDeleted?: (code: string) => void;
 }
 
-type Mode = "list" | "edit" | "delete" | "reset";
+type Mode = "list" | "edit" | "delete" | "reset" | "logos";
 
 export default function ManageBusinessesModal({
   isOpen,
@@ -89,6 +116,12 @@ export default function ManageBusinessesModal({
   const [resetCounts, setResetCounts] = useState<any | null>(null);
   const [resetMasters, setResetMasters] = useState(false);
   const [resetStaffUsers, setResetStaffUsers] = useState(false);
+
+  // Logo-manager state (mode === "logos")
+  const [logoBusy, setLogoBusy] = useState(false);
+  const [companyLogo, setCompanyLogoState] = useState<string | null>(null);
+  const [branchCode, setBranchCode] = useState("");
+  const [branchLogoFile, setBranchLogoFile] = useState<string | null>(null);
 
   const sorted = useMemo(
     () => [...businesses].sort((a, b) => a.id - b.id),
@@ -162,6 +195,81 @@ export default function ManageBusinessesModal({
       if (res.ok && d?.success) setResetCounts(d.counts);
     } catch {
       /* counts are informational only */
+    }
+  };
+
+  // ── Logo management ────────────────────────────────────────────────────
+  // The OWNER (or a manager the OWNER approved via record-management
+  // permission) can set: the GoMina company logo, each business's logo, and
+  // per-branch overrides. Documents resolve branch → business → company.
+  const openLogos = async (biz: any) => {
+    setSelected(biz);
+    setBranchCode(biz.code || "");
+    setBranchLogoFile(null);
+    setError("");
+    setNotice("");
+    setMode("logos");
+    try {
+      const res = await fetch("/api/logos");
+      const d = await res.json().catch(() => null);
+      if (res.ok && d?.success) setCompanyLogoState(d.companyLogo || null);
+    } catch {
+      /* informational only */
+    }
+  };
+
+  const postLogo = async (payload: any): Promise<boolean> => {
+    setLogoBusy(true);
+    setError("");
+    try {
+      const res = await fetch("/api/logos", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ actorUserId: currentUser?.id ?? null, ...payload }),
+      });
+      const d = await res.json().catch(() => null);
+      if (!res.ok || !d?.success) {
+        setError(d?.error || "Failed to save the logo.");
+        return false;
+      }
+      await onChanged(); // refresh bootstrap so every document resolves the new logo
+      if (payload.action === "SET_COMPANY_LOGO") setCompanyLogoState(d.companyLogo ?? null);
+      return true;
+    } catch (err: any) {
+      setError(err?.message || "Network error while saving the logo.");
+      return false;
+    } finally {
+      setLogoBusy(false);
+    }
+  };
+
+  const uploadCompanyLogo = async (file: File) => {
+    const logo = await logoFileToDataUrl(file);
+    if (await postLogo({ action: "SET_COMPANY_LOGO", logo })) {
+      setNotice("GoMina company logo saved — it now appears on every document whose business/branch has no own logo.");
+    }
+  };
+
+  const uploadBusinessLogo = async (bizId: number, bizName: string, file: File) => {
+    const logo = await logoFileToDataUrl(file);
+    if (await postLogo({ action: "SET_BUSINESS_LOGO", businessId: bizId, logo })) {
+      setNotice(`"${bizName}" logo saved — it now heads this business's invoices, receipts, quotations, payslips and reports.`);
+    }
+  };
+
+  const saveBranchLogo = async () => {
+    const code = branchCode.trim().toUpperCase();
+    if (!selected || !code || !branchLogoFile) return;
+    if (await postLogo({ action: "SET_BRANCH_LOGO", businessId: selected.id, branchCode: code, logo: branchLogoFile })) {
+      setNotice(`Branch ${code} logo saved — documents for branch ${code} now use this logo automatically.`);
+      setBranchLogoFile(null);
+    }
+  };
+
+  const removeBranchLogo = async (code: string) => {
+    if (!selected) return;
+    if (await postLogo({ action: "SET_BRANCH_LOGO", businessId: selected.id, branchCode: code, logo: null })) {
+      setNotice(`Branch ${code} logo removed — that branch falls back to the business logo.`);
     }
   };
 
@@ -342,6 +450,7 @@ export default function ManageBusinessesModal({
                 {mode === "edit" && `Editing ${selected?.name} (${selected?.code})`}
                 {mode === "delete" && `Confirm permanent deletion of ${selected?.name}`}
                 {mode === "reset" && `Reset ${selected?.name} to a new business state`}
+                {mode === "logos" && `Company & business logos — ${selected?.name} (${selected?.code})`}
               </p>
             </div>
           </div>
@@ -357,6 +466,7 @@ export default function ManageBusinessesModal({
             )}
             <button
               onClick={onClose}
+              data-testid="manage-biz-close"
               className="p-1 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-white"
             >
               <X className="w-5 h-5" />
@@ -477,6 +587,14 @@ export default function ManageBusinessesModal({
                               <Pencil className="w-4 h-4" />
                             </button>
                             <button
+                              onClick={() => openLogos(biz)}
+                              data-testid={`manage-biz-logos-${biz.code}`}
+                              title="Company & business logos — shown on invoices, receipts, quotations, payslips, reports & PDFs"
+                              className="p-2 rounded-lg bg-slate-700/70 hover:bg-fuchsia-500/30 text-slate-200 hover:text-fuchsia-300 transition"
+                            >
+                              <ImageIcon className="w-4 h-4" />
+                            </button>
+                            <button
                               onClick={() => handleToggleActive(biz)}
                               disabled={busy}
                               data-testid={`manage-biz-deactivate-${biz.code}`}
@@ -523,6 +641,186 @@ export default function ManageBusinessesModal({
               </div>
             </>
           )}
+
+          {/* ============ LOGOS MODE ============ */}
+          {mode === "logos" && selected && (() => {
+            const bizRow = sorted.find((b) => b.id === selected.id) || selected;
+            const branchMap = (bizRow.branchLogos as any) || {};
+            const branchEntries = Object.keys(branchMap).filter((k) => branchMap[k]);
+            return (
+              <div className="space-y-4" data-testid="bizlogo-mgr">
+                <div className="rounded-xl bg-fuchsia-500/10 border border-fuchsia-500/25 p-3 text-[11px] text-fuchsia-200/90 leading-relaxed">
+                  Logos are saved centrally once and used <b>everywhere automatically</b> — invoices,
+                  receipts, quotations, payslips, reports, statements and all downloadable PDFs.
+                  Resolution per document: <b>branch logo → business logo → GoMina company logo</b>.
+                </div>
+
+                {/* ── Company (group) logo ── */}
+                <div className="rounded-xl border border-slate-700 bg-slate-800/60 p-3.5">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className="w-14 h-14 rounded-xl bg-white flex items-center justify-center shrink-0 overflow-hidden">
+                        {companyLogo ? (
+                          <img src={companyLogo} alt="GoMina company logo" className="max-h-12 max-w-12 object-contain" data-testid="bizlogo-company-preview" />
+                        ) : (
+                          <Building2 className="w-6 h-6 text-slate-400" />
+                        )}
+                      </div>
+                      <div className="min-w-0">
+                        <p className="font-bold text-sm text-white">GoMina Company Logo</p>
+                        <p className="text-[11px] text-slate-400">Group-level fallback — used when a business/branch has no own logo, and on group-wide reports.</p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <label className={`px-2.5 py-1.5 rounded-lg bg-fuchsia-600 hover:bg-fuchsia-500 text-white text-[11px] font-bold cursor-pointer ${logoBusy ? "opacity-50 pointer-events-none" : ""}`}>
+                        {companyLogo ? "Replace" : "Upload"}
+                        <input
+                          type="file"
+                          accept="image/*"
+                          className="hidden"
+                          data-testid="bizlogo-company-upload"
+                          disabled={logoBusy}
+                          onChange={async (e) => {
+                            const f = e.target.files?.[0];
+                            e.target.value = "";
+                            if (f) await uploadCompanyLogo(f);
+                          }}
+                        />
+                      </label>
+                      {companyLogo && (
+                        <button
+                          onClick={async () => {
+                            if (await postLogo({ action: "SET_COMPANY_LOGO", logo: null })) setNotice("Company logo removed.");
+                          }}
+                          disabled={logoBusy}
+                          data-testid="bizlogo-company-remove"
+                          className="px-2.5 py-1.5 rounded-lg bg-slate-700/70 hover:bg-rose-500/30 text-slate-200 hover:text-rose-300 text-[11px] font-bold"
+                        >
+                          Remove
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                {/* ── Business logo ── */}
+                <div className="rounded-xl border border-slate-700 bg-slate-800/60 p-3.5">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className="w-14 h-14 rounded-xl bg-white flex items-center justify-center shrink-0 overflow-hidden">
+                        {bizRow.logo ? (
+                          <img src={bizRow.logo} alt={`${bizRow.name} logo`} className="max-h-12 max-w-12 object-contain" data-testid={`bizlogo-preview-${bizRow.id}`} />
+                        ) : (
+                          <Building2 className="w-6 h-6 text-slate-400" />
+                        )}
+                      </div>
+                      <div className="min-w-0">
+                        <p className="font-bold text-sm text-white">{bizRow.name} — Business Logo</p>
+                        <p className="text-[11px] text-slate-400">Heads this business's invoices, receipts, quotations, payslips, reports & PDFs (unless a branch override exists).</p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <label className={`px-2.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-bold cursor-pointer ${logoBusy ? "opacity-50 pointer-events-none" : ""}`}>
+                        {bizRow.logo ? "Replace" : "Upload"}
+                        <input
+                          type="file"
+                          accept="image/*"
+                          className="hidden"
+                          data-testid={`bizlogo-upload-${bizRow.id}`}
+                          disabled={logoBusy}
+                          onChange={async (e) => {
+                            const f = e.target.files?.[0];
+                            e.target.value = "";
+                            if (f) await uploadBusinessLogo(bizRow.id, bizRow.name, f);
+                          }}
+                        />
+                      </label>
+                      {bizRow.logo && (
+                        <button
+                          onClick={async () => {
+                            if (await postLogo({ action: "SET_BUSINESS_LOGO", businessId: bizRow.id, logo: null })) {
+                              setNotice(`"${bizRow.name}" logo removed — its documents fall back to the GoMina company logo.`);
+                            }
+                          }}
+                          disabled={logoBusy}
+                          data-testid={`bizlogo-remove-${bizRow.id}`}
+                          className="px-2.5 py-1.5 rounded-lg bg-slate-700/70 hover:bg-rose-500/30 text-slate-200 hover:text-rose-300 text-[11px] font-bold"
+                        >
+                          Remove
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                {/* ── Branch logo overrides ── */}
+                <div className="rounded-xl border border-slate-700 bg-slate-800/60 p-3.5 space-y-3">
+                  <div>
+                    <p className="font-bold text-sm text-white">Branch Logo Overrides — {bizRow.name}</p>
+                    <p className="text-[11px] text-slate-400">Give a specific branch its own logo. Its documents then use the branch logo instead of the business logo.</p>
+                  </div>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <input
+                      value={branchCode}
+                      onChange={(e) => setBranchCode(e.target.value.toUpperCase())}
+                      placeholder="BRANCH-CODE"
+                      data-testid={`bizlogo-branch-code-${bizRow.id}`}
+                      className="w-36 px-2.5 py-1.5 rounded-lg bg-slate-900 border border-slate-600 text-white text-xs font-mono uppercase"
+                    />
+                    <label className={`px-2.5 py-1.5 rounded-lg bg-slate-700/70 hover:bg-slate-600 text-slate-200 text-[11px] font-bold cursor-pointer ${logoBusy ? "opacity-50 pointer-events-none" : ""}`}>
+                      {branchLogoFile ? "Image chosen ✓" : "Choose image"}
+                      <input
+                        type="file"
+                        accept="image/*"
+                        className="hidden"
+                        data-testid={`bizlogo-branch-upload-${bizRow.id}`}
+                        disabled={logoBusy}
+                        onChange={async (e) => {
+                          const f = e.target.files?.[0];
+                          e.target.value = "";
+                          if (f) setBranchLogoFile(await logoFileToDataUrl(f));
+                        }}
+                      />
+                    </label>
+                    {branchLogoFile && (
+                      <img src={branchLogoFile} alt="pending branch logo" className="h-8 w-8 rounded-lg object-contain bg-white p-0.5" data-testid={`bizlogo-branch-pending-${bizRow.id}`} />
+                    )}
+                    <button
+                      onClick={saveBranchLogo}
+                      disabled={logoBusy || !branchCode.trim() || !branchLogoFile}
+                      data-testid={`bizlogo-branch-save-${bizRow.id}`}
+                      className="px-2.5 py-1.5 rounded-lg bg-cyan-600 hover:bg-cyan-500 disabled:opacity-40 disabled:pointer-events-none text-white text-[11px] font-bold"
+                    >
+                      Save branch logo
+                    </button>
+                  </div>
+                  <div className="space-y-1.5" data-testid={`bizlogo-branch-list-${bizRow.id}`}>
+                    {branchEntries.length === 0 && (
+                      <p className="text-[11px] text-slate-500 italic">No branch overrides — every branch uses the business logo.</p>
+                    )}
+                    {branchEntries.map((code) => (
+                      <div key={code} className="flex items-center justify-between gap-3 rounded-lg bg-slate-900/60 border border-slate-700 px-2.5 py-1.5">
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <img src={branchMap[code]} alt={`Branch ${code} logo`} className="h-8 w-8 rounded-lg object-contain bg-white p-0.5 shrink-0" />
+                          <span className="text-xs font-mono font-bold text-white">{code}</span>
+                          <span className="text-[10px] text-slate-500">documents for this branch use this logo automatically</span>
+                        </div>
+                        <button
+                          onClick={() => removeBranchLogo(code)}
+                          disabled={logoBusy}
+                          data-testid={`bizlogo-branch-del-${bizRow.id}-${code}`}
+                          className="p-1.5 rounded-lg bg-slate-700/70 hover:bg-rose-500/30 text-slate-300 hover:text-rose-300"
+                          title="Remove branch logo — falls back to the business logo"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
 
           {/* ============ EDIT MODE ============ */}
           {mode === "edit" && selected && (

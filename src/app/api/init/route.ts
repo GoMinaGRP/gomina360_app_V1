@@ -23,8 +23,10 @@ import {
   integrations,
   checklistTemplates,
   checklistEntries,
+  companySettings,
 } from "@/db/schema";
 import { seedDatabase } from "@/db/seed";
+import { eq } from "drizzle-orm";
 import { getSessionInfo, accessibleBusinessIds, filterByAccess } from "@/lib/auth";
 
 export async function GET(request: Request) {
@@ -103,6 +105,7 @@ export async function GET(request: Request) {
       success: true,
       accessibleBusinessIds: allowed,
       businesses: scopedBusinesses,
+      companyLogo: (await db.select().from(companySettings).where(eq(companySettings.id, 1)))[0]?.companyLogo || null,
       metrics: filterByAccess(allMetrics, allowed),
       users: scopedUsers,
       customers: allowed === null ? allCustomers : allCustomers.filter(
