@@ -5,11 +5,17 @@ import {
   payrollRuns,
   payrollEntries,
   payrollAttendance,
+  payrollStatutoryConfig,
   employees,
   businesses,
   transactions,
 } from "@/db/schema";
 import { eq, inArray, desc } from "drizzle-orm";
+import {
+  computeStatutory,
+  cfgFromRow,
+  type StatutoryConfig,
+} from "@/lib/payrollCalc";
 import {
   getSessionInfo,
   accessibleBusinessIds,
@@ -52,6 +58,31 @@ async function assertManage(user: any, businessId: number) {
   return null;
 }
 
+/** Load the live statutory configuration (single row id=1); falls back to
+ *  Ghana defaults if the row has never been saved. */
+async function loadStatutory(): Promise<{ cfg: StatutoryConfig; row: any | null }> {
+  const [row] = await db.select().from(payrollStatutoryConfig).where(eq(payrollStatutoryConfig.id, 1));
+  return { cfg: cfgFromRow(row), row: row || null };
+}
+
+/** Persist the statutory snapshot of computeStatutory() onto an entry row. */
+function statutoryColumnValues(b: ReturnType<typeof computeStatutory>, applyStatutory: boolean) {
+  return {
+    applyStatutory,
+    grossPayGhs: b.gross,
+    ssnitEmployeeGhs: b.ssnitEmployee,
+    ssnitEmployerGhs: b.ssnitEmployer,
+    tier2Ghs: b.tier2,
+    tier2Bearer: b.tier2Bearer,
+    taxableIncomeGhs: b.taxableIncome,
+    payeGhs: b.paye,
+    customDeductions: b.custom,
+    totalEmployeeDeductionsGhs: b.totalEmployeeDeductions,
+    employerContributionsGhs: b.employerContributions,
+    employerCostGhs: b.employerCost,
+  };
+}
+
 async function runWithEntries(runId: number) {
   const [run] = await db.select().from(payrollRuns).where(eq(payrollRuns.id, runId));
   if (!run) return null;
@@ -75,6 +106,15 @@ function totalsFor(entries: any[]) {
     paid: 0,
     outstanding: 0,
     paidCount: 0,
+    // Statutory aggregates (0 for legacy pre-statutory entries)
+    gross: 0,
+    ssnitEmployee: 0,
+    ssnitEmployer: 0,
+    tier2: 0,
+    paye: 0,
+    employeeDeductions: 0,
+    employerContributions: 0,
+    employerCost: 0,
   };
   for (const e of entries) {
     t.base += e.baseSalaryGhs || 0;
@@ -83,6 +123,14 @@ function totalsFor(entries: any[]) {
     t.overtimeHours += e.overtimeHours || 0;
     t.deductions += e.deductionsGhs || 0;
     t.net += e.netPayGhs || 0;
+    t.gross += e.grossPayGhs || 0;
+    t.ssnitEmployee += e.ssnitEmployeeGhs || 0;
+    t.ssnitEmployer += e.ssnitEmployerGhs || 0;
+    t.tier2 += e.tier2Ghs || 0;
+    t.paye += e.payeGhs || 0;
+    t.employeeDeductions += e.totalEmployeeDeductionsGhs || 0;
+    t.employerContributions += e.employerContributionsGhs || 0;
+    t.employerCost += e.employerCostGhs || 0;
     if (e.status === "PAID") {
       t.paid += e.netPayGhs || 0;
       t.paidCount++;
@@ -173,11 +221,20 @@ export async function GET(request: Request) {
       composition: Object.fromEntries(Object.entries(comp).map(([k, v]) => [k, round2(v)])),
     };
 
+    const { cfg, row: cfgRow } = await loadStatutory();
+
     return NextResponse.json({
       success: true,
       runs: runsFull,
       attendance,
       report,
+      statutory: {
+        config: cfg,
+        note: cfgRow?.note || null,
+        updatedByName: cfgRow?.updatedByName || null,
+        updatedByRole: cfgRow?.updatedByRole || null,
+        updatedAt: cfgRow?.updatedAt || null,
+      },
       scope: {
         isOwner: user.role === "OWNER",
         canManage: canManageSharedRecords(user),
@@ -224,6 +281,74 @@ export async function POST(request: Request) {
         })
         .returning();
       return NextResponse.json({ success: true, attendance: row });
+    }
+
+    // ── Save statutory rates & configuration (authorized users only) ────
+    if (body.action === "SAVE_STATUTORY") {
+      // Statutory configuration is enterprise-wide: the OWNER, or a manager
+      // the OWNER granted record-management permission, may change it.
+      if (user.role !== "OWNER" && !canManageSharedRecords(user)) {
+        return FORBIDDEN(
+          "Only the OWNER (or a manager the OWNER has granted record-management permission) can change statutory rates."
+        );
+      }
+      const d = body.data || {};
+      const pct = (v: any, fallback: number) => {
+        const n = Number(v);
+        return Number.isFinite(n) && n >= 0 && n <= 100 ? n : fallback;
+      };
+      const { row: existing } = await loadStatutory();
+      const cur = cfgFromRow(existing);
+
+      const bandsRaw = Array.isArray(d.payeBands) ? d.payeBands : cur.payeBands;
+      const payeBands = bandsRaw
+        .map((b: any) => ({
+          upto: b?.upto === null || b?.upto === undefined || b?.upto === "" ? null : Number(b.upto),
+          ratePct: Number(b?.ratePct),
+        }))
+        .filter((b: any) => (b.upto === null || (Number.isFinite(b.upto) && b.upto > 0)) && Number.isFinite(b.ratePct) && b.ratePct >= 0 && b.ratePct <= 100);
+      if (!payeBands.length || payeBands[payeBands.length - 1].upto !== null) {
+        return NextResponse.json(
+          { success: false, error: "PAYE bands must be valid and end with an open (unlimited) top band." },
+          { status: 400 }
+        );
+      }
+
+      const itemsRaw = Array.isArray(d.customItems) ? d.customItems : cur.customItems;
+      const customItems = itemsRaw
+        .map((c: any) => ({
+          name: String(c?.name || "").trim().slice(0, 60),
+          pct: Number(c?.pct),
+          bearer: c?.bearer === "EMPLOYEE" ? "EMPLOYEE" : "EMPLOYER",
+          base: c?.base === "GROSS" ? "GROSS" : "BASIC",
+          active: c?.active !== false,
+        }))
+        .filter((c: any) => c.name && Number.isFinite(c.pct) && c.pct >= 0 && c.pct <= 100);
+
+      const values = {
+        ssnitEmployeePct: pct(d.ssnitEmployeePct, cur.ssnitEmployeePct),
+        ssnitEmployerPct: pct(d.ssnitEmployerPct, cur.ssnitEmployerPct),
+        tier2Pct: pct(d.tier2Pct, cur.tier2Pct),
+        tier2Bearer: d.tier2Bearer === "EMPLOYEE" ? "EMPLOYEE" : "EMPLOYER",
+        payeBands: payeBands as any,
+        customItems: customItems as any,
+        note: d.note !== undefined ? String(d.note || "").slice(0, 300) : existing?.note || null,
+        updatedByUserId: user.id,
+        updatedByName: user.name,
+        updatedByRole: user.role,
+        updatedAt: new Date(),
+      };
+
+      let row;
+      if (existing) {
+        [row] = await db.update(payrollStatutoryConfig).set(values).where(eq(payrollStatutoryConfig.id, 1)).returning();
+      } else {
+        [row] = await db.insert(payrollStatutoryConfig).values({ id: 1, ...values }).returning();
+      }
+      return NextResponse.json({
+        success: true,
+        statutory: { config: cfgFromRow(row), note: row.note, updatedByName: row.updatedByName, updatedByRole: row.updatedByRole, updatedAt: row.updatedAt },
+      });
     }
 
     // ── Create a payroll run (draft entries from active employees) ──────
@@ -274,6 +399,8 @@ export async function POST(request: Request) {
       otByEmp.set(a.employeeId, (otByEmp.get(a.employeeId) || 0) + (a.overtimeHours || 0));
     }
 
+    const { cfg } = await loadStatutory();
+
     const [run] = await db
       .insert(payrollRuns)
       .values({
@@ -291,6 +418,10 @@ export async function POST(request: Request) {
     for (const emp of staff) {
       const otHours = round2(otByEmp.get(emp.id) || 0);
       const otPay = otPayFor(emp.salaryGhs, otHours);
+      const b = computeStatutory(
+        { basic: emp.salaryGhs, allowances: 0, overtimePay: otPay, manualDeductions: 0, applyStatutory: true },
+        cfg
+      );
       await db.insert(payrollEntries).values({
         runId: run.id,
         employeeId: emp.id,
@@ -303,7 +434,8 @@ export async function POST(request: Request) {
         overtimeHours: otHours,
         overtimePayGhs: otPay,
         deductionsGhs: 0,
-        netPayGhs: round2(emp.salaryGhs + otPay),
+        netPayGhs: b.net,
+        ...statutoryColumnValues(b, true),
       });
     }
 
@@ -319,6 +451,11 @@ async function postPayrollTransaction(user: any, entry: any, run: any, method: s
   const now = new Date();
   const dateStr = now.toISOString().slice(0, 10);
   const trxNum = `TRX-${now.getFullYear()}-${crypto.randomInt(100000, 999999)}`;
+  // Statutory-era entries carry the full gross→deductions→net breakdown in
+  // the ledger description; legacy (pre-statutory) entries keep the old one.
+  const description = entry.grossPayGhs != null
+    ? `Payroll ${run.period} — ${entry.employeeName} (${entry.employeeRole || "Staff"}) · gross ${entry.grossPayGhs} − SSNIT ${entry.ssnitEmployeeGhs || 0} − PAYE ${entry.payeGhs || 0} − other ${round2((entry.totalEmployeeDeductionsGhs || 0) - (entry.ssnitEmployeeGhs || 0) - (entry.payeGhs || 0))} = net ${entry.netPayGhs}`
+    : `Payroll ${run.period} — ${entry.employeeName} (${entry.employeeRole || "Staff"}) · base ${entry.baseSalaryGhs} + allow ${entry.allowancesGhs} + OT ${entry.overtimePayGhs} − ded ${entry.deductionsGhs}`;
   const [trx] = await db
     .insert(transactions)
     .values({
@@ -330,7 +467,7 @@ async function postPayrollTransaction(user: any, entry: any, run: any, method: s
       category: "Staff Payroll",
       amountGhs: entry.netPayGhs,
       paymentMethod: method,
-      description: `Payroll ${run.period} — ${entry.employeeName} (${entry.employeeRole || "Staff"}) · base ${entry.baseSalaryGhs} + allow ${entry.allowancesGhs} + OT ${entry.overtimePayGhs} − ded ${entry.deductionsGhs}`,
+      description,
       date: dateStr,
       createdAt: now,
       status: "COMPLETED",
@@ -360,24 +497,68 @@ export async function PATCH(request: Request) {
       if (entry.status === "PAID") {
         return NextResponse.json({ success: false, error: "A paid entry cannot be edited." }, { status: 400 });
       }
+      const baseSalary = body.baseSalaryGhs !== undefined ? round2(Number(body.baseSalaryGhs) || 0) : entry.baseSalaryGhs;
       const allowances = body.allowancesGhs !== undefined ? round2(Number(body.allowancesGhs) || 0) : entry.allowancesGhs;
       const deductions = body.deductionsGhs !== undefined ? round2(Number(body.deductionsGhs) || 0) : entry.deductionsGhs;
       const otHours = body.overtimeHours !== undefined ? round2(Number(body.overtimeHours) || 0) : entry.overtimeHours;
-      const otPay = body.overtimeHours !== undefined ? otPayFor(entry.baseSalaryGhs, otHours) : entry.overtimePayGhs;
+      const otPay = body.overtimeHours !== undefined || body.baseSalaryGhs !== undefined ? otPayFor(baseSalary, otHours) : entry.overtimePayGhs;
+      const applyStatutory = body.applyStatutory !== undefined ? !!body.applyStatutory : entry.applyStatutory !== false;
+      const { cfg } = await loadStatutory();
+      const b = computeStatutory(
+        { basic: baseSalary, allowances, overtimePay: otPay, manualDeductions: deductions, applyStatutory },
+        cfg
+      );
       const [updated] = await db
         .update(payrollEntries)
         .set({
+          baseSalaryGhs: baseSalary,
           allowancesGhs: allowances,
           allowanceNote: body.allowanceNote !== undefined ? body.allowanceNote || null : entry.allowanceNote,
           deductionsGhs: deductions,
           deductionNote: body.deductionNote !== undefined ? body.deductionNote || null : entry.deductionNote,
           overtimeHours: otHours,
           overtimePayGhs: otPay,
-          netPayGhs: round2(entry.baseSalaryGhs + allowances + otPay - deductions),
+          netPayGhs: b.net,
+          ...statutoryColumnValues(b, applyStatutory),
         })
         .where(eq(payrollEntries.id, entryId))
         .returning();
       return NextResponse.json({ success: true, entry: updated });
+    }
+
+    // ── Recalculate all unpaid entries of a run with the current config ─
+    if (action === "RECALC_RUN") {
+      const runId = Number(body.runId);
+      const [run] = await db.select().from(payrollRuns).where(eq(payrollRuns.id, runId));
+      if (!run) return NextResponse.json({ success: false, error: "Run not found" }, { status: 404 });
+      const denial = await assertManage(user, run.businessId);
+      if (denial) return denial;
+      if (run.status === "PAID") {
+        return NextResponse.json({ success: false, error: "A paid run is locked on the audit trail." }, { status: 400 });
+      }
+      const { cfg } = await loadStatutory();
+      const entries = await db.select().from(payrollEntries).where(eq(payrollEntries.runId, runId));
+      let recalculated = 0;
+      for (const entry of entries) {
+        if (entry.status === "PAID") continue; // paid amounts never change
+        const applyStatutory = entry.applyStatutory !== false;
+        const b = computeStatutory(
+          {
+            basic: entry.baseSalaryGhs,
+            allowances: entry.allowancesGhs,
+            overtimePay: entry.overtimePayGhs,
+            manualDeductions: entry.deductionsGhs,
+            applyStatutory,
+          },
+          cfg
+        );
+        await db
+          .update(payrollEntries)
+          .set({ netPayGhs: b.net, ...statutoryColumnValues(b, applyStatutory) })
+          .where(eq(payrollEntries.id, entry.id));
+        recalculated++;
+      }
+      return NextResponse.json({ success: true, recalculated, run: await runWithEntries(runId) });
     }
 
     // ── Pay one entry: posts the expense transaction, marks PAID ────────

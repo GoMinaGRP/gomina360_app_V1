@@ -29,6 +29,7 @@ import {
   payrollRuns,
   payrollEntries,
   payrollAttendance,
+  payrollStatutoryConfig,
   auditAssignments,
   auditReviews,
   auditIssueUpdates,
@@ -1466,6 +1467,34 @@ export async function seedDatabase() {
     netPayGhs: 4697.36,
     status: "PENDING",
   });
+
+  // 12c-stat. Statutory configuration — one live row (id=1) with the Ghana
+  // defaults; editable later by the OWNER / authorized managers in Payroll
+  // Center → Statutory Settings when regulations change.
+  await db
+    .insert(payrollStatutoryConfig)
+    .values({
+      id: 1,
+      ssnitEmployeePct: 5.5,
+      ssnitEmployerPct: 13,
+      tier2Pct: 5,
+      tier2Bearer: "EMPLOYER",
+      payeBands: [
+        { upto: 490, ratePct: 0 },
+        { upto: 600, ratePct: 5 },
+        { upto: 730, ratePct: 10 },
+        { upto: 3896.67, ratePct: 17.5 },
+        { upto: 19896.67, ratePct: 25 },
+        { upto: 69896.67, ratePct: 30 },
+        { upto: null, ratePct: 35 },
+      ] as any,
+      customItems: [] as any,
+      note: "Ghana statutory defaults (2026)",
+      updatedByUserId: 1,
+      updatedByName: "Kwame Mina",
+      updatedByRole: "OWNER",
+    })
+    .onConflictDoNothing();
 
   // 12d. Supervisor & Auditor baseline — one auditor grant (Comfort Agbenyega,
   // Aqua worker → may audit the Poultry books: finance, payroll & attendance),

@@ -2091,9 +2091,17 @@ export const GUIDES: Record<string, Record<string, SectionGuide>> = {
         {
           name: "Print payslips & export reports",
           steps: [
-            "Expand a run and click the document icon on any employee row to open the payslip — print or save it as PDF.",
-            "The Reports & Charts tab shows the monthly payroll trend, cost composition (salaries/allowances/overtime/deductions) and paid-vs-outstanding per business.",
-            "Click “Download CSV” for the full payroll register with ledger references for audits.",
+            "Expand a run and click the document icon on any employee row to open the payslip — it shows gross pay, every employee deduction (SSNIT, PAYE, others), net pay and the employer's own contributions — print or save it as PDF.",
+            "The Reports & Charts tab shows the monthly payroll trend, cost composition, paid-vs-outstanding per business and the statutory remittance summary (SSNIT EE+ER, Tier-2, PAYE due per month).",
+            "Download the payroll register per run or combined as CSV, PDF or Excel — with full statutory columns and ledger references for audits.",
+          ],
+        },
+        {
+          name: "Keep statutory rates up to date",
+          steps: [
+            "Open the Statutory Settings tab (OWNER, or a manager with record-management permission).",
+            "Adjust SSNIT Tier-1 employee/employer percentages, the Tier-2 pension rate and who bears it, edit the PAYE monthly bands, or add other statutory contributions/levies.",
+            "Save — new runs use the new rates immediately; click “Recalculate with current statutory rates” on any open (unpaid) run to re-apply them there. Paid entries never change.",
           ],
         },
       ],
@@ -2102,6 +2110,9 @@ export const GUIDES: Record<string, Record<string, SectionGuide>> = {
         { q: "Where does a payment go after I pay?", match: ["finance", "transaction", "report", "update", "ledger"], answer: "Each payment creates a completed EXPENSE transaction (category “Staff Payroll”) against the employee's business and branch with the method used. Transactions & MoMo, the central Financial Report, business dashboards, payroll trends — everywhere updates immediately." },
         { q: "How is overtime calculated?", match: ["overtime", "ot", "rate", "hourly"], answer: "Hourly rate = monthly base salary ÷ 208 (26 days × 8 hours). Overtime is paid at 1.5× that rate. Hours recorded in the Attendance & OT tab for the payroll month flow into the run automatically when it is created." },
         { q: "Can a paid run be changed?", match: ["paid", "edit", "change", "delete", "vvoid", "reverse"], answer: "Paid entries and paid runs are locked for audit. Draft runs can be discarded entirely; an APPROVED run cannot be deleted — revert it by editing entries before payment, or leave it for the record." },
+        { q: "How are SSNIT, PAYE and net pay calculated?", match: ["ssnit", "paye", "tax", "statutory", "net", "deduction", "tier"], answer: "Gross = basic + allowances + overtime. Employee SSNIT = the configured % of basic (default 5.5%) and is deducted before tax; PAYE applies the configured progressive monthly bands to the taxable income (gross − employee SSNIT and any employee-borne pension/levies); net = gross − (SSNIT + PAYE + other deductions). The employer's own SSNIT share (default 13%) and Tier-2 pension show separately as employer contributions — they never come out of the employee's pay." },
+        { q: "Can I change statutory rates when regulations change?", match: ["rate", "regulation", "setting", "config", "update ssnit", "band", "levy", "editable"], answer: "Yes — the OWNER (or a manager with record-management permission) opens Payroll Center → Statutory Settings and edits SSNIT percentages, the Tier-2 rate and bearer, the PAYE bands, and can add other statutory contributions with their own %, base (basic/gross) and bearer. New runs and recalculated open runs use the saved configuration; paid entries are never recomputed." },
+        { q: "How do I adjust one employee's salary or deductions?", match: ["adjust", "manual", "override", "basic salary", "correct"], answer: "Expand the run and click the pencil icon on the employee's row (OWNER/authorized managers only, and only before payment). You can change basic salary, allowances, other deductions, overtime hours or switch statutory deductions off for that entry — the modal previews gross → deductions → net live, and saving recomputes everything with the current statutory configuration." },
       ],
     },
   },

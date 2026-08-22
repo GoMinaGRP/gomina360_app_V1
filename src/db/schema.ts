@@ -1113,6 +1113,22 @@ export const payrollEntries = pgTable("payroll_entries", {
   overtimePayGhs: doublePrecision("overtime_pay_ghs").notNull().default(0),
   deductionsGhs: doublePrecision("deductions_ghs").notNull().default(0),
   deductionNote: text("deduction_note"),
+  // ── Statutory engine (Ghana): SSNIT T1 (5.5% EE / 13% ER), Tier-2 pension,
+  //    PAYE bands, plus any custom statutory items from payroll_statutory_config.
+  //    All computed server-side at run creation / manual adjustment; legacy
+  //    (pre-statutory) paid entries keep null columns and stay locked. ──────
+  applyStatutory: boolean("apply_statutory").notNull().default(true),
+  grossPayGhs: doublePrecision("gross_pay_ghs"), // basic + allowances + OT pay
+  ssnitEmployeeGhs: doublePrecision("ssnit_employee_ghs"), // employee deduction
+  ssnitEmployerGhs: doublePrecision("ssnit_employer_ghs"), // employer contribution
+  tier2Ghs: doublePrecision("tier2_ghs"), // occupational pension (bearer per config)
+  tier2Bearer: text("tier2_bearer"), // EMPLOYER | EMPLOYEE (snapshot at calc time)
+  taxableIncomeGhs: doublePrecision("taxable_income_ghs"), // gross − employee SSNIT
+  payeGhs: doublePrecision("paye_ghs"), // PAYE tax on taxable income
+  customDeductions: jsonb("custom_deductions"), // [{name, amount, bearer}] snapshot
+  totalEmployeeDeductionsGhs: doublePrecision("total_employee_deductions_ghs"), // SSNIT EE + PAYE + manual + employee-borne items
+  employerContributionsGhs: doublePrecision("employer_contributions_ghs"), // SSNIT ER + employer-borne items
+  employerCostGhs: doublePrecision("employer_cost_ghs"), // gross + employer contributions
   netPayGhs: doublePrecision("net_pay_ghs").notNull(),
   status: text("status").notNull().default("PENDING"), // PENDING | PAID
   paymentMethod: text("payment_method"), // CASH | MTN_MOMO | BANK_TRANSFER | OTHER
@@ -1137,6 +1153,28 @@ export const payrollAttendance = pgTable("payroll_attendance", {
   recordedByUserId: integer("recorded_by_user_id"),
   recordedByName: text("recorded_by_name"),
   createdAt: timestamp("created_at").defaultNow(),
+});
+
+/** Statutory rates & configuration for payroll — one live row (id=1).
+ *  Editable by the OWNER / owner-authorized managers from the Payroll
+ *  Center "Statutory Settings" tab so the system keeps pace with Ghana
+ *  regulation changes (SSNIT T1 %EE/%ER, Tier-2 %, bearer, PAYE bands and
+ *  any custom statutory contributions). New runs and manual entry edits are
+ *  computed with these rates; PAID entries are never recomputed. */
+export const payrollStatutoryConfig = pgTable("payroll_statutory_config", {
+  id: serial("id").primaryKey(),
+  ssnitEmployeePct: doublePrecision("ssnit_employee_pct").notNull().default(5.5), // employee deduction (% of basic)
+  ssnitEmployerPct: doublePrecision("ssnit_employer_pct").notNull().default(13), // employer contribution (% of basic)
+  tier2Pct: doublePrecision("tier2_pct").notNull().default(5), // Tier-2 occupational pension (% of basic)
+  tier2Bearer: text("tier2_bearer").notNull().default("EMPLOYER"), // EMPLOYER | EMPLOYEE
+  payeBands: jsonb("paye_bands").notNull(), // progressive monthly bands [{upto: number|null, ratePct}]
+  customItems: jsonb("custom_items").notNull().default([]), // [{name, pct, bearer: EMPLOYEE|EMPLOYER, base: BASIC|GROSS}]
+  note: text("note"),
+  updatedByUserId: integer("updated_by_user_id"),
+  updatedByName: text("updated_by_name"),
+  updatedByRole: text("updated_by_role"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
 });
 
 // 20. Asset Downloads Audit Trail
