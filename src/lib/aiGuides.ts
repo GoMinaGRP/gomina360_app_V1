@@ -1975,7 +1975,7 @@ export const GUIDES: Record<string, Record<string, SectionGuide>> = {
     DEFAULT: {
       title: "Supervisor & Auditor Control Center",
       intro:
-        "Oversight for the whole group: review the records workers already keep — operations & production logs, sales & finance, inventory, employees, payroll, attendance, assets and CCTV — without creating any duplicate checklists. Verify what is right, flag what is wrong, comment, request corrections and attach evidence. Who reviewed, when, why and how it was resolved is tracked on an immutable audit trail. The OWNER controls every Auditor permission; authorized managers may manage Auditor access for their own branches; auditors see only what they are authorized to audit.",
+        "Oversight for the whole group: review the records workers already keep — daily checklists, operations & production logs, sales & finance, inventory, employees, payroll, attendance, assets and CCTV — without creating any duplicate checklists. Verify what is right, flag what is wrong (incomplete tasks included), comment, request corrections and attach photo evidence. Flagged issues travel the pipeline Flagged → Under Review → Correction Required → Resolved → Verified and are routed automatically to the assigned user's dashboard; every step — who, when, why, with what evidence — is on the issue thread and the immutable audit trail. The OWNER controls every Auditor permission; authorized managers may manage Auditor access for their own branches; auditors see only what they are authorized to audit.",
       tasks: [
         {
           name: "Review a record end-to-end",
@@ -1988,12 +1988,22 @@ export const GUIDES: Record<string, Record<string, SectionGuide>> = {
           ],
         },
         {
-          name: "Work the issues inbox",
+          name: "Work an issue through the pipeline",
           steps: [
-            "Open the Issues tab — every open flag and correction request across your scope is listed with the record, reason and who raised it.",
-            "Click Resolve on an issue once the worker or manager has fixed it.",
-            "Write the resolution note (how it was fixed) — the issue moves to Resolved with your name and the timestamp.",
-            "Switch between Open / Resolved / All to audit the full history of an issue.",
+            "Open the Issues tab — every flag and correction request across your scope shows its pipeline status, the assigned user, the linked record and full history.",
+            "When you flag or request a correction (reason required, photo evidence supported), the issue is routed to the assigned user's bell & My Audit Issues inbox automatically.",
+            "The assigned user responds with notes/photos and sends it back (Under Review) or marks the correction complete (Resolved) — you are notified.",
+            "Open Review response & verify: satisfied → Verify & close (terminal); not satisfied → Request correction to send it back to their dashboard.",
+            "Filter by pipeline stage: Flagged, Under Review, Correction Required, Resolved or Verified.",
+          ],
+        },
+        {
+          name: "Respond to issues assigned to you",
+          steps: [
+            "Watch the bell in the top bar (and the red strip on your dashboard) — flagged issues and correction requests assigned to you arrive there instantly.",
+            "Open My Audit Issues from the notification or the strip; each issue stays linked to the original checklist, activity or record.",
+            "Write your response, attach photo or document evidence, then choose Respond & mark for review or Correction complete — mark resolved.",
+            "The auditor is notified; watch for the Verified & closed confirmation when they accept it.",
           ],
         },
         {
@@ -2019,9 +2029,19 @@ export const GUIDES: Record<string, Record<string, SectionGuide>> = {
       ],
       faqs: [
         {
+          q: "How does the issue lifecycle work?",
+          match: ["lifecycle", "status", "pipeline", "flagged", "under review", "resolved", "verified", "close"],
+          answer: "Every issue travels: Flagged (auditor raises it) → Under Review (the assigned user responded with notes/photos and sent it back) → Correction Required (auditor sent it back for fixes) → Resolved (assigned user completed the correction) → Verified (auditor reviewed the response and closed it — terminal). Each step notifies the other side's bell and is written to the issue thread and the audit trail.",
+        },
+        {
+          q: "What happens when I flag a checklist task or a worker's record?",
+          match: ["flag", "route", "notify", "assigned", "dashboard", "worker", "incomplete task"],
+          answer: "The issue is automatically routed to the user responsible for that record: it lands on their notification bell and in My Audit Issues on their dashboard, linked to the original checklist or activity. They respond with a note and photo evidence, then either send it back for review or mark the correction complete — and you get notified to verify & close it.",
+        },
+        {
           q: "Who can see the Audit Center?",
           match: ["who can see", "access", "auditor see", "permission"],
-          answer: "The OWNER sees everything. General Managers, Branch Managers and Supervisors act as supervisors inside their accessible businesses. Any other user appears only after being granted Auditor access — and then they see strictly the businesses and modules in their grants. Workers without a grant never see the tab.",
+          answer: "The OWNER sees everything. General Managers, Branch Managers and Supervisors act as supervisors inside their accessible businesses. Any other user appears only after being granted Auditor access — and then they see strictly the businesses and modules in their grants. Workers without a grant never see the tab, but they still receive issues assigned to them via the bell and My Audit Issues.",
         },
         {
           q: "How are auditor permissions controlled?",
@@ -2031,12 +2051,7 @@ export const GUIDES: Record<string, Record<string, SectionGuide>> = {
         {
           q: "Does auditing change or duplicate worker records?",
           match: ["duplicate", "change records", "workflow", "checklist"],
-          answer: "Never. Reviews attach to the existing transactions, stock items, employees, payroll runs, attendance rows, assets, cameras and production logs. Workers keep their exact workflows; the Control Center only layers verification, flags, comments, correction requests and evidence on top, with a full audit trail.",
-        },
-        {
-          q: "What is the difference between a flag and a correction request?",
-          match: ["flag", "correction", "difference", "issue"],
-          answer: "Both open an issue against the record with your reason recorded. A flag marks something wrong or suspicious (e.g. amount mismatch); a correction request tells the responsible worker exactly what to fix and re-submit. Both stay OPEN until someone in scope resolves them with a resolution note.",
+          answer: "Never. Reviews attach to the existing transactions, stock items, employees, payroll runs, attendance rows, daily checklist completions, assets, cameras and production logs. Workers keep their exact workflows; the Control Center only layers verification, flags, comments, correction requests and evidence on top, with a full audit trail.",
         },
       ],
     },

@@ -33,9 +33,12 @@ import {
   electronicsLogs,
   carWashLogs,
   hardwareLogs,
+  checklistEntries,
   auditAssignments,
   auditReviews,
+  auditIssueUpdates,
   auditTrail,
+  notifications,
   AUDIT_MODULES,
 } from "@/db/schema";
 import { getSessionInfo, accessibleBusinessIds, FORBIDDEN, UNAUTHENTICATED } from "@/lib/auth";
@@ -49,6 +52,32 @@ const REVIEW_TO_TRAIL: Record<string, string> = {
   COMMENT: "COMMENT",
   CORRECTION_REQUESTED: "REQUEST_CORRECTION",
 };
+
+/** Issue pipeline: FLAGGED → UNDER_REVIEW → CORRECTION_REQUIRED → RESOLVED →
+ *  VERIFIED. "OPEN" is the first-release legacy value for FLAGGED. */
+const ISSUE_ACTIONS = ["FLAGGED", "CORRECTION_REQUESTED"];
+const OPEN_STATUSES = ["FLAGGED", "UNDER_REVIEW", "CORRECTION_REQUIRED"]; // actively awaiting work/verification
+const normStatus = (s: string | null | undefined) => (s === "OPEN" ? "FLAGGED" : s || "INFO");
+const isIssue = (r: any) => ISSUE_ACTIONS.includes(r.action);
+const isOpenIssue = (r: any) => isIssue(r) && OPEN_STATUSES.includes(normStatus(r.status));
+
+/** Notifies a user's dashboard (bell) about issue workflow events. */
+async function notify(userId: number | null | undefined, n: { type: string; title: string; body?: string | null; issueId?: number | null; recordType?: string | null; recordId?: number | null; recordRef?: string | null; businessId?: number | null; branchCode?: string | null; actorName?: string | null }) {
+  if (!userId) return;
+  await db.insert(notifications).values({
+    userId,
+    type: n.type,
+    title: n.title.slice(0, 240),
+    body: (n.body || "").slice(0, 600) || null,
+    issueId: n.issueId ?? null,
+    recordType: n.recordType ?? null,
+    recordId: n.recordId ?? null,
+    recordRef: n.recordRef ?? null,
+    businessId: n.businessId ?? null,
+    branchCode: n.branchCode ?? null,
+    actorName: n.actorName ?? null,
+  });
+}
 
 type Scope = {
   eligible: boolean;
@@ -115,6 +144,7 @@ export type AuditRecordRow = {
   businessId: number;
   branchCode: string | null;
   workerName: string | null;
+  workerUserId?: number | null; // login account behind the record, when known (issue routing)
   date: string;
   amountGhs: number | null;
   status: string | null;
@@ -244,6 +274,22 @@ async function collectRecords(scope: Scope): Promise<AuditRecordRow[]> {
   for (const l of await db.select().from(hardwareLogs).orderBy(desc(hardwareLogs.id)).limit(120))
     opsPush("hardware_logs", l.id, l.businessId, l.receiveNoteNumber, `${l.itemName} × ${l.quantityReceived} ${l.unit}`, `Supplier ${l.supplierName} · condition ${l.condition}`, l.receivedBy, l.recordedDate);
 
+  // OPERATIONS — daily checklist tasks: one auditable row per dated task
+  // completion (or pending/incomplete task), linked to the assigned worker's
+  // login so flagged issues route straight to their dashboard.
+  const chk = await db.select().from(checklistEntries).orderBy(desc(checklistEntries.id)).limit(240);
+  for (const c of chk) {
+    push({
+      key: `CHECKLIST:checklist_entries:${c.id}`, recordType: "CHECKLIST", recordSource: "checklist_entries", recordId: c.id,
+      ref: `CHK-${c.checklistDate}-${c.id}`,
+      title: `${c.taskLabel} — ${c.checklistDate}${c.isCompleted ? "" : " · INCOMPLETE"}`,
+      detail: `${c.category || "GENERAL"} · assigned to ${c.assignedToName || "unassigned"}${c.isCompleted ? ` · done by ${c.completedByName || "staff"}${c.completedAt ? ` at ${new Date(c.completedAt as any).toLocaleString("en-GB", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}` : ""}` : " · pending completion"}${c.notes ? ` · ${c.notes}` : ""}`,
+      module: "OPERATIONS", businessId: c.businessId, branchCode: branchOf(c.businessId, c.branchCode),
+      workerName: c.completedByName || c.assignedToName, workerUserId: c.assignedToUserId ?? null,
+      date: day10(c.checklistDate), amountGhs: null, status: c.isCompleted ? "COMPLETED" : "PENDING",
+    });
+  }
+
   return rows;
 }
 
@@ -273,20 +319,25 @@ function buildReport(records: AuditRecordRow[], reviews: any[]) {
     reviewedRecords: [...latestByRecord.keys()].filter((k) => records.some((rec) => rec.key === k)).length,
     reviews: reviews.length,
     verified: reviews.filter((r) => r.action === "VERIFIED").length,
-    openIssues: reviews.filter((r) => r.status === "OPEN").length,
-    resolvedIssues: reviews.filter((r) => r.status === "RESOLVED").length,
+    openIssues: reviews.filter(isOpenIssue).length,
+    flaggedNow: reviews.filter((r) => normStatus(r.status) === "FLAGGED").length,
+    underReview: reviews.filter((r) => r.status === "UNDER_REVIEW").length,
+    correctionsRequired: reviews.filter((r) => r.status === "CORRECTION_REQUIRED").length,
+    resolvedIssues: reviews.filter((r) => isIssue(r) && r.status === "RESOLVED").length,
+    verifiedIssues: reviews.filter((r) => isIssue(r) && r.status === "VERIFIED").length,
     flaggedAmount: 0,
     corrections: reviews.filter((r) => r.action === "CORRECTION_REQUESTED").length,
   };
 
   const recByKey = new Map(records.map((r) => [r.key, r]));
   const discrepancies = reviews
-    .filter((r) => r.status === "OPEN" && (r.action === "FLAGGED" || r.action === "CORRECTION_REQUESTED"))
+    .filter(isOpenIssue)
     .map((r) => {
       const rec = recByKey.get(`${r.recordType}:${r.recordSource || ""}:${r.recordId}`);
       return {
         reviewId: r.id, recordType: r.recordType, recordId: r.recordId, ref: r.recordRef, title: r.recordTitle,
-        action: r.action, reason: r.reason, businessId: r.businessId, branchCode: r.branchCode,
+        action: r.action, status: normStatus(r.status), reason: r.reason, businessId: r.businessId, branchCode: r.branchCode,
+        assignedTo: r.assignedUserName || rec?.workerName || r.workerName || null,
         amountGhs: rec?.amountGhs ?? null, raisedBy: r.reviewerName, raisedAt: r.createdAt,
       };
     });
@@ -301,7 +352,7 @@ function buildReport(records: AuditRecordRow[], reviews: any[]) {
       records: recs.length,
       reviews: revs.length,
       verified: revs.filter((r) => r.action === "VERIFIED").length,
-      openIssues: revs.filter((r) => r.status === "OPEN").length,
+      openIssues: revs.filter(isOpenIssue).length,
       reviewedPct: recs.length ? Math.round((recs.filter((r) => reviewedKeys.has(r.key)).length / recs.length) * 100) : 0,
     };
   }).filter((m) => m.records > 0 || m.reviews > 0);
@@ -311,8 +362,8 @@ function buildReport(records: AuditRecordRow[], reviews: any[]) {
     businessId: b,
     records: records.filter((r) => r.businessId === b).length,
     reviews: reviews.filter((r) => r.businessId === b).length,
-    openIssues: reviews.filter((r) => r.businessId === b && r.status === "OPEN").length,
-    resolvedIssues: reviews.filter((r) => r.businessId === b && r.status === "RESOLVED").length,
+    openIssues: reviews.filter((r) => r.businessId === b && isOpenIssue(r)).length,
+    resolvedIssues: reviews.filter((r) => r.businessId === b && isIssue(r) && (r.status === "RESOLVED" || r.status === "VERIFIED")).length,
     verified: reviews.filter((r) => r.businessId === b && r.action === "VERIFIED").length,
   }));
 
@@ -326,8 +377,8 @@ function buildReport(records: AuditRecordRow[], reviews: any[]) {
   const trend = months.map((m) => ({
     month: m,
     reviews: reviews.filter((r) => monthKey(r.createdAt && (r.createdAt as any).toISOString ? (r.createdAt as any).toISOString() : r.createdAt) === m).length,
-    issues: reviews.filter((r) => (r.action === "FLAGGED" || r.action === "CORRECTION_REQUESTED") && monthKey((r.createdAt as any)?.toISOString ? (r.createdAt as any).toISOString() : r.createdAt) === m).length,
-    resolved: reviews.filter((r) => r.status === "RESOLVED" && monthKey((r.resolvedAt as any)?.toISOString ? (r.resolvedAt as any).toISOString() : r.resolvedAt) === m).length,
+    issues: reviews.filter((r) => isIssue(r) && monthKey((r.createdAt as any)?.toISOString ? (r.createdAt as any).toISOString() : r.createdAt) === m).length,
+    resolved: reviews.filter((r) => isIssue(r) && (r.status === "RESOLVED" || r.status === "VERIFIED") && monthKey((r.resolvedAt as any)?.toISOString ? (r.resolvedAt as any).toISOString() : r.resolvedAt) === m).length,
   }));
 
   const perf = new Map<number, any>();
@@ -340,13 +391,14 @@ function buildReport(records: AuditRecordRow[], reviews: any[]) {
     if (r.action === "COMMENT") p.comments += 1;
     perf.set(r.reviewerUserId, p);
   }
-  for (const r of reviews.filter((x) => x.status === "RESOLVED" && x.resolvedByUserId)) {
+  // verified/closed issues credited to whoever closed them
+  for (const r of reviews.filter((x) => isIssue(x) && (x.status === "VERIFIED" || x.status === "RESOLVED") && x.resolvedByUserId)) {
     const p = perf.get(r.resolvedByUserId);
     if (p) p.resolved = (p.resolved || 0) + 1;
   }
-  // cycle time: issue raised → resolved
+  // cycle time: issue raised → verified/closed
   const cycleHrs = reviews
-    .filter((r) => r.status === "RESOLVED" && r.resolvedAt && r.createdAt)
+    .filter((r) => isIssue(r) && (r.status === "VERIFIED" || r.status === "RESOLVED") && r.resolvedAt && r.createdAt)
     .map((r) => (new Date(r.resolvedAt as any).getTime() - new Date(r.createdAt as any).getTime()) / 3600000);
   const avgResolveHrs = cycleHrs.length ? Math.round((cycleHrs.reduce((a, b) => a + b, 0) / cycleHrs.length) * 10) / 10 : null;
 
@@ -379,7 +431,7 @@ export async function GET(request: Request) {
     const to = url.searchParams.get("to") || "";
 
     let records = await collectRecords(scope);
-    let reviews = await scopedReviews(scope);
+    let reviews = (await scopedReviews(scope)).map((r) => ({ ...r, status: normStatus(r.status) }));
     let log = await scopedTrail(scope);
 
     if (fBusiness) {
@@ -399,10 +451,10 @@ export async function GET(request: Request) {
     if (from) { records = records.filter((r) => !r.date || r.date >= from); reviews = reviews.filter((r) => day10((r.createdAt as any)?.toISOString?.() ?? r.createdAt) >= from); log = log.filter((t) => day10((t.createdAt as any)?.toISOString?.() ?? t.createdAt) >= from); }
     if (to) { records = records.filter((r) => !r.date || r.date <= to); reviews = reviews.filter((r) => day10((r.createdAt as any)?.toISOString?.() ?? r.createdAt) <= to); log = log.filter((t) => day10((t.createdAt as any)?.toISOString?.() ?? t.createdAt) <= to); }
 
-    // review-state per record (UNREVIEWED | VERIFIED | OPEN | RESOLVED | INFO)
+    // review-state per record (UNREVIEWED | VERIFIED | FLAGGED | UNDER_REVIEW | CORRECTION_REQUIRED | RESOLVED | INFO)
     const stateOf = new Map<string, string>();
     const sorted = [...reviews].sort((a, b) => a.id - b.id);
-    const stateRank = (s: string) => (s === "OPEN" ? 4 : s === "RESOLVED" ? 3 : s === "VERIFIED" ? 2 : 1);
+    const stateRank = (s: string) => (OPEN_STATUSES.includes(s) ? 4 : s === "RESOLVED" ? 3 : s === "VERIFIED" ? 2 : 1);
     for (const r of sorted) {
       const k = `${r.recordType}:${r.recordSource || ""}:${r.recordId}`;
       const prev = stateOf.get(k);
@@ -430,8 +482,20 @@ export async function GET(request: Request) {
     const bizAll = await db.select({ id: businesses.id, name: businesses.name, code: businesses.code }).from(businesses);
     const bizList = scope.businessIds === null ? bizAll : bizAll.filter((b) => scope.businessIds!.includes(b.id));
 
+    // Per-issue conversation threads for the issues in view (chronological).
+    const issueIds = new Set(reviews.filter(isIssue).map((r) => r.id));
+    const threads: Record<number, any[]> = {};
+    if (issueIds.size > 0) {
+      const upd = await db.select().from(auditIssueUpdates).orderBy(desc(auditIssueUpdates.id)).limit(800);
+      for (const u of upd) {
+        if (!issueIds.has(u.issueId)) continue;
+        (threads[u.issueId] ||= []).push(u);
+      }
+      for (const k of Object.keys(threads)) threads[Number(k)].reverse();
+    }
+
     const report = buildReport(records, reviews);
-    return NextResponse.json({ success: true, scope: { eligible: true, level: scope.level, canGrant: scope.canGrant, businessIds: scope.businessIds, moduleByBusiness: scope.moduleByBusiness }, bizList, records: recordsOut, reviews, log, grants, grantUsers, report });
+    return NextResponse.json({ success: true, scope: { eligible: true, level: scope.level, canGrant: scope.canGrant, businessIds: scope.businessIds, moduleByBusiness: scope.moduleByBusiness }, bizList, records: recordsOut, reviews, threads, log, grants, grantUsers, report });
   } catch (error: any) {
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });
   }
@@ -479,9 +543,40 @@ async function resolveRecord(recordType: string, recordSource: string | null, re
       const ref = r.tagNumber || r.serialNumber || r.receiveNoteNumber || `SHIFT-${r.shiftDate}-${r.id}`;
       return { businessId: r.businessId, branchCode: null, module: "OPERATIONS", ref, title: `Operations log ${ref}`, workerName: r.receivedBy || null };
     }
+    case "CHECKLIST": {
+      const r = await first(await db.select().from(checklistEntries).where(eq(checklistEntries.id, recordId)));
+      if (!r) return null;
+      return {
+        businessId: r.businessId, branchCode: r.branchCode, module: "OPERATIONS",
+        ref: `CHK-${r.checklistDate}-${r.id}`,
+        title: `${r.taskLabel} — ${r.checklistDate}${r.isCompleted ? "" : " · INCOMPLETE"}`,
+        workerName: r.completedByName || r.assignedToName,
+        workerUserId: r.assignedToUserId ?? null,
+      };
+    }
     default:
       return null;
   }
+}
+
+/** Routes an issue to the right GoMina user: an explicit pick wins, then the
+ *  record's own worker account (checklists), then the active user whose name
+ *  matches the record's worker — preferring someone assigned to that business. */
+async function resolveAssignee(rec: any, explicitUserId: number | null) {
+  if (explicitUserId) {
+    const [u] = await db.select().from(users).where(eq(users.id, explicitUserId));
+    if (u && u.isActive) return u;
+  }
+  if (rec.workerUserId) {
+    const [u] = await db.select().from(users).where(eq(users.id, Number(rec.workerUserId)));
+    if (u && u.isActive) return u;
+  }
+  if (rec.workerName) {
+    const all = await db.select().from(users);
+    const matches = all.filter((u) => u.isActive && (u.name || "").toLowerCase() === String(rec.workerName).toLowerCase());
+    if (matches.length > 0) return matches.find((u) => u.assignedBusinessId === rec.businessId) || matches[0];
+  }
+  return null;
 }
 const cFriendly = (c: any) => `${c.cameraType} @ ${c.location}`;
 
@@ -570,16 +665,42 @@ export async function POST(request: Request) {
     if (!comment && !reason) {
       return NextResponse.json({ success: false, error: "Add a comment or reason for the review." }, { status: 400 });
     }
-    const status = action === "VERIFIED" ? "VERIFIED" : action === "COMMENT" ? "INFO" : "OPEN";
+    const status = action === "VERIFIED" ? "VERIFIED" : action === "COMMENT" ? "INFO" : action === "CORRECTION_REQUESTED" ? "CORRECTION_REQUIRED" : "FLAGGED";
+    const issueTitle = String(body.issueTitle || "").trim().slice(0, 160) || (reason || comment).slice(0, 80) || null;
+    const photo = String(body.evidencePhoto || "");
+    if (photo && !photo.startsWith("data:image/")) {
+      return NextResponse.json({ success: false, error: "Evidence photo must be an image file." }, { status: 400 });
+    }
+    // Route the issue to the user responsible for the record (their dashboard).
+    const assignee = ISSUE_ACTIONS.includes(action) ? await resolveAssignee(rec, Number(body.assignedUserId) || null) : null;
     const [review] = await db.insert(auditReviews).values({
       recordType, recordSource: body.recordSource ? String(body.recordSource) : null, recordId,
       recordRef: rec.ref, recordTitle: rec.title, module: rec.module,
       businessId: rec.businessId, branchCode: rec.branchCode, workerName: rec.workerName,
       action, status, reason: reason || null, comment: comment || null, evidence: evidence || null,
+      issueTitle: ISSUE_ACTIONS.includes(action) ? issueTitle : null,
+      evidencePhoto: photo || null,
+      assignedUserId: assignee?.id ?? null, assignedUserName: assignee?.name ?? null, assignedUserRole: assignee?.role ?? null,
       reviewerUserId: user.id, reviewerName: user.name, reviewerRole: user.role,
     }).returning();
     await writeTrail(user, { action: REVIEW_TO_TRAIL[action], targetType: "RECORD", targetLabel: rec.ref || rec.title, recordType, recordId, businessId: rec.businessId, branchCode: rec.branchCode, reason: reason || null, detail: comment || evidence || null });
-    return NextResponse.json({ success: true, review });
+    if (ISSUE_ACTIONS.includes(action)) {
+      await db.insert(auditIssueUpdates).values({
+        issueId: review.id, actorUserId: user.id, actorName: user.name, actorRole: user.role,
+        action: REVIEW_TO_TRAIL[action], statusFrom: null, statusTo: status,
+        note: reason || comment || null, evidence: evidence || null, photo: photo || null,
+      });
+      if (assignee) {
+        await notify(assignee.id, {
+          type: action === "CORRECTION_REQUESTED" ? "AUDIT_CORRECTION_REQUIRED" : "AUDIT_ISSUE_ASSIGNED",
+          title: `${action === "CORRECTION_REQUESTED" ? "Correction required" : "Issue flagged"}: ${issueTitle || rec.ref}`,
+          body: `${reason || ""}${comment ? ` — ${comment}` : ""}`,
+          issueId: review.id, recordType, recordId, recordRef: rec.ref,
+          businessId: rec.businessId, branchCode: rec.branchCode, actorName: user.name,
+        });
+      }
+    }
+    return NextResponse.json({ success: true, review, assignedTo: assignee ? { id: assignee.id, name: assignee.name, role: assignee.role } : null });
   } catch (error: any) {
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });
   }
@@ -595,21 +716,79 @@ export async function PATCH(request: Request) {
     if (!scope.eligible) return FORBIDDEN("You have no Supervisor or Auditor access.");
     const action = String(body.action || "").toUpperCase();
 
-    if (action === "RESOLVE") {
+    // ── VERIFY & close an issue (pipeline terminus). "RESOLVE" kept as an
+    //    alias from the first release. Allowed from any non-closed state. ────
+    if (action === "VERIFY" || action === "RESOLVE") {
       const [row] = await db.select().from(auditReviews).where(eq(auditReviews.id, Number(body.reviewId)));
       if (!row) return NextResponse.json({ success: false, error: "Issue not found." }, { status: 404 });
       if (!canSee(scope, row.businessId, row.module)) {
         return FORBIDDEN("That issue is outside the businesses or modules you are authorized to audit.");
       }
-      if (row.status !== "OPEN") {
-        return NextResponse.json({ success: false, error: "Only an open issue can be resolved." }, { status: 400 });
+      if (!ISSUE_ACTIONS.includes(row.action)) {
+        return NextResponse.json({ success: false, error: "Only flagged issues / correction requests go through verification." }, { status: 400 });
+      }
+      if (normStatus(row.status) === "VERIFIED") {
+        return NextResponse.json({ success: false, error: "This issue is already verified & closed." }, { status: 400 });
       }
       const note = String(body.resolution || "").trim();
-      if (!note) return NextResponse.json({ success: false, error: "Add a resolution note — how was it fixed?" }, { status: 400 });
+      if (!note) return NextResponse.json({ success: false, error: "Add a verification note — what did you confirm before closing it?" }, { status: 400 });
+      const from = normStatus(row.status);
       const [updated] = await db.update(auditReviews)
-        .set({ status: "RESOLVED", resolvedByUserId: user.id, resolvedByName: user.name, resolvedAt: new Date(), resolutionNote: note })
+        .set({ status: "VERIFIED", resolvedByUserId: user.id, resolvedByName: user.name, resolvedAt: new Date(), resolutionNote: note })
         .where(eq(auditReviews.id, row.id)).returning();
-      await writeTrail(user, { action: "RESOLVE", targetType: "RECORD", targetLabel: row.recordRef || row.recordTitle, recordType: row.recordType, recordId: row.recordId, businessId: row.businessId, branchCode: row.branchCode, reason: row.reason, detail: note });
+      await db.insert(auditIssueUpdates).values({
+        issueId: row.id, actorUserId: user.id, actorName: user.name, actorRole: user.role,
+        action: "VERIFY", statusFrom: from, statusTo: "VERIFIED", note,
+      });
+      await writeTrail(user, { action: "VERIFY", targetType: "RECORD", targetLabel: row.recordRef || row.recordTitle, recordType: row.recordType, recordId: row.recordId, businessId: row.businessId, branchCode: row.branchCode, reason: row.reason, detail: `Verified & closed (${from} → VERIFIED): ${note}` });
+      if (row.assignedUserId && row.assignedUserId !== user.id) {
+        await notify(row.assignedUserId, {
+          type: "AUDIT_ISSUE_VERIFIED", title: `Verified & closed: ${row.issueTitle || row.recordRef}`,
+          body: note, issueId: row.id, recordType: row.recordType, recordId: row.recordId,
+          recordRef: row.recordRef, businessId: row.businessId, branchCode: row.branchCode, actorName: user.name,
+        });
+      }
+      return NextResponse.json({ success: true, review: updated });
+    }
+
+    // ── Send an issue back for correction → CORRECTION_REQUIRED, notified ───
+    if (action === "REQUEST_CORRECTION") {
+      const [row] = await db.select().from(auditReviews).where(eq(auditReviews.id, Number(body.reviewId)));
+      if (!row) return NextResponse.json({ success: false, error: "Issue not found." }, { status: 404 });
+      if (!canSee(scope, row.businessId, row.module)) {
+        return FORBIDDEN("That issue is outside the businesses or modules you are authorized to audit.");
+      }
+      if (!ISSUE_ACTIONS.includes(row.action)) {
+        return NextResponse.json({ success: false, error: "Only flagged issues can be sent back for correction." }, { status: 400 });
+      }
+      const from = normStatus(row.status);
+      if (from === "VERIFIED") {
+        return NextResponse.json({ success: false, error: "This issue is already verified & closed." }, { status: 400 });
+      }
+      if (from === "CORRECTION_REQUIRED") {
+        return NextResponse.json({ success: false, error: "This issue is already waiting on a correction." }, { status: 400 });
+      }
+      const note = String(body.resolution || body.note || "").trim();
+      if (!note) return NextResponse.json({ success: false, error: "Describe the correction you need from the assigned user." }, { status: 400 });
+      const photo = String(body.evidencePhoto || "");
+      if (photo && !photo.startsWith("data:image/")) {
+        return NextResponse.json({ success: false, error: "Photo must be an image file." }, { status: 400 });
+      }
+      const [updated] = await db.update(auditReviews)
+        .set({ status: "CORRECTION_REQUIRED" })
+        .where(eq(auditReviews.id, row.id)).returning();
+      await db.insert(auditIssueUpdates).values({
+        issueId: row.id, actorUserId: user.id, actorName: user.name, actorRole: user.role,
+        action: "REQUEST_CORRECTION", statusFrom: from, statusTo: "CORRECTION_REQUIRED", note, photo: photo || null,
+      });
+      await writeTrail(user, { action: "REQUEST_CORRECTION", targetType: "RECORD", targetLabel: row.recordRef || row.recordTitle, recordType: row.recordType, recordId: row.recordId, businessId: row.businessId, branchCode: row.branchCode, reason: row.reason, detail: `${from} → CORRECTION_REQUIRED: ${note}` });
+      if (row.assignedUserId && row.assignedUserId !== user.id) {
+        await notify(row.assignedUserId, {
+          type: "AUDIT_CORRECTION_REQUIRED", title: `Correction required: ${row.issueTitle || row.recordRef}`,
+          body: note, issueId: row.id, recordType: row.recordType, recordId: row.recordId,
+          recordRef: row.recordRef, businessId: row.businessId, branchCode: row.branchCode, actorName: user.name,
+        });
+      }
       return NextResponse.json({ success: true, review: updated });
     }
 

@@ -1158,6 +1158,33 @@ export const AUDIT_MODULES = [
   "CCTV",
 ] as const;
 
+/** Issue lifecycle for flagged records / correction requests:
+ *  FLAGGED (auditor raised it, routed to the assigned user) →
+ *  UNDER_REVIEW (assigned user responded & sent it back for review) →
+ *  CORRECTION_REQUIRED (auditor sent it back for fixes) →
+ *  RESOLVED (assigned user completed the correction) →
+ *  VERIFIED (auditor verified & closed the issue — terminal).
+ *  COMMENT reviews carry INFO. "OPEN" from the first release is treated as
+ *  FLAGGED everywhere. */
+export const ISSUE_STATUSES = [
+  "FLAGGED",
+  "UNDER_REVIEW",
+  "CORRECTION_REQUIRED",
+  "RESOLVED",
+  "VERIFIED",
+] as const;
+/** Statuses that still sit on somebody's desk (incl. legacy OPEN). */
+export const ISSUE_OPEN_STATUSES = ["FLAGGED", "UNDER_REVIEW", "CORRECTION_REQUIRED", "RESOLVED", "OPEN"] as const;
+export const ISSUE_PIPELINE_LABELS: Record<string, string> = {
+  FLAGGED: "Flagged",
+  UNDER_REVIEW: "Under Review",
+  CORRECTION_REQUIRED: "Correction Required",
+  RESOLVED: "Resolved",
+  VERIFIED: "Verified",
+  INFO: "Comment",
+  OPEN: "Flagged", // legacy
+};
+
 /** Auditor access grants. The OWNER may grant anyone; a manager carrying the
  *  canManageAuditors flag may grant only inside their accessible businesses.
  *  `modules` limits what the auditor is allowed to see and review;auditors
@@ -1179,33 +1206,83 @@ export const auditAssignments = pgTable("audit_assignments", {
   updatedAt: timestamp("updated_at").defaultNow(),
 });
 
-/** A review action on an existing record. FLAGGED / CORRECTION_REQUESTED rows
- *  live with status OPEN until a reviewer or supervisor resolves them
- *  (resolution note + actor + timestamp are stamped on the same row). */
+/** A review action on an existing record — this IS the issue head when the
+ *  action is FLAGGED / CORRECTION_REQUESTED. Issues follow the pipeline
+ *  FLAGGED → UNDER_REVIEW → CORRECTION_REQUIRED → RESOLVED → VERIFIED and are
+ *  routed straight to the assigned user's dashboard; every step is mirrored
+ *  in audit_issue_updates and audit_trail, and the row always stays linked to
+ *  the original checklist / activity / record via recordType+recordSource+recordId. */
 export const auditReviews = pgTable("audit_reviews", {
   id: serial("id").primaryKey(),
-  recordType: text("record_type").notNull(), // TRANSACTION | INVENTORY_ITEM | EMPLOYEE | PAYROLL_RUN | PAYROLL_ATTENDANCE | ASSET | CCTV_CAMERA | OPERATION_LOG
-  recordSource: text("record_source"), // underlying table for OPERATION_LOG rows
+  recordType: text("record_type").notNull(), // TRANSACTION | INVENTORY_ITEM | EMPLOYEE | PAYROLL_RUN | PAYROLL_ATTENDANCE | ASSET | CCTV_CAMERA | OPERATION_LOG | CHECKLIST
+  recordSource: text("record_source"), // underlying table for OPERATION_LOG / CHECKLIST rows
   recordId: integer("record_id").notNull(),
-  recordRef: text("record_ref"), // natural key: TRX number, SKU, asset code, GRN…
+  recordRef: text("record_ref"), // natural key: TRX number, SKU, asset code, CHK date…
   recordTitle: text("record_title").notNull(), // snapshot so the trail survives edits
   module: text("module").notNull(), // one of AUDIT_MODULES
   businessId: integer("business_id").notNull(),
   branchCode: text("branch_code"),
   workerName: text("worker_name"), // employee/recorder the record belongs to
   action: text("action").notNull(), // VERIFIED | FLAGGED | COMMENT | CORRECTION_REQUESTED
-  status: text("status").notNull().default("INFO"), // OPEN | RESOLVED | VERIFIED | INFO
+  status: text("status").notNull().default("INFO"), // FLAGGED | UNDER_REVIEW | CORRECTION_REQUIRED | RESOLVED | VERIFIED | INFO (OPEN = legacy FLAGGED)
+  issueTitle: text("issue_title"), // short label shown on dashboards & notifications
   reason: text("reason"), // why flagged / why correction requested / verification basis
   comment: text("comment"),
-  evidence: text("evidence"), // evidence note / photo or document URL
+  evidence: text("evidence"), // evidence note / link
+  evidencePhoto: text("evidence_photo"), // attached photo (data URL)
+  assignedUserId: integer("assigned_user_id"), // GoMina user the issue is routed to
+  assignedUserName: text("assigned_user_name"),
+  assignedUserRole: text("assigned_user_role"),
   reviewerUserId: integer("reviewer_user_id").notNull(),
   reviewerName: text("reviewer_name").notNull(),
   reviewerRole: text("reviewer_role").notNull(),
   createdAt: timestamp("created_at").defaultNow(),
+  // Latest response from the assigned user (full conversation in audit_issue_updates)
+  responseNote: text("response_note"),
+  responseEvidence: text("response_evidence"),
+  responsePhoto: text("response_photo"),
+  responseByName: text("response_by_name"),
+  responseAt: timestamp("response_at"),
   resolvedByUserId: integer("resolved_by_user_id"),
   resolvedByName: text("resolved_by_name"),
   resolvedAt: timestamp("resolved_at"),
   resolutionNote: text("resolution_note"),
+});
+
+/** Immutable per-issue conversation: who did what, when, notes & evidence,
+ *  with the status transition each step caused. */
+export const auditIssueUpdates = pgTable("audit_issue_updates", {
+  id: serial("id").primaryKey(),
+  issueId: integer("issue_id").notNull(), // audit_reviews.id
+  actorUserId: integer("actor_user_id").notNull(),
+  actorName: text("actor_name").notNull(),
+  actorRole: text("actor_role").notNull(),
+  action: text("action").notNull(), // FLAG | REQUEST_CORRECTION | RESPOND | MARK_REVIEW | MARK_RESOLVED | VERIFY | COMMENT
+  statusFrom: text("status_from"),
+  statusTo: text("status_to"),
+  note: text("note"),
+  evidence: text("evidence"),
+  photo: text("photo"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+/** Dashboard notifications — flagged issues & required corrections land on the
+ *  assigned user's bell instantly; responses land on the reviewer's bell. */
+export const notifications = pgTable("notifications", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").notNull(), // recipient
+  type: text("type").notNull(), // AUDIT_ISSUE_ASSIGNED | AUDIT_CORRECTION_REQUIRED | AUDIT_ISSUE_RESPONSE | AUDIT_ISSUE_RESOLVED | AUDIT_ISSUE_VERIFIED
+  title: text("title").notNull(),
+  body: text("body"),
+  issueId: integer("issue_id"), // audit_reviews.id
+  recordType: text("record_type"),
+  recordId: integer("record_id"),
+  recordRef: text("record_ref"),
+  businessId: integer("business_id"),
+  branchCode: text("branch_code"),
+  actorName: text("actor_name"), // who triggered it
+  isRead: boolean("is_read").notNull().default(false),
+  createdAt: timestamp("created_at").defaultNow(),
 });
 
 /** Immutable log of everything that happens inside the Audit Center. */

@@ -20,6 +20,8 @@ import BranchManagerSalesView from "./BranchManagerSalesView";
 import EnterpriseUserPanel from "./EnterpriseUserPanel";
 import EnterpriseFinanceView from "./EnterpriseFinanceView";
 import AuditCommandCenter from "./AuditCommandCenter";
+import NotificationBell from "./NotificationBell";
+import MyAuditIssues from "./MyAuditIssues";
 import PoultryFarmModule from "./PoultryFarmModule";
 import BlockFactoryModule from "./BlockFactoryModule";
 import AquacultureModule from "./AquacultureModule";
@@ -47,6 +49,13 @@ export default function GoMinaApp() {
   // decides via /api/audit?meta=1 — OWNER always; managers per role; other
   // users only when an active Auditor grant exists).
   const [auditEligible, setAuditEligible] = useState(false);
+  // Issue-workflow dashboards: the global bell summary (drives the
+  // "issues need you" strip), the assignee inbox modal, and deep-link
+  // focus targets for both workspaces.
+  const [auditBell, setAuditBell] = useState({ unread: 0, openAssigned: 0 });
+  const [myIssuesOpen, setMyIssuesOpen] = useState(false);
+  const [myIssueFocus, setMyIssueFocus] = useState<number | null>(null);
+  const [auditFocusIssue, setAuditFocusIssue] = useState<number | null>(null);
   const [customers, setCustomers] = useState<any[]>([]);
   const [suppliers, setSuppliers] = useState<any[]>([]);
   const [employees, setEmployees] = useState<any[]>([]);
@@ -371,7 +380,14 @@ export default function GoMinaApp() {
           </div>
         );
       }
-      return <AuditCommandCenter currentUser={currentUser} businesses={businesses} />;
+      return (
+        <AuditCommandCenter
+          currentUser={currentUser}
+          businesses={businesses}
+          focusIssueId={auditFocusIssue}
+          onFocusHandled={() => setAuditFocusIssue(null)}
+        />
+      );
     }
 
 
@@ -947,7 +963,49 @@ export default function GoMinaApp() {
         onUserSelect={setCurrentUser}
         onLogout={handleLogout}
         onOpenChangePassword={() => setIsChangePwOpen(true)}
+        bellSlot={
+          <NotificationBell
+            currentUser={currentUser}
+            onSummary={setAuditBell}
+            onOpenIssue={(n) => {
+              // Responses / resolutions go to the reviewer's Audit Center;
+              // flags, corrections & closures open the assignee's own inbox.
+              const reviewerSide = n.type === "AUDIT_ISSUE_RESPONSE" || n.type === "AUDIT_ISSUE_RESOLVED";
+              if (reviewerSide && (auditEligible || ["OWNER", "GENERAL_MANAGER", "BRANCH_MANAGER", "SUPERVISOR"].includes(currentUser?.role || ""))) {
+                setAuditFocusIssue(n.issueId);
+                setActiveTab("AUDIT");
+              } else {
+                setMyIssueFocus(n.issueId ?? null);
+                setMyIssuesOpen(true);
+              }
+            }}
+          />
+        }
       />
+
+      {/* Flagged issues & corrections routed to this user's dashboard */}
+      {auditBell.openAssigned > 0 && (
+        <div className="flex items-center justify-center gap-3 px-4 py-1.5 bg-gradient-to-r from-rose-950/90 via-rose-900/60 to-rose-950/90 border-b border-rose-500/30" data-testid="my-issues-strip">
+          <span className="text-[11px] text-rose-200 font-semibold">
+            ⚑ {auditBell.openAssigned} audit issue{auditBell.openAssigned > 1 ? "s" : ""} {auditBell.openAssigned > 1 ? "need" : "needs"} your response
+          </span>
+          <button
+            onClick={() => { setMyIssueFocus(null); setMyIssuesOpen(true); }}
+            className="px-2.5 py-0.5 rounded-lg bg-rose-500/25 hover:bg-rose-500/40 border border-rose-400/40 text-rose-100 text-[10px] font-bold transition"
+            data-testid="my-issues-open-btn"
+          >
+            Review & respond
+          </button>
+        </div>
+      )}
+
+      {myIssuesOpen && (
+        <MyAuditIssues
+          currentUser={currentUser}
+          focusIssueId={myIssueFocus}
+          onClose={() => { setMyIssuesOpen(false); setMyIssueFocus(null); setTimeout(() => window.dispatchEvent(new Event("focus")), 150); }}
+        />
+      )}
 
       <div className="flex flex-1 overflow-hidden">
         <Sidebar

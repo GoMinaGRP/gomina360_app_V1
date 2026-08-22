@@ -31,6 +31,8 @@ interface NavbarProps {
   onLogout?: () => void;
   /** Opens the self-service "Change Password" dialog (any signed-in role). */
   onOpenChangePassword?: () => void;
+  /** Notification bell element (rendered before the account menu). */
+  bellSlot?: React.ReactNode;
 }
 
 export default function Navbar({
@@ -45,6 +47,7 @@ export default function Navbar({
   onUserSelect,
   onLogout,
   onOpenChangePassword,
+  bellSlot,
 }: NavbarProps) {
   const [isSyncing, setIsSyncing] = useState(false);
   const [showCurrencyDropdown, setShowCurrencyDropdown] = useState(false);
@@ -167,6 +170,9 @@ export default function Navbar({
               </button>
             )}
           </div>
+
+          {/* Notifications (audit issues, corrections & responses) */}
+          {bellSlot}
 
           {/* User Account & Role Switcher */}
           <div className="relative">

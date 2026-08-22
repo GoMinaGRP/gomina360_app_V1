@@ -31,7 +31,11 @@ import {
   payrollAttendance,
   auditAssignments,
   auditReviews,
+  auditIssueUpdates,
   auditTrail,
+  notifications,
+  checklistTemplates,
+  checklistEntries,
 } from "./schema";
 import { sql, eq } from "drizzle-orm";
 import { provisionBusiness, ensureCarWashServiceCatalogue } from "@/lib/businessProvisioning";
@@ -1493,9 +1497,11 @@ export async function seedDatabase() {
       recordType: "TRANSACTION", recordSource: "transactions", recordId: 4,
       recordRef: "TRX-2026-1004", recordTitle: "INCOME · Restaurant Daily Receipts — GH₵ 8,450.00",
       module: "FINANCE", businessId: 5, branchCode: "FOOD-01", workerName: "Chef Esi Mensah",
-      action: "FLAGGED", status: "OPEN",
+      action: "FLAGGED", status: "FLAGGED",
+      issueTitle: "Weekend receipts — missing deposit slip",
       reason: "Weekend total looks 12% above trend with no matching deposit slip",
       comment: "Chef Esi — please attach the bank deposit slip for the weekend receipts.",
+      assignedUserId: 7, assignedUserName: "Chef Esi Mensah", assignedUserRole: "BRANCH_MANAGER",
       reviewerUserId: 1, reviewerName: "Kwame Mina", reviewerRole: "OWNER",
       createdAt: new Date("2026-08-19T09:15:00.000Z"),
     },
@@ -1522,6 +1528,69 @@ export async function seedDatabase() {
       detail: "Chef Esi — please attach the bank deposit slip for the weekend receipts.",
       createdAt: new Date("2026-08-19T09:15:00.000Z"),
     },
+  ]);
+
+  // 12e. Issue-workflow baseline — the seeded flag (#2) is routed to Chef Esi's
+  // dashboard: per-issue conversation thread + an unread notification.
+  await db.insert(auditIssueUpdates).values([
+    {
+      issueId: 2,
+      actorUserId: 1, actorName: "Kwame Mina", actorRole: "OWNER",
+      action: "FLAG", statusFrom: null, statusTo: "FLAGGED",
+      note: "Weekend total looks 12% above trend with no matching deposit slip",
+      evidence: "Attach the bank deposit slip for the weekend receipts.",
+      createdAt: new Date("2026-08-19T09:15:00.000Z"),
+    },
+  ]);
+  await db.insert(notifications).values([
+    {
+      userId: 7, // Chef Esi Mensah — branch manager, Mina Chop Bar
+      type: "AUDIT_ISSUE_ASSIGNED",
+      title: "Issue flagged: Weekend receipts — missing deposit slip",
+      body: "Weekend total looks 12% above trend with no matching deposit slip. Chef Esi — please attach the bank deposit slip for the weekend receipts.",
+      issueId: 2, recordType: "TRANSACTION", recordId: 4, recordRef: "TRX-2026-1004",
+      businessId: 5, branchCode: "FOOD-01", actorName: "Kwame Mina",
+      isRead: false,
+      createdAt: new Date("2026-08-19T09:15:00.000Z"),
+    },
+  ]);
+
+  // 12f. Daily checklist baseline — a small poultry task list assigned to the
+  // poultry workers, with two days of dated completions, so Supervisors &
+  // Auditors can review daily checklists and worker activities out of the box.
+  const chkTemplates = await db.insert(checklistTemplates).values([
+    { businessId: 1, branchCode: "POULTRY-01", taskKey: "FEED_STOCK_CHECK", taskLabel: "Check feed silo levels & log bag count", category: "OPERATIONS", sortOrder: 1, isActive: true, assignedToUserId: 11, assignedToName: "Kwabena Mensah", assignedToRole: "WORKER", createdByName: "Kwame Mina", createdByRole: "OWNER" },
+    { businessId: 1, branchCode: "POULTRY-01", taskKey: "WATER_LINES_FLUSH", taskLabel: "Flush & refill drinker lines", category: "OPERATIONS", sortOrder: 2, isActive: true, assignedToUserId: 11, assignedToName: "Kwabena Mensah", assignedToRole: "WORKER", createdByName: "Kwame Mina", createdByRole: "OWNER" },
+    { businessId: 1, branchCode: "POULTRY-01", taskKey: "EGG_COLLECTION_LOG", taskLabel: "Morning egg collection & crate tally", category: "PRODUCTION", sortOrder: 3, isActive: true, assignedToUserId: 10, assignedToName: "Akua Donkor", assignedToRole: "WORKER", createdByName: "Kwame Mina", createdByRole: "OWNER" },
+    { businessId: 1, branchCode: "POULTRY-01", taskKey: "MORTALITY_SWEEP", taskLabel: "Mortality sweep & health observation notes", category: "HEALTH", sortOrder: 4, isActive: true, assignedToUserId: 10, assignedToName: "Akua Donkor", assignedToRole: "WORKER", createdByName: "Kwame Mina", createdByRole: "OWNER" },
+    { businessId: 1, branchCode: "POULTRY-01", taskKey: "BIOSECURITY_FOOTBATH", taskLabel: "Refresh footbaths & gate biosecurity check", category: "HEALTH", sortOrder: 5, isActive: true, assignedToUserId: 11, assignedToName: "Kwabena Mensah", assignedToRole: "WORKER", createdByName: "Kwame Mina", createdByRole: "OWNER" },
+  ]).returning();
+  const tByKey = new Map(chkTemplates.map((t: any) => [t.taskKey, t]));
+  const chkEntry = (key: string, date: string, done: boolean, extra: any = {}) => {
+    const t: any = tByKey.get(key);
+    return {
+      businessId: 1, branchCode: "POULTRY-01", checklistDate: date,
+      templateId: t.id, taskKey: t.taskKey, taskLabel: t.taskLabel, category: t.category,
+      assignedToUserId: t.assignedToUserId, assignedToName: t.assignedToName, assignedToRole: t.assignedToRole,
+      isCompleted: done,
+      completedByName: done ? t.assignedToName : null,
+      completedByRole: done ? t.assignedToRole : null,
+      completedAt: done ? new Date(`${date}T08:40:00.000Z`) : null,
+      notes: extra.notes || null,
+      createdAt: new Date(`${date}T06:00:00.000Z`),
+    };
+  };
+  await db.insert(checklistEntries).values([
+    chkEntry("FEED_STOCK_CHECK", "2026-08-21", true, { notes: "38 bags layer mash in silo B" }),
+    chkEntry("WATER_LINES_FLUSH", "2026-08-21", true),
+    chkEntry("EGG_COLLECTION_LOG", "2026-08-21", true, { notes: "212 crates collected" }),
+    chkEntry("MORTALITY_SWEEP", "2026-08-21", true, { notes: "3 mortalities — pen 4" }),
+    chkEntry("BIOSECURITY_FOOTBATH", "2026-08-21", true),
+    chkEntry("FEED_STOCK_CHECK", "2026-08-22", true, { notes: "31 bags — reorder due Friday" }),
+    chkEntry("WATER_LINES_FLUSH", "2026-08-22", true),
+    chkEntry("EGG_COLLECTION_LOG", "2026-08-22", true, { notes: "196 crates collected" }),
+    chkEntry("MORTALITY_SWEEP", "2026-08-22", false),
+    chkEntry("BIOSECURITY_FOOTBATH", "2026-08-22", false),
   ]);
 
   // ─────────────────────────────────────────────────────────────────────────
