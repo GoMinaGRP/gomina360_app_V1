@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { db } from "@/db";
 import {
   employees,
+  employeeHistory,
   assets,
   assetAuditLogs,
   inventoryItems,
@@ -10,7 +11,7 @@ import {
   businesses,
   recordDeletionLogs,
 } from "@/db/schema";
-import { desc, eq } from "drizzle-orm";
+import { desc, eq, sql } from "drizzle-orm";
 import { computeStockStatus } from "@/lib/stock";
 import { canManageSharedRecords } from "@/lib/recordPermissions";
 import { getSessionInfo, canAccessBusiness, accessibleBusinessIds, UNAUTHENTICATED, FORBIDDEN } from "@/lib/auth";
@@ -291,6 +292,13 @@ export async function POST(request: Request) {
     };
 
     if (entityType === "employee") {
+      // Quick-add path — auto-assign the employee number and record the
+      // registration in the employee record history (same as the full
+      // Employee Registration flow in /api/employees).
+      const maxRows = await db
+        .select({ v: sql<string>`max(nullif(regexp_replace(coalesce(${employees.employeeNo}, ''), '\\D', '', 'g'), '')::int)` })
+        .from(employees);
+      const employeeNo = `EMP-${String((Number(maxRows[0]?.v) || 0) + 1).padStart(4, "0")}`;
       const [inserted] = await db
         .insert(employees)
         .values({
@@ -303,8 +311,18 @@ export async function POST(request: Request) {
           phone: data.phone || "+233 24 000 0000",
           hireDate: data.hireDate || new Date().toISOString().split("T")[0],
           status: "ACTIVE",
+          employeeNo,
         })
         .returning();
+      await db.insert(employeeHistory).values({
+        employeeId: inserted.id,
+        businessId: inserted.businessId,
+        action: "CREATED",
+        summary: `Registered ${inserted.name} (${employeeNo}) — ${inserted.role}, quick add`,
+        changedByUserId: session.user.id,
+        changedByName: session.user.name,
+        changedByRole: session.user.role,
+      });
       return NextResponse.json({ success: true, item: inserted });
     }
 

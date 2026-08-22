@@ -30,6 +30,7 @@ import {
   payrollEntries,
   payrollAttendance,
   payrollStatutoryConfig,
+  employeeHistory,
   auditAssignments,
   auditReviews,
   auditIssueUpdates,
@@ -665,6 +666,7 @@ export async function seedDatabase() {
   await db.insert(employees).values([
     {
       name: "Doris Ansah",
+      employeeNo: "EMP-0001",
       role: "Senior Farm Veterinarian",
       businessId: businessMap["POULTRY-01"],
       branch: "Nsawam Highway",
@@ -674,6 +676,7 @@ export async function seedDatabase() {
     },
     {
       name: "Samuel Kumi",
+      employeeNo: "EMP-0002",
       role: "Block Molding Supervisor",
       businessId: businessMap["BLOCK-01"],
       branch: "Spintex Road",
@@ -683,6 +686,7 @@ export async function seedDatabase() {
     },
     {
       name: "George Nartey",
+      employeeNo: "EMP-0003",
       role: "Water Quality & Cage Specialist",
       businessId: businessMap["AQUA-01"],
       branch: "Akosombo River Basin",
@@ -692,6 +696,7 @@ export async function seedDatabase() {
     },
     {
       name: "Kwesi Frimpong",
+      employeeNo: "EMP-0004",
       role: "Ranch Overseer & Tag Logger",
       businessId: businessMap["LIVESTOCK-01"],
       branch: "Kwahu Plains",
@@ -701,6 +706,7 @@ export async function seedDatabase() {
     },
     {
       name: "Patience Osei-Bonsu",
+      employeeNo: "EMP-0005",
       role: "Kitchen Manager & Cashier",
       businessId: businessMap["FOOD-01"],
       branch: "Osu Oxford Street",
@@ -710,6 +716,7 @@ export async function seedDatabase() {
     },
     {
       name: "Michael Quaye",
+      employeeNo: "EMP-0006",
       role: "Solar Systems Engineer",
       businessId: businessMap["TECH-01"],
       branch: "Circle Showroom",
@@ -719,6 +726,7 @@ export async function seedDatabase() {
     },
     {
       name: "Gideon Lamptey",
+      employeeNo: "EMP-0007",
       role: "Bay Coordinator & Detailer",
       businessId: businessMap["WASH-01"],
       branch: "Dzorwulu",
@@ -727,6 +735,22 @@ export async function seedDatabase() {
       hireDate: "2024-02-12",
     },
   ]);
+
+  // Registration history for every seeded employee (the audit trail starts
+  // at registration; every later change appends rows here).
+  const seededEmpIds = [1, 2, 3, 4, 5, 6, 7];
+  const seededEmpNames = ["Doris Ansah", "Samuel Kumi", "George Nartey", "Kwesi Frimpong", "Patience Osei-Bonsu", "Michael Quaye", "Gideon Lamptey"];
+  await db.insert(employeeHistory).values(
+    seededEmpIds.map((id, i) => ({
+      employeeId: id,
+      businessId: i + 1, // employees 1..7 belong to businesses 1..7 in this seed
+      action: "CREATED",
+      summary: `Registered ${seededEmpNames[i]} (EMP-${String(id).padStart(4, "0")}) — seeded baseline`,
+      changedByUserId: 1,
+      changedByName: "Kwame Mina",
+      changedByRole: "OWNER",
+    }))
+  );
 
   // 6. Insert Enterprise Assets & Equipment
   await db.insert(assets).values([

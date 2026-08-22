@@ -1801,19 +1801,37 @@ export const GUIDES: Record<string, Record<string, SectionGuide>> = {
     },
     EMPLOYEES: {
       title: "Employees & Payroll",
-      intro: "The group's staff directory: roles, branch assignments, salaries in GH₵ and login permissions.",
+      intro: "The group's complete HR desk: full employee registration (personal info, photo, work schedule & leave entitlement, ID & compliance), document vault, record history — all linked to Business → Branch → Payroll → Attendance → Reports.",
       tasks: [
         {
-          name: "Add an employee",
+          name: "Register an employee (full record)",
           steps: [
-            "Click “Add Employee”.",
-            "Enter name, role (Manager, Worker…), branch assignment and salary.",
-            "Save — if they need app access, create their login from Users management.",
+            "Click “Add Employee” — the Employee Registration form opens.",
+            "Personal: full name, employee ID (auto-generated if blank), date of birth, gender, phone, email, address, emergency contact — plus a photo from upload or the live camera capture.",
+            "Work & attendance: schedule, shift, hours per day, assigned working days and annual leave entitlement.",
+            "Identity: ID type & number and work permit where applicable, then save — registration is written to the record history.",
+          ],
+        },
+        {
+          name: "Open an employee profile",
+          steps: [
+            "Click the person icon on any row to open the profile.",
+            "The linkage strip shows their Business, Branch, Payroll entries & net pay, Attendance rows & overtime, leave used vs entitlement, and history count.",
+            "The Overview tab holds every field; Edit record reopens the registration form for authorized users.",
+          ],
+        },
+        {
+          name: "File documents & track history",
+          steps: [
+            "Profile → Documents: file the employment contract, certificates, qualifications, work permit or ID scans (image/PDF, downloadable).",
+            "Profile → Record history: an immutable trail of every important change — registration, field edits (old → new), photo updates, document add/remove, each stamped with who and when.",
           ],
         },
       ],
       faqs: [
         { q: "Who can edit or delete records here?", match: ["delete", "edit", "permission", "who", "remove", "manage"], answer: "The OWNER always can. Managers only when the OWNER has granted them record-management permission via “Manage Access”. Deleting asks for a reason and is permanently logged in the Deletion Audit Trail at the bottom of this page with the user, date and time." },
+        { q: "Where does an employee record appear?", match: ["payroll", "attendance", "link", "report", "business", "branch"], answer: "Everywhere, automatically: Payroll runs pick ACTIVE employees up with their basic salary, business and branch; attendance & overtime recorded in the Payroll Center rolls onto their profile linkage strip (entries, net pay, rows, OT hours, leave used); payroll reports aggregate the same numbers; the record history keeps the full audit trail of changes to their file." },
+        { q: "How do photos and documents work?", match: ["photo", "camera", "document", "contract", "certificate", "permit", "upload"], answer: "The registration form takes a photo either by upload or live camera capture (resized automatically). Contracts, certificates, qualifications, work permits and ID scans are filed on the profile's Documents tab as images or PDFs — downloadable anytime, and every addition/removal is written to the record history." },
         { q: "Worker vs Branch Manager?", match: ["role", "worker", "manager"], answer: "WORKERs record sales and expenses in their own branch only; BRANCH_MANAGERs also manage workers, assets and branch registers. Owners/GMs see everything." },
       ],
     },

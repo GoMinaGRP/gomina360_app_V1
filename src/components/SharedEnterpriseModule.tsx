@@ -28,6 +28,7 @@ import AssetRegistrationModal from "./AssetRegistrationModal";
 import QrScanModal from "./QrScanModal";
 import QrRecordModal from "./QrRecordModal";
 import PayrollCenter from "./PayrollCenter";
+import { EmployeeRegistration, EmployeeProfile } from "./EmployeeCenter";
 import { Landmark } from "lucide-react";
 import { buildInventoryQr } from "@/lib/qrRegistry";
 import { generateAssetDownload, downloadFile, generateDownloadId, AssetDownloadFilters } from "@/lib/assetDownload";
@@ -68,6 +69,9 @@ export default function SharedEnterpriseModule({
 }: SharedEnterpriseModuleProps) {
   const [searchTerm, setSearchTerm] = useState("");
   const [showModal, setShowModal] = useState(false);
+  const [showEmpReg, setShowEmpReg] = useState(false); // Employee Registration modal
+  const [empEdit, setEmpEdit] = useState<any | null>(null); // employee being edited in the full form
+  const [empProfile, setEmpProfile] = useState<any | null>(null); // employee profile modal
   const [showAssetModal, setShowAssetModal] = useState(false);
   const [assetAuditLogs, setAssetAuditLogs] = useState<any[]>([]);
   const [assetDownloadHistory, setAssetDownloadHistory] = useState<any[]>([]);
@@ -362,10 +366,20 @@ export default function SharedEnterpriseModule({
   };
 
   // Actions cell shared by the three manageable tables.
-  const RecordActions = ({ r, prefix }: { r: any; prefix: string }) => (
+  const RecordActions = ({ r, prefix, onProfile }: { r: any; prefix: string; onProfile?: (r: any) => void }) => (
     <td className="px-4 py-3.5 text-center">
       {canManageShared ? (
         <div className="flex items-center justify-center gap-1.5">
+          {onProfile && (
+            <button
+              title="Open full record (profile, documents, history)"
+              data-testid={`${prefix}-profile-${r.id}`}
+              onClick={() => onProfile(r)}
+              className="p-1.5 rounded-lg bg-slate-700/70 hover:bg-teal-500/30 text-slate-200 hover:text-teal-300 transition"
+            >
+              <UserCheck className="w-3.5 h-3.5" />
+            </button>
+          )}
           <button
             title="Edit record"
             data-testid={`${prefix}-edit-${r.id}`}
@@ -384,12 +398,24 @@ export default function SharedEnterpriseModule({
           </button>
         </div>
       ) : (
-        <span
-          title="Only the OWNER, or a manager granted permission by the OWNER, can manage records"
-          className="inline-flex items-center gap-1 text-[9px] font-bold text-slate-500 bg-slate-800 border border-slate-700 px-2 py-1 rounded"
-        >
-          <Lock className="w-3 h-3" /> LOCKED
-        </span>
+        <div className="flex items-center justify-center gap-1.5">
+          {onProfile && (
+            <button
+              title="Open full record (read-only)"
+              data-testid={`${prefix}-profile-${r.id}`}
+              onClick={() => onProfile(r)}
+              className="p-1.5 rounded-lg bg-slate-700/70 hover:bg-teal-500/30 text-slate-200 hover:text-teal-300 transition"
+            >
+              <UserCheck className="w-3.5 h-3.5" />
+            </button>
+          )}
+          <span
+            title="Only the OWNER, or a manager granted permission by the OWNER, can manage records"
+            className="inline-flex items-center gap-1 text-[9px] font-bold text-slate-500 bg-slate-800 border border-slate-700 px-2 py-1 rounded"
+          >
+            <Lock className="w-3 h-3" /> LOCKED
+          </span>
+        </div>
       )}
     </td>
   );
@@ -1213,12 +1239,17 @@ export default function SharedEnterpriseModule({
               // Assets use a dedicated modal that enforces Business + Branch linkage
               if (moduleType === "ASSETS") {
                 setShowAssetModal(true);
+              } else if (moduleType === "EMPLOYEES") {
+                // Employees open the full Employee Registration (complete HR record)
+                setEmpEdit(null);
+                setShowEmpReg(true);
               } else {
                 ensureInvBranch();
                 setShowModal(true);
               }
             }}
             className="flex items-center space-x-1.5 px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs sm:text-sm shadow-lg transition"
+            data-testid={moduleType === "EMPLOYEES" ? "employee-reg-open" : undefined}
           >
             <Plus className="w-4 h-4" />
             <span>{config.buttonLabel}</span>
@@ -1739,11 +1770,18 @@ export default function SharedEnterpriseModule({
               </thead>
               <tbody className="divide-y divide-slate-700/60">
                 {visibleEmployees.map((emp) => (
-                  <tr key={emp.id} className="hover:bg-slate-700/50">
+                  <tr key={emp.id} className="hover:bg-slate-700/50" data-testid={`employee-row-${emp.id}`}>
                     <td className="px-4 py-3.5 font-bold text-slate-100">
-                      <div>{emp.name}</div>
-                      <div className="text-[11px] text-slate-400">
-                        {emp.phone}
+                      <div className="flex items-center gap-2.5">
+                        <span className="w-8 h-8 rounded-lg bg-slate-800 border border-slate-700 overflow-hidden flex items-center justify-center shrink-0" data-testid={`employee-photo-${emp.id}`}>
+                          {emp.photo ? <img src={emp.photo} alt={emp.name} className="w-full h-full object-cover" /> : <UserCheck className="w-4 h-4 text-slate-600" />}
+                        </span>
+                        <span>
+                          <div>{emp.name}</div>
+                          <div className="text-[11px] text-slate-400 font-normal">
+                            <span className="font-mono text-teal-300/90">{emp.employeeNo || "—"}</span> · {emp.phone}
+                          </div>
+                        </span>
                       </div>
                     </td>
                     <td className="px-4 py-3.5 font-semibold text-emerald-300">
@@ -1767,7 +1805,7 @@ export default function SharedEnterpriseModule({
                         {emp.status}
                       </span>
                     </td>
-                    <RecordActions r={emp} prefix="employee" />
+                    <RecordActions r={emp} prefix="employee" onProfile={(e) => setEmpProfile(e)} />
                   </tr>
                 ))}
               </tbody>
@@ -2909,6 +2947,29 @@ export default function SharedEnterpriseModule({
           employees={employees}
           onChanged={onRefreshData}
           onClose={() => setShowPayroll(false)}
+        />
+      )}
+
+      {/* Employee Registration (full HR record) */}
+      {moduleType === "EMPLOYEES" && showEmpReg && (
+        <EmployeeRegistration
+          currentUser={currentUser}
+          businesses={businesses}
+          initial={empEdit}
+          onSaved={() => { setShowEmpReg(false); setEmpEdit(null); onRefreshData(); }}
+          onClose={() => { setShowEmpReg(false); setEmpEdit(null); }}
+        />
+      )}
+
+      {/* Employee Profile — record, documents & history */}
+      {moduleType === "EMPLOYEES" && empProfile && (
+        <EmployeeProfile
+          currentUser={currentUser}
+          businesses={businesses}
+          employee={empProfile}
+          onClose={() => setEmpProfile(null)}
+          onEdit={(e) => { setEmpProfile(null); setEmpEdit(e); setShowEmpReg(true); }}
+          onChanged={onRefreshData}
         />
       )}
     </div>

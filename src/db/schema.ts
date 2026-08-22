@@ -185,6 +185,64 @@ export const employees = pgTable("employees", {
   phone: text("phone").notNull(),
   hireDate: text("hire_date").notNull(),
   status: text("status").default("ACTIVE"),
+  // ── Employee Registration profile (added for the complete HR record) ──
+  // All nullable so legacy/seeded rows stay valid; employeeNo backfilled.
+  employeeNo: text("employee_no"), // unique staff ID, e.g. EMP-0007
+  dateOfBirth: text("date_of_birth"), // YYYY-MM-DD
+  gender: text("gender"), // MALE | FEMALE | OTHER
+  email: text("email"),
+  address: text("address"),
+  emergencyContactName: text("emergency_contact_name"),
+  emergencyContactPhone: text("emergency_contact_phone"),
+  photo: text("photo"), // base64 data URL (upload or camera capture)
+  // Attendance profile — drives scheduling & payroll checks
+  workSchedule: text("work_schedule"), // FULL_TIME | PART_TIME | CONTRACT
+  shift: text("shift"), // DAY | NIGHT | ROTATING
+  dailyHours: doublePrecision("daily_hours"),
+  workDays: text("work_days"), // e.g. "MON,TUE,WED,THU,FRI"
+  leaveEntitlementDays: integer("leave_entitlement_days"), // annual leave days
+  // Identity & compliance
+  idType: text("id_type"), // GHANA_CARD | PASSPORT | VOTER_ID | DRIVERS_LICENSE | OTHER
+  idNumber: text("id_number"),
+  workPermitNo: text("work_permit_no"), // where applicable (non-citizens)
+  notes: text("notes"),
+});
+
+/** Employee documents — contracts, certificates, qualifications, work
+ *  permits, ID copies and any other files (base64 data-URL payloads, the
+ *  app's existing photo-storage convention). */
+export const employeeDocuments = pgTable("employee_documents", {
+  id: serial("id").primaryKey(),
+  employeeId: integer("employee_id").notNull(),
+  businessId: integer("business_id").notNull(), // denormalized for access scoping
+  docType: text("doc_type").notNull(), // EMPLOYMENT_CONTRACT | CERTIFICATE | QUALIFICATION | WORK_PERMIT | ID_COPY | OTHER
+  title: text("title").notNull(),
+  fileName: text("file_name"),
+  fileData: text("file_data"), // base64 data URL (image or PDF)
+  issuedOn: text("issued_on"),
+  expiresOn: text("expires_on"),
+  note: text("note"),
+  uploadedByUserId: integer("uploaded_by_user_id"),
+  uploadedByName: text("uploaded_by_name"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+/** Employee record history — immutable audit trail of every important
+ *  change (registration, field edits with old → new, photo updates,
+ *  document add/remove), stamped with who did it. */
+export const employeeHistory = pgTable("employee_history", {
+  id: serial("id").primaryKey(),
+  employeeId: integer("employee_id").notNull(),
+  businessId: integer("business_id").notNull(),
+  action: text("action").notNull(), // CREATED | UPDATED | PHOTO_UPDATED | DOCUMENT_ADDED | DOCUMENT_REMOVED
+  field: text("field"),
+  oldValue: text("old_value"),
+  newValue: text("new_value"),
+  summary: text("summary").notNull(),
+  changedByUserId: integer("changed_by_user_id"),
+  changedByName: text("changed_by_name"),
+  changedByRole: text("changed_by_role"),
+  createdAt: timestamp("created_at").defaultNow(),
 });
 
 // 7. Enterprise Assets & Equipment
