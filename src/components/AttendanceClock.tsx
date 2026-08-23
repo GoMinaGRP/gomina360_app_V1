@@ -1,7 +1,8 @@
 "use client";
 
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { Clock, MapPin, AlertTriangle, Loader2, LogIn, LogOut } from "lucide-react";
+import { useClampedDropdown } from "./nav/useClampedDropdown";
 
 /**
  * AttendanceClock — the staff Clock In / Clock Out widget living in the
@@ -17,7 +18,9 @@ export default function AttendanceClock({ currentUser }: { currentUser: any }) {
   const [bizId, setBizId] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState("");
-  const pop = useRef<HTMLDivElement | null>(null);
+  // Viewport-clamped panel — the clock panel sits mid-navbar, so an
+  // absolute `right-0` panel flew off the LEFT edge on phones.
+  const { rootRef: pop, panelStyle } = useClampedDropdown(open, 320);
   const isPrivileged = !["WORKER", "BRANCH_MANAGER", "SUPERVISOR", "ACCOUNTANT"].includes(currentUser?.role);
 
   const refresh = useCallback(async () => {
@@ -40,9 +43,11 @@ export default function AttendanceClock({ currentUser }: { currentUser: any }) {
   useEffect(() => { refresh(); }, [refresh]);
   useEffect(() => {
     const h = (e: MouseEvent) => { if (pop.current && !pop.current.contains(e.target as Node)) setOpen(false); };
+    const k = (e: KeyboardEvent) => { if (e.key === "Escape") setOpen(false); };
     document.addEventListener("mousedown", h);
-    return () => document.removeEventListener("mousedown", h);
-  }, []);
+    document.addEventListener("keydown", k);
+    return () => { document.removeEventListener("mousedown", h); document.removeEventListener("keydown", k); };
+  }, [pop]);
 
   const anchorOf = useMemo(
     () => anchors.find((a) => a.id === (shift?.businessId ?? bizId)),
@@ -96,11 +101,11 @@ export default function AttendanceClock({ currentUser }: { currentUser: any }) {
   const hhmm = (t: any) => (t ? new Date(t).toISOString().slice(11, 16) : "");
 
   return (
-    <div className="relative" ref={pop} data-testid="att-clock-root">
+    <div className="relative shrink-0" ref={pop} data-testid="att-clock-root">
       <button
         onClick={() => setOpen((o) => !o)}
         data-testid="att-clock-btn"
-        className={`flex items-center space-x-1.5 text-xs font-bold px-2.5 py-1.5 rounded-lg border transition ${
+        className={`flex items-center space-x-1.5 text-xs font-bold px-2 sm:px-2.5 py-1.5 rounded-lg border transition ${
           shift
             ? "bg-emerald-500/20 text-emerald-300 border-emerald-500/40"
             : "bg-slate-800/80 text-slate-300 border-slate-700 hover:bg-slate-700"
@@ -108,12 +113,12 @@ export default function AttendanceClock({ currentUser }: { currentUser: any }) {
         title={shift ? `On duty since ${hhmm(shift.clockInAt)} — tap for attendance` : "Attendance — Clock In / Out"}
       >
         <Clock className={`w-3.5 h-3.5 ${shift ? "animate-pulse" : ""}`} />
-        <span className="hidden sm:inline">{shift ? `On duty ${hhmm(shift.clockInAt)}` : "Clock In"}</span>
+        <span className="hidden lg:inline">{shift ? `On duty ${hhmm(shift.clockInAt)}` : "Clock In"}</span>
         {shift?.offSiteIn && <AlertTriangle className="w-3 h-3 text-amber-400" />}
       </button>
 
       {open && (
-        <div className="absolute right-0 mt-2 w-80 max-w-[calc(100vw-2rem)] bg-slate-900 border border-slate-700 rounded-xl shadow-2xl p-3 z-50 space-y-2.5" data-testid="att-clock-panel">
+        <div className="bg-slate-900 border border-slate-700 rounded-xl shadow-2xl p-3 z-50 space-y-2.5 overflow-y-auto" style={panelStyle} data-testid="att-clock-panel">
           <div className="flex items-center gap-2">
             <Clock className="w-4 h-4 text-cyan-400" />
             <p className="text-xs font-extrabold text-white">Attendance Clock</p>

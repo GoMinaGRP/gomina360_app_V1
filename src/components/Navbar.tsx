@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import {
   Globe,
   Wifi,
@@ -17,6 +17,7 @@ import {
 import { CurrencyCode, CURRENCIES } from "@/lib/currency";
 import { synchronizeOfflineQueue, getOfflineQueue } from "@/lib/offlineSync";
 import AttendanceClock from "./AttendanceClock";
+import { useClampedDropdown } from "./nav/useClampedDropdown";
 
 interface NavbarProps {
   currentCurrency: CurrencyCode;
@@ -54,6 +55,38 @@ export default function Navbar({
   const [showCurrencyDropdown, setShowCurrencyDropdown] = useState(false);
   const [showUserDropdown, setShowUserDropdown] = useState(false);
 
+  // Viewport-clamped dropdown positioning — the Staff/Account menu and the
+  // currency menu can never render outside the screen, at any width.
+  const currencyMenu = useClampedDropdown(showCurrencyDropdown, 224);
+  const userMenu = useClampedDropdown(showUserDropdown, 288);
+
+  // Close both menus on outside click / Escape (they also toggle on their
+  // own buttons). rootRef wraps trigger+panel, so "inside" checks are exact.
+  useEffect(() => {
+    if (!showCurrencyDropdown && !showUserDropdown) return;
+    const onDown = (e: MouseEvent) => {
+      const t = e.target as Node;
+      if (showCurrencyDropdown && currencyMenu.rootRef.current && !currencyMenu.rootRef.current.contains(t)) {
+        setShowCurrencyDropdown(false);
+      }
+      if (showUserDropdown && userMenu.rootRef.current && !userMenu.rootRef.current.contains(t)) {
+        setShowUserDropdown(false);
+      }
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setShowCurrencyDropdown(false);
+        setShowUserDropdown(false);
+      }
+    };
+    document.addEventListener("mousedown", onDown);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDown);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [showCurrencyDropdown, showUserDropdown, currencyMenu.rootRef, userMenu.rootRef]);
+
   const handleSync = async () => {
     setIsSyncing(true);
     await synchronizeOfflineQueue();
@@ -62,8 +95,14 @@ export default function Navbar({
   };
 
   return (
-    <header className="sticky top-0 z-40 bg-slate-900 border-b border-slate-800 text-white shadow-lg">
-      <div className="flex items-center justify-between px-4 sm:px-6 py-3">
+    <header className="sticky top-0 z-40 bg-slate-900 border-b border-slate-800 text-white shadow-lg" data-testid="top-navbar">
+      {/* flex-wrap is the hard guarantee: if the controls can ever be wider
+          than the screen (tiny phones, huge zoom, long names), the row wraps
+          to a second line instead of pushing the Staff/Account menu off the
+          right edge, where the page's overflow-x:clip would make it
+          unreachable. Brand + every control are shrink-0 so nothing is
+          squashed into unreadability either. */}
+      <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-2 px-2 sm:px-6 py-2.5">
         {/* Left Branding — shrink-0 so the brand chip can never be squashed by the controls */}
         <div className="flex items-center space-x-2 sm:space-x-3 min-w-0 shrink-0">
           <div className="flex items-center justify-center w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-gradient-to-br from-emerald-500 to-teal-700 text-white font-black text-[10px] sm:text-lg shadow-md border border-emerald-400/30 shrink-0 tracking-tight">
@@ -74,34 +113,41 @@ export default function Navbar({
               <h1 className="text-lg sm:text-xl font-bold tracking-tight whitespace-nowrap bg-gradient-to-r from-emerald-400 via-teal-200 to-yellow-300 bg-clip-text text-transparent">
                 GoMina 360
               </h1>
-              <span className="hidden sm:inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-emerald-950 text-emerald-400 border border-emerald-800">
+              {/* Decorative tagline — only on wide screens where it fits
+                  without forcing the controls onto a second line. */}
+              <span className="hidden xl:inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-emerald-950 text-emerald-400 border border-emerald-800 whitespace-nowrap">
                 Ghana Enterprise Command Center
               </span>
             </div>
-            <p className="text-xs text-slate-400 hidden md:block">
+            <p className="text-xs text-slate-400 hidden xl:block">
               All-In-One Enterprise Management & Decision-Support System
             </p>
           </div>
         </div>
 
-        {/* Right Controls */}
-        <div className="flex items-center space-x-1.5 sm:space-x-4 shrink-0">
-          {/* Currency Switcher */}
-          <div className="relative">
+        {/* Right Controls — always visible: wraps under the brand as a whole
+            group rather than ever overflowing horizontally. */}
+        <div className="flex flex-nowrap items-center gap-1 sm:gap-2 lg:gap-3 shrink-0 ml-auto" data-testid="navbar-controls">
+          {/* Currency Switcher — icon+symbol on compact screens, full at lg */}
+          <div className="relative shrink-0" ref={currencyMenu.rootRef}>
             <button
               onClick={() => setShowCurrencyDropdown(!showCurrencyDropdown)}
-              className="flex items-center space-x-1.5 px-2 sm:px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs sm:text-sm font-medium transition"
+              className="flex items-center space-x-1.5 px-1.5 sm:px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs sm:text-sm font-medium transition"
               title="Switch currency for future international expansion"
               data-testid="currency-switcher"
             >
-              <Globe className="w-4 h-4 text-emerald-400 hidden sm:block" />
+              <Globe className="w-4 h-4 text-emerald-400 hidden lg:block" />
               <span>{CURRENCIES[currentCurrency].symbol}</span>
-              <span className="hidden sm:inline">{currentCurrency}</span>
-              <ChevronDown className="w-3.5 h-3.5 text-slate-400 hidden sm:block" />
+              <span className="hidden lg:inline">{currentCurrency}</span>
+              <ChevronDown className="w-3.5 h-3.5 text-slate-400 hidden lg:block" />
             </button>
 
             {showCurrencyDropdown && (
-              <div className="absolute right-0 mt-2 w-56 rounded-xl bg-slate-800 border border-slate-700 shadow-2xl py-2 z-50">
+              <div
+                className="rounded-xl bg-slate-800 border border-slate-700 shadow-2xl py-2 z-50 overflow-y-auto"
+                style={currencyMenu.panelStyle}
+                data-testid="currency-menu"
+              >
                 <div className="px-3 py-1 text-[10px] font-semibold uppercase tracking-wider text-slate-400 border-b border-slate-700/60 mb-1">
                   Operating Currency
                 </div>
@@ -138,7 +184,7 @@ export default function Navbar({
           <AttendanceClock currentUser={currentUser} />
 
           {/* Online / Offline Mode Toggle & Sync Button */}
-          <div className="flex items-center space-x-1.5 bg-slate-800/80 border border-slate-700 rounded-lg px-1.5 sm:px-2.5 py-1.5">
+          <div className="flex items-center space-x-1 shrink-0 bg-slate-800/80 border border-slate-700 rounded-lg px-1 sm:px-2.5 py-1.5">
             <button
               onClick={onToggleOnline}
               className={`flex items-center space-x-1.5 text-xs font-medium px-2 py-0.5 rounded-md transition ${
@@ -151,12 +197,12 @@ export default function Navbar({
               {isOnline ? (
                 <>
                   <Wifi className="w-3.5 h-3.5" />
-                  <span className="hidden md:inline">Online</span>
+                  <span className="hidden xl:inline">Online</span>
                 </>
               ) : (
                 <>
                   <WifiOff className="w-3.5 h-3.5" />
-                  <span className="hidden md:inline">Offline Mode</span>
+                  <span className="hidden xl:inline">Offline Mode</span>
                 </>
               )}
             </button>
@@ -179,12 +225,14 @@ export default function Navbar({
           {/* Notifications (audit issues, corrections & responses) */}
           {bellSlot}
 
-          {/* User Account & Role Switcher */}
-          <div className="relative">
+          {/* User Account & Role Switcher — the LAST control, pinned to the
+              far right and shrink-0, so it can never be squeezed or pushed
+              off the screen. */}
+          <div className="relative shrink-0" ref={userMenu.rootRef}>
             <button
               onClick={() => setShowUserDropdown(!showUserDropdown)}
               data-testid="user-menu-btn"
-              className="flex items-center space-x-1.5 sm:space-x-2 px-1.5 sm:px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 transition"
+              className="flex items-center space-x-1.5 sm:space-x-2 px-1 sm:px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 transition"
             >
               <div className="w-7 h-7 rounded-full bg-emerald-500/30 border border-emerald-400/50 flex items-center justify-center text-xs font-bold text-emerald-300">
                 {currentUser?.name ? currentUser.name.charAt(0) : "K"}
@@ -202,7 +250,8 @@ export default function Navbar({
 
             {showUserDropdown && (
               <div
-                className="absolute right-0 mt-2 w-72 rounded-xl bg-slate-800 border border-slate-700 shadow-2xl py-2 z-50"
+                className="rounded-xl bg-slate-800 border border-slate-700 shadow-2xl py-2 z-50 overflow-y-auto"
+                style={userMenu.panelStyle}
                 data-testid="user-account-menu"
               >
                 <div className="px-3 py-1.5 border-b border-slate-700/80 mb-1">

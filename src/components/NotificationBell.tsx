@@ -5,8 +5,9 @@
 // reviewing auditor. Clicking a notification opens the right workspace
 // (My Issues for the assignee, the Audit Center for the reviewer).
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Bell, CheckCheck, Flag, Inbox } from "lucide-react";
+import { useClampedDropdown } from "./nav/useClampedDropdown";
 
 type Notif = any;
 
@@ -22,7 +23,10 @@ export default function NotificationBell({
   const [open, setOpen] = useState(false);
   const [items, setItems] = useState<Notif[]>([]);
   const [unread, setUnread] = useState(0);
-  const panelRef = useRef<HTMLDivElement>(null);
+  // Viewport-clamped panel — the bell sits near the right edge; on phones
+  // its `absolute right-0` panel could extend past the LEFT screen edge.
+  // width 384 clamps to (vw − 16px) automatically on narrow screens.
+  const { rootRef: panelRef, panelStyle } = useClampedDropdown(open, 384);
 
   const load = useCallback(async () => {
     if (!currentUser?.id) return;
@@ -76,7 +80,7 @@ export default function NotificationBell({
   };
 
   return (
-    <div className="relative" ref={panelRef}>
+    <div className="relative shrink-0" ref={panelRef}>
       <button
         onClick={() => { setOpen(!open); if (!open) load(); }}
         className="relative p-2 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 transition"
@@ -92,7 +96,7 @@ export default function NotificationBell({
       </button>
 
       {open && (
-        <div className="absolute right-0 mt-2 w-80 sm:w-96 max-h-[70vh] overflow-y-auto rounded-xl bg-slate-800 border border-slate-700 shadow-2xl z-50" data-testid="notif-panel">
+        <div className="overflow-y-auto rounded-xl bg-slate-800 border border-slate-700 shadow-2xl z-50" style={panelStyle} data-testid="notif-panel">
           <div className="sticky top-0 flex items-center justify-between px-3 py-2.5 bg-slate-800/95 backdrop-blur border-b border-slate-700">
             <div className="text-xs font-black text-white flex items-center gap-1.5">
               Notifications
