@@ -4,6 +4,7 @@ import React, { useState, useEffect, useCallback, useMemo, useRef } from "react"
 import Navbar from "./Navbar";
 import LoginScreen from "./LoginScreen";
 import Sidebar, { ActiveTab } from "./Sidebar";
+import ContextNavigator, { ContextBar } from "./ContextNavigator";
 import CommandCenterDashboard from "./CommandCenterDashboard";
 import LivestockModule from "./LivestockModule";
 import SharedEnterpriseModule from "./SharedEnterpriseModule";
@@ -87,6 +88,8 @@ export default function GoMinaApp() {
   const [isNewBusinessModalOpen, setIsNewBusinessModalOpen] = useState(false);
   const [isManageBizOpen, setIsManageBizOpen] = useState(false);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  // Right-side navigation & "you are here" panel — drawer below xl.
+  const [contextNavOpen, setContextNavOpen] = useState(false);
   const [isUserAccessOpen, setIsUserAccessOpen] = useState(false);
   // Self-service password change (account menu → Change Password).
   const [isChangePwOpen, setIsChangePwOpen] = useState(false);
@@ -1046,7 +1049,17 @@ export default function GoMinaApp() {
         />
 
         <main className="flex-1 min-w-0 overflow-y-auto bg-slate-950/95 pb-12">
-          <div className="sticky top-0 z-30 flex items-center justify-end px-4 sm:px-6 py-2 bg-slate-950/90 backdrop-blur border-b border-slate-800/80">
+          <div className="sticky top-0 z-30 flex items-center justify-between xl:justify-end gap-2 px-4 sm:px-6 py-2 bg-slate-950/90 backdrop-blur border-b border-slate-800/80">
+            {/* Compact "you are here" bar — phones/tablets/small laptops
+                (the full right rail takes over at xl and wider). */}
+            <div className="xl:hidden min-w-0 flex-1 flex">
+              <ContextBar
+                activeTab={activeTab}
+                businesses={businesses}
+                currentUser={currentUser}
+                onOpen={() => setContextNavOpen(true)}
+              />
+            </div>
             <UniversalExportCenter
               activeModule={activeTab}
               currentUser={currentUser}
@@ -1069,6 +1082,21 @@ export default function GoMinaApp() {
           </div>
           {renderActiveView()}
         </main>
+
+        {/* Right-side navigation & location panel (persistent rail ≥xl,
+            slide-in drawer on smaller screens) — shows current Business,
+            Branch, Section & Page everywhere in the app. */}
+        <ContextNavigator
+          activeTab={activeTab}
+          onSelectTab={(t) => {
+            setActiveTab(t);
+            setContextNavOpen(false);
+          }}
+          businesses={businesses}
+          currentUser={currentUser}
+          open={contextNavOpen}
+          onClose={() => setContextNavOpen(false)}
+        />
       </div>
 
       <NewBusinessModal

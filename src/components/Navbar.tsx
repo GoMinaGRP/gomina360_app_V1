@@ -193,6 +193,7 @@ export default function Navbar({
           <div className="relative">
             <button
               onClick={() => setShowUserDropdown(!showUserDropdown)}
+              data-testid="user-menu-btn"
               className="flex items-center space-x-1.5 sm:space-x-2 px-1.5 sm:px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 transition"
             >
               <div className="w-7 h-7 rounded-full bg-emerald-500/30 border border-emerald-400/50 flex items-center justify-center text-xs font-bold text-emerald-300">

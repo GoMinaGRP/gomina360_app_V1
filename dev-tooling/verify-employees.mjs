@@ -97,6 +97,10 @@ try {
   // ══ A. Full registration with photo upload + camera capture ════════════
   console.log("── A. Employee Registration (complete record) ──");
   await login(OWNER);
+  // The ID sequence follows whatever employees already exist (the owner may
+  // have registered real staff in the UI) — expect max EMP-NNNN + 1.
+  const prevEmp = await q(`SELECT employee_no FROM employees WHERE employee_no ~ '^EMP-[0-9]+$'`);
+  const expectedEmpNo = `EMP-${String(Math.max(0, ...prevEmp.map((r) => parseInt(r.employee_no.split("-")[1], 10))) + 1).padStart(4, "0")}`;
   await clickText("Employees & Payroll");
   await waitSel('[data-testid="employee-reg-open"]');
   await clickTid("employee-reg-open");
@@ -146,12 +150,12 @@ try {
   ok("A5 employee registered", !!newId, `id ${newId}`);
   ok("A6 personal persisted (dob/gender/email/address/emergency)", row.date_of_birth === "1998-05-14" && row.gender === "FEMALE" && row.email === "ama.test@gomina360.com" && !!row.address && row.emergency_contact_name === "TEST Kofi Serwaa" && !!row.emergency_contact_phone);
   ok("A7 photo stored as data URL", !!row.photo && row.photo.startsWith("data:image/jpeg"));
-  ok("A8 employee ID auto-assigned EMP-0008", row.employee_no === "EMP-0008", row.employee_no);
+  ok(`A8 employee ID auto-assigned ${expectedEmpNo}`, row.employee_no === expectedEmpNo, row.employee_no);
   ok("A9 attendance profile (NIGHT, 7.5h, days, leave 21)", row.shift === "NIGHT" && Number(row.daily_hours) === 7.5 && row.work_days.includes("SAT") && !row.work_days.includes("FRI") && row.leave_entitlement_days === 21, row.work_days);
   ok("A10 identity persisted (Ghana Card + permit)", row.id_type === "GHANA_CARD" && row.id_number === "GHA-TEST-12345678" && row.work_permit_no === "WP-TEST-009");
   ok("A11 business/branch linked (2 / BLOCK-01)", row.business_id === 2 && row.branch === "BLOCK-01");
   const h0 = await q1(`SELECT action, summary FROM employee_history WHERE employee_id=${newId} AND action='CREATED'`);
-  ok("A12 registration recorded in history", !!h0 && h0.summary.includes("EMP-0008"), h0?.summary?.slice(0, 70));
+  ok("A12 registration recorded in history", !!h0 && h0.summary.includes(expectedEmpNo), h0?.summary?.slice(0, 70));
   await sleep(1000);
   ok("A13 row in table with photo + ID", await exists(`[data-testid="employee-row-${newId}"]`) && await exists(`[data-testid="employee-photo-${newId}"] img`));
 
@@ -160,7 +164,7 @@ try {
   await clickTid(`employee-profile-${newId}`);
   await waitSel('[data-testid="epr-root"]');
   ok("B1 profile opens", await exists('[data-testid="epr-root"]'));
-  ok("B2 header shows employee ID", await innerHas('[data-testid="epr-empno"]', "EMP-0008"));
+  ok("B2 header shows employee ID", await innerHas('[data-testid="epr-empno"]', expectedEmpNo));
   ok("B3 link: business + branch", (await innerHas('[data-testid="epr-link-business"]', "Mina Concrete & Blocks")) && (await innerHas('[data-testid="epr-link-branch"]', "BLOCK-01")));
   ok("B4 link: payroll 0 · attendance 0 · leave 0/21",
     (await innerHas('[data-testid="epr-link-payroll"]', "0 entries")) &&
