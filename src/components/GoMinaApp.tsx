@@ -365,14 +365,16 @@ export default function GoMinaApp() {
       currentUser?.role === "OWNER" || currentUser?.role === "GENERAL_MANAGER";
     const isBranchManager = currentUser?.role === "BRANCH_MANAGER";
 
-    // Supervisor & Auditor Control Center — takes precedence over the WORKER /
-    // BRANCH_MANAGER workspace interception, because ANY role may hold an
-    // Auditor grant (server-verified eligibility). The API itself enforces
-    // exactly which businesses and modules each auditor may see.
+    // Supervisor & Auditor Control Center — ASSIGNMENT-ONLY: takes precedence
+    // over the WORKER / BRANCH_MANAGER workspace interception, because ANY
+    // role may hold an Auditor grant (server-verified eligibility). No role
+    // gets it by default — the OWNER or a delegated manager must assign it.
+    // The API itself enforces exactly which businesses, branches and modules
+    // each auditor may see.
     if (activeTab === "AUDIT") {
       const canAudit =
         auditEligible ||
-        ["OWNER", "GENERAL_MANAGER", "BRANCH_MANAGER", "SUPERVISOR"].includes(currentUser?.role || "") ||
+        currentUser?.role === "OWNER" ||
         !!currentUser?.canManageAuditors;
       if (!canAudit) {
         return (
@@ -380,7 +382,7 @@ export default function GoMinaApp() {
             <div className="bg-amber-900/20 border border-amber-500/30 rounded-2xl p-8 max-w-md text-center space-y-3">
               <h2 className="text-lg font-bold text-amber-300">Access Restricted</h2>
               <p className="text-sm text-slate-300">
-                The Audit & Review center is available to Supervisors and authorized Auditors only. The OWNER controls Auditor permissions.
+                The Audit &amp; Review center is only available when the OWNER (or an authorized manager) assigns it to you — for the specific businesses, branches and modules in that assignment.
               </p>
             </div>
           </div>
@@ -999,7 +1001,7 @@ export default function GoMinaApp() {
               // Responses / resolutions go to the reviewer's Audit Center;
               // flags, corrections & closures open the assignee's own inbox.
               const reviewerSide = n.type === "AUDIT_ISSUE_RESPONSE" || n.type === "AUDIT_ISSUE_RESOLVED";
-              if (reviewerSide && (auditEligible || ["OWNER", "GENERAL_MANAGER", "BRANCH_MANAGER", "SUPERVISOR"].includes(currentUser?.role || ""))) {
+              if (reviewerSide && (auditEligible || currentUser?.role === "OWNER" || !!currentUser?.canManageAuditors)) {
                 setAuditFocusIssue(n.issueId);
                 setActiveTab("AUDIT");
               } else {

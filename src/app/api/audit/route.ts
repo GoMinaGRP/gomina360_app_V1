@@ -84,45 +84,51 @@ type Scope = {
   level: "OWNER" | "SUPERVISOR" | "AUDITOR" | "NONE";
   businessIds: number[] | null; // null = unrestricted (OWNER)
   moduleByBusiness: Record<number, string[]>;
+  /** Branch restriction per business: undefined/null ⇒ all branches of the
+   *  business; otherwise the exact branch codes the auditor may see. */
+  branchByBusiness: Record<number, string[] | null>;
   canGrant: boolean;
+  /** Businesses a delegated manager may create grants inside (null = unrestricted). */
+  grantBusinessIds: number[] | null;
 };
 
 async function scopeFor(user: any): Promise<Scope> {
   if (user.role === "OWNER") {
-    return { eligible: true, level: "OWNER", businessIds: null, moduleByBusiness: {}, canGrant: true };
+    return { eligible: true, level: "OWNER", businessIds: null, moduleByBusiness: {}, branchByBusiness: {}, canGrant: true, grantBusinessIds: null };
   }
-  const allowed = (await accessibleBusinessIds(user)) || [];
-  const isSupervisorRole = ["GENERAL_MANAGER", "BRANCH_MANAGER", "SUPERVISOR"].includes(user.role);
-  if (isSupervisorRole && allowed.length > 0) {
-    const moduleByBusiness: Record<number, string[]> = {};
-    for (const b of allowed) moduleByBusiness[b] = [...MODULES];
-    return {
-      eligible: true,
-      level: "SUPERVISOR",
-      businessIds: allowed,
-      moduleByBusiness,
-      canGrant: !!user.canManageAuditors,
-    };
-  }
-  const grants = await db
+  // Audit & Review is ASSIGNMENT-ONLY: no role (WORKER / BRANCH_MANAGER /
+  // SUPERVISOR / GENERAL_MANAGER) gets it by default. A user sees the center
+  // only while an OWNER (or a delegated manager) has granted them an active
+  // Auditor assignment — and then strictly inside the businesses, branches
+  // and modules of that assignment. Managers carrying canManageAuditors may
+  // open the center to manage grants inside their own businesses.
+  const grants = (await db
     .select()
     .from(auditAssignments)
-    .where(eq(auditAssignments.userId, user.id));
-  const active = grants.filter((g) => g.isActive);
-  if (active.length === 0) {
-    return { eligible: false, level: "NONE", businessIds: [], moduleByBusiness: {}, canGrant: false };
+    .where(eq(auditAssignments.userId, user.id))).filter((g) => g.isActive);
+  const canGrant = !!user.canManageAuditors;
+  if (grants.length === 0 && !canGrant) {
+    return { eligible: false, level: "NONE", businessIds: [], moduleByBusiness: {}, branchByBusiness: {}, canGrant: false, grantBusinessIds: [] };
   }
   const moduleByBusiness: Record<number, string[]> = {};
-  for (const g of active) {
+  const branchByBusiness: Record<number, string[] | null> = {};
+  for (const g of grants) {
     const mods = Array.isArray(g.modules) ? (g.modules as string[]) : [];
     moduleByBusiness[g.businessId] = [...new Set([...(moduleByBusiness[g.businessId] || []), ...mods])];
+    if (branchByBusiness[g.businessId] === null) continue; // unrestricted grant already covers all branches
+    branchByBusiness[g.businessId] = g.branchCode == null
+      ? null
+      : [...new Set([...(branchByBusiness[g.businessId] || []), g.branchCode])];
   }
+  const grantBusinessIds = canGrant ? ((await accessibleBusinessIds(user)) || []) : [];
   return {
     eligible: true,
-    level: "AUDITOR",
-    businessIds: [...new Set(active.map((g) => g.businessId))],
+    level: grants.length > 0 ? "AUDITOR" : "SUPERVISOR",
+    businessIds: [...new Set(grants.map((g) => g.businessId))],
     moduleByBusiness,
-    canGrant: false,
+    branchByBusiness,
+    canGrant,
+    grantBusinessIds,
   };
 }
 
@@ -131,6 +137,21 @@ const modulesFor = (scope: Scope, businessId: number): string[] =>
 
 const canSee = (scope: Scope, businessId: number, module: string) =>
   modulesFor(scope, businessId).includes(module);
+
+/** Branch-level enforcement of a grant: branch-scoped auditors never see
+ *  records outside their assigned branch codes (branch-less rows in a
+ *  branch-restricted business stay hidden). */
+const branchOk = (scope: Scope, businessId: number, branchCode: string | null | undefined) => {
+  if (scope.businessIds === null) return true;
+  if (typeof scope.branchByBusiness === "undefined") return true; // legacy callers
+  const allow = scope.branchByBusiness[businessId];
+  if (allow === undefined || allow === null) return true;
+  if (!branchCode) return false;
+  return allow.includes(branchCode);
+};
+
+const canSeeRecord = (scope: Scope, businessId: number, module: string, branchCode?: string | null) =>
+  canSee(scope, businessId, module) && branchOk(scope, businessId, branchCode);
 
 export type AuditRecordRow = {
   key: string;
@@ -159,9 +180,9 @@ async function collectRecords(scope: Scope): Promise<AuditRecordRow[]> {
   const bizRows = await db.select().from(businesses);
   const codeOf = new Map(bizRows.map((b) => [b.id, b.code]));
   const branchOf = (businessId: number, branchCode?: string | null) => branchCode || codeOf.get(businessId) || null;
-  const keep = (businessId: number, module: string) => scope.businessIds === null || canSee(scope, businessId, module);
+  const keep = (businessId: number, module: string, branchCode?: string | null) => scope.businessIds === null || canSeeRecord(scope, businessId, module, branchCode);
   const rows: AuditRecordRow[] = [];
-  const push = (r: AuditRecordRow) => { if (keep(r.businessId, r.module)) rows.push(r); };
+  const push = (r: AuditRecordRow) => { if (keep(r.businessId, r.module, r.branchCode)) rows.push(r); };
 
   // FINANCE — transactions & MoMo (INCOME = sales, EXPENSE/INVESTMENT/TRANSFER)
   const txns = await db.select().from(transactions).orderBy(desc(transactions.id)).limit(240);
@@ -298,14 +319,14 @@ async function scopedReviews(scope: Scope) {
   const all = await db.select().from(auditReviews).orderBy(desc(auditReviews.id)).limit(500);
   if (scope.businessIds === null) return all;
   const ids = scope.businessIds;
-  return all.filter((r) => r.businessId != null && ids.includes(r.businessId) && canSee(scope, r.businessId, r.module));
+  return all.filter((r) => r.businessId != null && ids.includes(r.businessId) && canSee(scope, r.businessId, r.module) && branchOk(scope, r.businessId, (r as any).branchCode));
 }
 
 async function scopedTrail(scope: Scope) {
   const all = await db.select().from(auditTrail).orderBy(desc(auditTrail.id)).limit(300);
   if (scope.businessIds === null) return all;
   const ids = scope.businessIds;
-  return all.filter((t) => t.businessId == null || ids.includes(t.businessId));
+  return all.filter((t) => t.businessId == null || (ids.includes(t.businessId) && (!t.branchCode || branchOk(scope, t.businessId, t.branchCode))));
 }
 
 function buildReport(records: AuditRecordRow[], reviews: any[]) {
@@ -416,7 +437,7 @@ export async function GET(request: Request) {
 
     const url = new URL(request.url);
     if (url.searchParams.get("meta") === "1") {
-      return NextResponse.json({ success: true, eligible: scope.eligible, level: scope.level, canGrant: scope.canGrant, businessIds: scope.businessIds, moduleByBusiness: scope.moduleByBusiness });
+      return NextResponse.json({ success: true, eligible: scope.eligible, level: scope.level, canGrant: scope.canGrant, businessIds: scope.businessIds, moduleByBusiness: scope.moduleByBusiness, branchByBusiness: scope.branchByBusiness, grantBusinessIds: scope.grantBusinessIds });
     }
     if (!scope.eligible) return FORBIDDEN("You have no Supervisor or Auditor access. The OWNER grants Auditor permissions.");
 
@@ -469,11 +490,11 @@ export async function GET(request: Request) {
     let grantUsers: any[] = [];
     if (scope.canGrant) {
       const g = await db.select().from(auditAssignments).orderBy(desc(auditAssignments.id));
-      grants = scope.businessIds === null ? g : g.filter((x) => scope.businessIds!.includes(x.businessId));
+      grants = scope.grantBusinessIds === null ? g : g.filter((x) => scope.grantBusinessIds!.includes(x.businessId));
       const all = await db.select().from(users);
       grantUsers = all
         .filter((u) => u.role !== "OWNER" && u.isActive)
-        .filter((u) => scope.businessIds === null || ["GENERAL_MANAGER"].includes(u.role) || u.assignedBusinessId == null || scope.businessIds!.includes(u.assignedBusinessId))
+        .filter((u) => scope.grantBusinessIds === null || ["GENERAL_MANAGER"].includes(u.role) || u.assignedBusinessId == null || scope.grantBusinessIds!.includes(u.assignedBusinessId))
         .map((u) => ({ id: u.id, name: u.name, role: u.role, email: u.email, assignedBusinessId: u.assignedBusinessId, canManageAuditors: !!u.canManageAuditors }));
     }
 
@@ -495,7 +516,7 @@ export async function GET(request: Request) {
     }
 
     const report = buildReport(records, reviews);
-    return NextResponse.json({ success: true, scope: { eligible: true, level: scope.level, canGrant: scope.canGrant, businessIds: scope.businessIds, moduleByBusiness: scope.moduleByBusiness }, bizList, records: recordsOut, reviews, threads, log, grants, grantUsers, report });
+    return NextResponse.json({ success: true, scope: { eligible: true, level: scope.level, canGrant: scope.canGrant, businessIds: scope.businessIds, moduleByBusiness: scope.moduleByBusiness, branchByBusiness: scope.branchByBusiness, grantBusinessIds: scope.grantBusinessIds }, bizList, records: recordsOut, reviews, threads, log, grants, grantUsers, report });
   } catch (error: any) {
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });
   }
@@ -610,38 +631,60 @@ export async function POST(request: Request) {
     if (body.action === "GRANT") {
       if (!scope.canGrant) return FORBIDDEN("Only the OWNER (or a manager the OWNER authorized) manages Auditor access.");
       const targetId = Number(body.userId);
-      const businessId = Number(body.businessId);
+      // Multi-business + multi-branch: body.businessIds (array) wins; the
+      // legacy single body.businessId / body.branchCode pair keeps working.
+      const useMulti = Array.isArray(body.businessIds) && body.businessIds.length > 0;
+      const bizIds: number[] = useMulti
+        ? [...new Set((body.businessIds as any[]).map((x: any) => Number(x)).filter(Boolean))]
+        : [Number(body.businessId)].filter(Boolean);
       const mods = (Array.isArray(body.modules) ? body.modules : []).map((m: any) => String(m).toUpperCase()).filter((m: string) => MODULES.includes(m));
-      if (!targetId || !businessId || mods.length === 0) {
-        return NextResponse.json({ success: false, error: "Pick a user, a business and at least one module to audit." }, { status: 400 });
+      if (!targetId || bizIds.length === 0 || mods.length === 0) {
+        return NextResponse.json({ success: false, error: "Pick a user, at least one business and at least one module to audit." }, { status: 400 });
       }
-      if (scope.businessIds !== null && !scope.businessIds.includes(businessId)) {
+      if (scope.grantBusinessIds !== null && bizIds.some((b) => !scope.grantBusinessIds!.includes(b))) {
         return FORBIDDEN("You can only grant Auditor access inside the businesses you manage.");
       }
       const [target] = await db.select().from(users).where(eq(users.id, targetId));
       if (!target || !target.isActive) return NextResponse.json({ success: false, error: "User not found or inactive." }, { status: 404 });
       if (target.role === "OWNER") return NextResponse.json({ success: false, error: "The OWNER already controls all audits." }, { status: 400 });
       const bizRows = await db.select().from(businesses);
-      const biz = bizRows.find((b) => b.id === businessId);
-      if (!biz) return NextResponse.json({ success: false, error: "Business not found." }, { status: 404 });
-
-      const existing = (await db.select().from(auditAssignments).where(eq(auditAssignments.userId, targetId))).find((g) => g.businessId === businessId);
-      const branchCode = body.branchCode ? String(body.branchCode).trim() : null;
       const note = body.note ? String(body.note).trim() : null;
-      if (existing) {
-        const [updated] = await db.update(auditAssignments)
-          .set({ modules: mods, branchCode, note, isActive: true, grantedByUserId: user.id, grantedByName: user.name, grantedByRole: user.role, userName: target.name, userRole: target.role, updatedAt: new Date() })
-          .where(eq(auditAssignments.id, existing.id)).returning();
-        await writeTrail(user, { action: "UPDATE_GRANT", targetType: "GRANT", targetLabel: `${target.name} → ${biz.name}`, businessId, branchCode, detail: `Modules: ${mods.join(", ")}${branchCode ? ` · branch ${branchCode}` : ""}${note ? ` · ${note}` : ""}` });
-        return NextResponse.json({ success: true, grant: updated, updated: true });
+      // Per-business branch selection (multi mode): { [businessId]: [codes] }
+      const branchesMap: Record<string, any> = body.branches && typeof body.branches === "object" ? body.branches : {};
+
+      const targetGrants = await db.select().from(auditAssignments).where(eq(auditAssignments.userId, targetId));
+      const out: any[] = [];
+      let allUpdated = true;
+      for (const businessId of bizIds) {
+        const biz = bizRows.find((b) => b.id === businessId);
+        if (!biz) return NextResponse.json({ success: false, error: `Business ${businessId} not found.` }, { status: 404 });
+        const branchList: (string | null)[] = useMulti
+          ? (((branchesMap[String(businessId)] || []) as any[]).map((x: any) => String(x).trim()).filter(Boolean).length
+              ? [...new Set(((branchesMap[String(businessId)] || []) as any[]).map((x: any) => String(x).trim()).filter(Boolean) as string[])]
+              : [null])
+          : [body.branchCode ? String(body.branchCode).trim() : null];
+        for (const branchCode of branchList) {
+          const existing = (targetGrants.find((g) => g.businessId === businessId && (g.branchCode ?? null) === branchCode)) ||
+            out.find((g) => g.businessId === businessId && (g.branchCode ?? null) === branchCode);
+          if (existing && targetGrants.some((g) => g.id === existing.id)) {
+            const [updated] = await db.update(auditAssignments)
+              .set({ modules: mods, branchCode, note, isActive: true, grantedByUserId: user.id, grantedByName: user.name, grantedByRole: user.role, userName: target.name, userRole: target.role, updatedAt: new Date() })
+              .where(eq(auditAssignments.id, existing.id)).returning();
+            await writeTrail(user, { action: "UPDATE_GRANT", targetType: "GRANT", targetLabel: `${target.name} → ${biz.name}`, businessId, branchCode, detail: `Modules: ${mods.join(", ")}${branchCode ? ` · branch ${branchCode}` : ""}${note ? ` · ${note}` : ""}` });
+            out.push(updated);
+          } else {
+            const [grant] = await db.insert(auditAssignments).values({
+              userId: targetId, userName: target.name, userRole: target.role,
+              businessId, branchCode, modules: mods, note,
+              grantedByUserId: user.id, grantedByName: user.name, grantedByRole: user.role,
+            }).returning();
+            await writeTrail(user, { action: "GRANT_ACCESS", targetType: "GRANT", targetLabel: `${target.name} → ${biz.name}`, businessId, branchCode, detail: `Modules: ${mods.join(", ")}${note ? ` · ${note}` : ""}` });
+            out.push(grant);
+            allUpdated = false;
+          }
+        }
       }
-      const [grant] = await db.insert(auditAssignments).values({
-        userId: targetId, userName: target.name, userRole: target.role,
-        businessId, branchCode, modules: mods, note,
-        grantedByUserId: user.id, grantedByName: user.name, grantedByRole: user.role,
-      }).returning();
-      await writeTrail(user, { action: "GRANT_ACCESS", targetType: "GRANT", targetLabel: `${target.name} → ${biz.name}`, businessId, branchCode, detail: `Modules: ${mods.join(", ")}${note ? ` · ${note}` : ""}` });
-      return NextResponse.json({ success: true, grant });
+      return NextResponse.json({ success: true, grants: out, grant: out[0] || null, count: out.length, updated: allUpdated && out.length > 0 });
     }
 
     // ── Review an existing record ─────────────────────────────────────────
@@ -653,8 +696,8 @@ export async function POST(request: Request) {
     }
     const rec = await resolveRecord(recordType, body.recordSource ? String(body.recordSource) : null, recordId);
     if (!rec) return NextResponse.json({ success: false, error: "Record not found." }, { status: 404 });
-    if (!canSee(scope, rec.businessId, rec.module)) {
-      return FORBIDDEN("That record is outside the businesses or modules you are authorized to audit.");
+    if (!canSeeRecord(scope, rec.businessId, rec.module, rec.branchCode)) {
+      return FORBIDDEN("That record is outside the businesses, branches or modules you are authorized to audit.");
     }
     const reason = String(body.reason || "").trim();
     const comment = String(body.comment || "").trim();
@@ -796,7 +839,7 @@ export async function PATCH(request: Request) {
       if (!scope.canGrant) return FORBIDDEN("Only the OWNER (or a manager the OWNER authorized) manages Auditor access.");
       const [grant] = await db.select().from(auditAssignments).where(eq(auditAssignments.id, Number(body.grantId)));
       if (!grant) return NextResponse.json({ success: false, error: "Grant not found." }, { status: 404 });
-      if (scope.businessIds !== null && !scope.businessIds.includes(grant.businessId)) {
+      if (scope.grantBusinessIds !== null && !scope.grantBusinessIds.includes(grant.businessId)) {
         return FORBIDDEN("You can only manage Auditor access inside the businesses you manage.");
       }
       const [updated] = await db.update(auditAssignments).set({ isActive: false, updatedAt: new Date() }).where(eq(auditAssignments.id, grant.id)).returning();

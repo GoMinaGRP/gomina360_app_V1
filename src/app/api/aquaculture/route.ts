@@ -7,6 +7,7 @@ import {
   aquacultureWaterQualityLogs,
   aquacultureHarvests,
   aquacultureChecklists,
+  aquacultureWeightLogs,
   transactions,
   businesses,
 } from "@/db/schema";
@@ -39,7 +40,7 @@ export async function GET(request: NextRequest) {
     const scope = (table: any) =>
       db.select().from(table).where(eq(table.businessId, businessId));
 
-    const [ponds, batches, feedLogs, waterLogs, harvests, checklists] =
+    const [ponds, batches, feedLogs, waterLogs, harvests, checklists, weightLogs] =
       await Promise.all([
         scope(aquaculturePonds),
         scope(aquacultureBatches),
@@ -47,6 +48,7 @@ export async function GET(request: NextRequest) {
         scope(aquacultureWaterQualityLogs),
         scope(aquacultureHarvests),
         scope(aquacultureChecklists),
+        scope(aquacultureWeightLogs),
       ]);
 
     return NextResponse.json({
@@ -57,6 +59,7 @@ export async function GET(request: NextRequest) {
       waterLogs: waterLogs.sort((a: any, b: any) => (b.id || 0) - (a.id || 0)),
       harvests: harvests.sort((a: any, b: any) => (b.id || 0) - (a.id || 0)),
       checklists: checklists.sort((a: any, b: any) => (a.id || 0) - (b.id || 0)),
+      weightLogs: weightLogs.sort((a: any, b: any) => (b.id || 0) - (a.id || 0)),
     });
   } catch (error: any) {
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });
@@ -182,6 +185,44 @@ export async function POST(request: NextRequest) {
     // ─────────────────────────────────────────────────────────────────
     //  WATER QUALITY
     // ─────────────────────────────────────────────────────────────────
+    // ─────────────────────────────────────────────────────────────────
+    //  WEIGHT — daily fish sampling/weighing by batch + pond + species.
+    //  Batch, pond, species and branch are auto-filled from the selected
+    //  batch; saving also refreshes the batch's live avgWeightGrams so the
+    //  Stock view and growth analytics stay in sync. Pure measurement —
+    //  never creates transactions or inventory movement.
+    // ─────────────────────────────────────────────────────────────────
+    if (entity === "WEIGHT") {
+      const batchId = Number(data.batchId) || 0;
+      const avgWeightG = Number(data.avgWeightG);
+      const sampleSize = Math.max(1, Number(data.sampleSize) || 1);
+      if (!batchId) return NextResponse.json({ success: false, error: "batchId is required" }, { status: 400 });
+      if (!(avgWeightG > 0)) return NextResponse.json({ success: false, error: "avgWeightG (grams) must be > 0" }, { status: 400 });
+      const [batch] = await db
+        .select()
+        .from(aquacultureBatches)
+        .where(and(eq(aquacultureBatches.id, batchId), eq(aquacultureBatches.businessId, businessId)));
+      if (!batch) return NextResponse.json({ success: false, error: "Batch not found for this business." }, { status: 404 });
+      const [row] = await db.insert(aquacultureWeightLogs).values({
+        businessId,
+        branchCode: batch.branchCode || branchCode,
+        batchId: batch.id,
+        batchNumber: batch.batchNumber,
+        pondId: data.pondId ? Number(data.pondId) : batch.pondId || null,
+        species: data.species || batch.species,
+        sampleSize,
+        avgWeightG,
+        recordedDate: data.recordedDate || today,
+        notes: data.notes || null,
+        recordedByName: data.recordedByName || __authSession.user?.name || "Aquaculture User",
+      }).returning();
+      // Auto-connection: keep the batch's current average weight live.
+      await db.update(aquacultureBatches)
+        .set({ avgWeightGrams: avgWeightG })
+        .where(eq(aquacultureBatches.id, batch.id));
+      return NextResponse.json({ success: true, item: row });
+    }
+
     if (entity === "WATER") {
       const [row] = await db.insert(aquacultureWaterQualityLogs).values({
         businessId, branchCode,

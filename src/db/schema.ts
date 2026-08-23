@@ -625,6 +625,29 @@ export const poultryProducts = pgTable("poultry_products", {
   uniqueIndex("poultry_products_business_key_unique").on(t.businessId, t.productKey),
 ]);
 
+// P5c. Daily Weight Log — one row per weighing event. BIRD: average live
+// body weight of a sample of birds from a flock (broilers AND layers);
+// EGG: average egg weight of a sample for a layer flock. Weights are stored
+// in GRAMS. Flock/batch/branch are auto-filled from the selected flock, and
+// the growth analytics join these rows to feed, mortality and production by
+// (batch, date) to derive growth rate, average weight by age, estimated
+// biomass and calculated FCR.
+export const poultryWeightLogs = pgTable("poultry_weight_logs", {
+  id: serial("id").primaryKey(),
+  businessId: integer("business_id").notNull(),
+  branchCode: text("branch_code"),
+  flockId: integer("flock_id").notNull(),
+  batchNumber: text("batch_number").notNull(),
+  weightKind: text("weight_kind").notNull(), // BIRD | EGG
+  sampleSize: integer("sample_size").notNull().default(1), // birds / eggs weighed
+  avgWeightG: doublePrecision("avg_weight_g").notNull(), // grams per bird / per egg
+  recordedDate: text("recorded_date").notNull(), // YYYY-MM-DD
+  notes: text("notes"),
+  recordedByName: text("recorded_by_name"),
+  recordedByRole: text("recorded_by_role"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
 // P6. Daily Activity Checklist
 export const poultryChecklists = pgTable("poultry_checklists", {
   id: serial("id").primaryKey(),
@@ -836,6 +859,29 @@ export const aquacultureHarvests = pgTable("aquaculture_harvests", {
   revenueGhs: doublePrecision("revenue_ghs").default(0),
   saleDate: text("sale_date").notNull(),
   buyerName: text("buyer_name"),
+  recordedByName: text("recorded_by_name"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+// A5b. Daily Fish Weight Log — one row per sampling/weighing event: fish
+// netted from a pond/tank for a batch and weighed. avgWeightGrams is the mean
+// weight of the sampled fish (grams). Batch / pond / species / branch are
+// auto-filled from the selected batch; saving also refreshes the batch's
+// avgWeightGrams. Growth analytics join these rows with feed consumption,
+// harvests and mortality to derive growth rate, average weight by age,
+// biomass, FCR and survival.
+export const aquacultureWeightLogs = pgTable("aquaculture_weight_logs", {
+  id: serial("id").primaryKey(),
+  businessId: integer("business_id").notNull(),
+  branchCode: text("branch_code"),
+  batchId: integer("batch_id").notNull(),
+  batchNumber: text("batch_number").notNull(),
+  pondId: integer("pond_id"),
+  species: text("species").notNull(),
+  sampleSize: integer("sample_size").notNull().default(1), // fish weighed
+  avgWeightG: doublePrecision("avg_weight_g").notNull(),
+  recordedDate: text("recorded_date").notNull(), // YYYY-MM-DD
+  notes: text("notes"),
   recordedByName: text("recorded_by_name"),
   createdAt: timestamp("created_at").defaultNow(),
 });

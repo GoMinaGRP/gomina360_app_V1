@@ -419,11 +419,12 @@ export default function Sidebar({
         </div>
       )}
 
-      {/* Oversight & Assurance — Supervisors & Auditors. Executives and
-          managers act as supervisors inside their scope; any user the OWNER
-          (or a delegated manager) granted Auditor access to also sees this —
-          strictly limited to their authorized businesses & modules. */}
-      {(isExecutive || isBusinessManager || currentUser?.role === "SUPERVISOR" || currentUser?.canManageAuditors || auditEligible) && (
+      {/* Oversight & Assurance — ASSIGNMENT-ONLY. No worker or manager sees
+          Audit & Review by default: only the OWNER, managers the OWNER
+          delegated (canManageAuditors), and users holding an active Auditor
+          assignment — strictly limited to the businesses, branches & modules
+          they were granted. */}
+      {(currentUser?.role === "OWNER" || currentUser?.canManageAuditors || auditEligible) && (
         <div className="px-3 py-2">
           <div className="px-1 sm:px-3 py-1 text-[11px] font-bold uppercase tracking-wider text-slate-400">
             Oversight & Assurance

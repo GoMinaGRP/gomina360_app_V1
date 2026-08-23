@@ -3,7 +3,7 @@
 import React, { useMemo, useState } from "react";
 import {
   Activity, Bird, Egg, Wheat, TrendingUp, TrendingDown, HeartPulse,
-  Target, Sliders, RotateCcw,
+  Target, Sliders, RotateCcw, Scale, X, Save,
 } from "lucide-react";
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend,
@@ -15,10 +15,17 @@ import {
 } from "@/lib/poultryPerformance";
 
 interface Props {
+  businessId: number;
   flocks: any[];
   feedLogs: any[];
   healthRecords: any[];
   production: any[];
+  /** Daily bird/egg weighing logs (poultry_weight_logs). */
+  weightLogs: any[];
+  currentUserName?: string;
+  currentUserRole?: string;
+  /** Called after a weight record is saved so the parent refetches. */
+  onRefresh?: () => void;
   /** Parent dashboard quick filters (date range + product type). */
   dateFilter: string;
   productFilter: string;
@@ -55,11 +62,78 @@ function ChartCard({
  * Flock and Branch filters on top of the dashboard's date/product filters.
  */
 export default function PoultryGrowthAnalytics({
-  flocks, feedLogs, healthRecords, production, dateFilter, productFilter,
+  businessId, flocks, feedLogs, healthRecords, production, weightLogs = [],
+  currentUserName, currentUserRole, onRefresh, dateFilter, productFilter,
 }: Props) {
   const [batch, setBatch] = useState("ALL");
   const [flockId, setFlockId] = useState<number | null>(null);
   const [branch, setBranch] = useState("ALL");
+
+  // ── Daily weight recording (bird + egg) ──────────────────────────────
+  const [weighOpen, setWeighOpen] = useState(false);
+  const [weighKind, setWeighKind] = useState<"BIRD" | "EGG">("BIRD");
+  const [weighFlockId, setWeighFlockId] = useState<number | "">("");
+  const [weighSample, setWeighSample] = useState("30");
+  const [weighAvgG, setWeighAvgG] = useState("");
+  const [weighDate, setWeighDate] = useState(() => new Date().toISOString().split("T")[0]);
+  const [weighNotes, setWeighNotes] = useState("");
+  const [weighBusy, setWeighBusy] = useState(false);
+  const [weighMsg, setWeighMsg] = useState("");
+
+  const weighFlocks = flocks.filter((f) =>
+    (f.status || "ACTIVE") === "ACTIVE" && (weighKind === "EGG" ? f.birdType === "LAYERS" : true));
+  const weighFlock = flocks.find((f) => f.id === weighFlockId) || null;
+  const weighAgeDays = weighFlock?.arrivalDate
+    ? Math.max(0, Math.round((Date.parse(weighDate) - Date.parse(weighFlock.arrivalDate)) / 86400000))
+    : null;
+
+  const openWeigh = () => {
+    setWeighKind("BIRD");
+    setWeighFlockId(flocks.find((f) => (f.status || "ACTIVE") === "ACTIVE")?.id ?? "");
+    setWeighAvgG("");
+    setWeighNotes("");
+    setWeighMsg("");
+    setWeighOpen(true);
+  };
+
+  const saveWeight = async () => {
+    if (!weighFlockId || !(Number(weighAvgG) > 0) || weighBusy) return;
+    setWeighBusy(true);
+    setWeighMsg("");
+    try {
+      const res = await fetch("/api/poultry", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          entity: "WEIGHT",
+          data: {
+            businessId,
+            flockId: Number(weighFlockId),
+            weightKind: weighKind,
+            sampleSize: Math.max(1, Number(weighSample) || 1),
+            avgWeightG: Number(weighAvgG),
+            recordedDate: weighDate,
+            notes: weighNotes || undefined,
+            recordedByName: currentUserName,
+            recordedByRole: currentUserRole,
+          },
+        }),
+      });
+      const d = await res.json();
+      if (d.success) {
+        setWeighMsg("Saved — charts updated with this weighing.");
+        onRefresh?.();
+        setWeighAvgG("");
+        setTimeout(() => setWeighOpen(false), 650);
+      } else {
+        setWeighMsg(d.error || "Could not save the weighing.");
+      }
+    } catch {
+      setWeighMsg("Network error — weighing not saved.");
+    } finally {
+      setWeighBusy(false);
+    }
+  };
 
   const filters: PoultryPerfFilters = useMemo(
     () => ({ dateFilter, productFilter, batchNumber: batch, flockId, branchCode: branch }),
@@ -67,8 +141,8 @@ export default function PoultryGrowthAnalytics({
   );
 
   const perf = useMemo(
-    () => computePoultryPerformance({ flocks, feedLogs, healthRecords, production }, filters),
-    [flocks, feedLogs, healthRecords, production, filters],
+    () => computePoultryPerformance({ flocks, feedLogs, healthRecords, production, weightLogs }, filters),
+    [flocks, feedLogs, healthRecords, production, weightLogs, filters],
   );
 
   const batchOptions = useMemo(
@@ -118,8 +192,17 @@ export default function PoultryGrowthAnalytics({
             </p>
           </div>
         </div>
-        <div className="text-[10px] text-slate-500 font-semibold uppercase tracking-wider">
-          {perf.growthTrend.length + perf.feedDaily.length + perf.fcrTrend.length + perf.mortalityDaily.length + perf.broilerDaily.length + perf.layTrend.length + perf.eggDaily.length} series points
+        <div className="flex items-center gap-3">
+          <div className="text-[10px] text-slate-500 font-semibold uppercase tracking-wider">
+            {perf.growthTrend.length + perf.feedDaily.length + perf.fcrTrend.length + perf.mortalityDaily.length + perf.broilerDaily.length + perf.layTrend.length + perf.eggDaily.length + perf.eggWeightDaily.length + perf.biomassDaily.length} series points
+          </div>
+          <button
+            onClick={openWeigh}
+            data-testid="poa-record-weight"
+            className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-xs font-bold text-white shadow"
+          >
+            <Scale className="w-3.5 h-3.5" /> Record Daily Weight
+          </button>
         </div>
       </div>
 
@@ -167,6 +250,9 @@ export default function PoultryGrowthAnalytics({
         <Chip tid="poa-kpi-eggs-hen" label="Eggs / Hen / Day" value={k.eggsPerHenDay != null ? k.eggsPerHenDay.toFixed(2) : "—"} sub={`${k.eggs.toLocaleString()} eggs`} tone="amber" />
         <Chip tid="poa-kpi-harvest" label="Harvested" value={k.birdsHarvested.toLocaleString()} sub="broilers (birds)" tone="cyan" />
         <Chip tid="poa-kpi-placed" label="Birds Placed" value={k.placed.toLocaleString()} sub="in selected scope" />
+        <Chip tid="poa-kpi-calcfcr" label="Calc. FCR" value={k.calcFcr ?? "—"} sub="feed ÷ biomass gain" tone="cyan" />
+        <Chip tid="poa-kpi-eggwt" label="Avg Egg Weight" value={k.avgEggWeightG != null ? `${k.avgEggWeightG.toFixed(1)} g` : "—"} sub="latest egg weighing" tone="amber" />
+        <Chip tid="poa-kpi-biomass" label="Est. Biomass" value={k.biomassKg != null ? `${k.biomassKg.toLocaleString()} kg` : "—"} sub="live birds × avg weight" tone="cyan" />
       </div>
 
       {/* Charts */}
@@ -295,7 +381,151 @@ export default function PoultryGrowthAnalytics({
             </ResponsiveContainer>
           ) : <Empty tid="poa-empty-eggs">No egg collections recorded in this scope.</Empty>}
         </ChartCard>
+
+        {/* 9 — Average egg weight vs standard, linked to daily collection */}
+        <ChartCard title="Average Egg Weight (g) vs Egg Output" icon={Scale} tid="poa-chart-eggweight">
+          {perf.eggWeightDaily.length > 0 ? (
+            <ResponsiveContainer width="100%" height={210}>
+              <ComposedChart data={perf.eggWeightDaily}>
+                <XAxis dataKey="date" stroke="#94a3b8" style={{ fontSize: 9 }} />
+                <YAxis yAxisId="l" stroke="#94a3b8" style={{ fontSize: 9 }} tickFormatter={(v: number) => `${v}g`} />
+                <YAxis yAxisId="r" orientation="right" stroke="#94a3b8" style={{ fontSize: 9 }} />
+                <Tooltip contentStyle={TT} />
+                <Legend wrapperStyle={{ fontSize: 10 }} />
+                <Bar yAxisId="r" dataKey="eggs" name="Eggs collected" fill="#10b981" radius={[4, 4, 0, 0]} />
+                <Line yAxisId="l" type="monotone" dataKey="avgG" name="Avg egg weight (g)" stroke="#f59e0b" strokeWidth={2} dot={{ r: 3 }} />
+                <Line yAxisId="l" type="monotone" dataKey="targetG" name="Standard (g)" stroke="#06b6d4" strokeWidth={2} strokeDasharray="5 4" dot={false} />
+              </ComposedChart>
+            </ResponsiveContainer>
+          ) : <Empty tid="poa-empty-eggweight">No egg weighings in this scope — use Record Daily Weight → Egg Weight.</Empty>}
+        </ChartCard>
+
+        {/* 10 — Estimated standing biomass */}
+        <ChartCard title="Estimated Live Biomass (kg)" icon={Scale} tid="poa-chart-biomass">
+          {perf.biomassDaily.length > 0 ? (
+            <ResponsiveContainer width="100%" height={210}>
+              <LineChart data={perf.biomassDaily}>
+                <XAxis dataKey="date" stroke="#94a3b8" style={{ fontSize: 9 }} />
+                <YAxis stroke="#94a3b8" style={{ fontSize: 9 }} tickFormatter={(v: number) => `${v}kg`} />
+                <Tooltip contentStyle={TT} />
+                <Legend wrapperStyle={{ fontSize: 10 }} />
+                <Line type="monotone" dataKey="biomassKg" name="Biomass (kg)" stroke="#a855f7" strokeWidth={2} dot={{ r: 3 }} />
+              </LineChart>
+            </ResponsiveContainer>
+          ) : <Empty tid="poa-empty-biomass">No weight samples yet — biomass needs daily bird weights.</Empty>}
+        </ChartCard>
       </div>
+
+      {/* ── Record Daily Weight modal (bird + egg) ─────────────────────── */}
+      {weighOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm" data-testid="poaw-modal">
+          <div className="w-full max-w-md bg-slate-800 border border-slate-700 rounded-2xl shadow-2xl overflow-hidden">
+            <div className="px-5 py-3.5 border-b border-slate-700 flex items-center justify-between">
+              <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                <Scale className="w-4 h-4 text-emerald-400" /> Record Daily Weight
+              </h3>
+              <button onClick={() => setWeighOpen(false)} data-testid="poaw-close" className="p-1.5 rounded-lg hover:bg-slate-700 text-slate-400">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="p-5 space-y-3">
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  onClick={() => { setWeighKind("BIRD"); setWeighFlockId(flocks.find((f) => (f.status || "ACTIVE") === "ACTIVE")?.id ?? ""); }}
+                  data-testid="poaw-kind-bird"
+                  className={`flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-lg text-xs font-bold border transition ${weighKind === "BIRD" ? "bg-emerald-600/20 border-emerald-500 text-emerald-300" : "bg-slate-900 border-slate-700 text-slate-400 hover:border-slate-500"}`}
+                >
+                  <Bird className="w-4 h-4" /> Bird Weight
+                </button>
+                <button
+                  onClick={() => { setWeighKind("EGG"); setWeighFlockId(flocks.find((f) => (f.status || "ACTIVE") === "ACTIVE" && f.birdType === "LAYERS")?.id ?? ""); }}
+                  data-testid="poaw-kind-egg"
+                  className={`flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-lg text-xs font-bold border transition ${weighKind === "EGG" ? "bg-amber-600/20 border-amber-500 text-amber-300" : "bg-slate-900 border-slate-700 text-slate-400 hover:border-slate-500"}`}
+                >
+                  <Egg className="w-4 h-4" /> Egg Weight
+                </button>
+              </div>
+
+              <div>
+                <Lab>{weighKind === "EGG" ? "Layer Flock" : "Flock / Batch"}</Lab>
+                <select
+                  value={weighFlockId}
+                  onChange={(e) => setWeighFlockId(e.target.value ? Number(e.target.value) : "")}
+                  className={sel + " w-full"}
+                  data-testid="poaw-flock"
+                >
+                  <option value="">Select flock…</option>
+                  {weighFlocks.map((f) => (
+                    <option key={f.id} value={f.id}>
+                      {f.flockName || f.batchNumber} ({f.birdType}) — {f.batchNumber}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {weighFlock && (
+                <div className="text-[10px] text-slate-400 bg-slate-900/70 border border-slate-700/60 rounded-lg px-3 py-2" data-testid="poaw-info">
+                  Linked automatically → Batch <span className="text-emerald-300 font-bold">{weighFlock.batchNumber}</span>
+                  {" · "}Branch <span className="text-emerald-300 font-bold">{weighFlock.branchCode || "—"}</span>
+                  {weighAgeDays != null && (
+                    <>
+                      {" · "}Age <span className="text-emerald-300 font-bold">{weighAgeDays} days (W{Math.floor(weighAgeDays / 7)})</span>
+                    </>
+                  )}
+                  {" · "}Live birds <span className="text-emerald-300 font-bold">{(weighFlock.currentCount || 0).toLocaleString()}</span>
+                </div>
+              )}
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <Lab>{weighKind === "EGG" ? "Eggs weighed (sample)" : "Birds weighed (sample)"}</Lab>
+                  <input type="number" min={1} value={weighSample} onChange={(e) => setWeighSample(e.target.value)} className={sel + " w-full"} data-testid="poaw-sample" />
+                </div>
+                <div>
+                  <Lab>{weighKind === "EGG" ? "Avg egg weight (g)" : "Avg bird weight (g)"}</Lab>
+                  <input type="number" min={0} step="0.1" value={weighAvgG} onChange={(e) => setWeighAvgG(e.target.value)} placeholder={weighKind === "EGG" ? "e.g. 62" : "e.g. 1850"} className={sel + " w-full"} data-testid="poaw-avg" />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <Lab>Date</Lab>
+                  <input type="date" value={weighDate} onChange={(e) => setWeighDate(e.target.value)} className={sel + " w-full"} data-testid="poaw-date" />
+                </div>
+                <div>
+                  <Lab>Notes (optional)</Lab>
+                  <input value={weighNotes} onChange={(e) => setWeighNotes(e.target.value)} placeholder="e.g. morning sample" className={sel + " w-full"} data-testid="poaw-notes" />
+                </div>
+              </div>
+
+              {weighMsg && <p className={`text-[11px] font-semibold ${weighMsg.startsWith("Saved") ? "text-emerald-300" : "text-rose-300"}`} data-testid="poaw-status">{weighMsg}</p>}
+
+              <button
+                onClick={saveWeight}
+                disabled={weighBusy || !weighFlockId || !(Number(weighAvgG) > 0)}
+                data-testid="poaw-save"
+                className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 disabled:cursor-not-allowed text-sm font-bold text-white shadow"
+              >
+                <Save className="w-4 h-4" /> {weighBusy ? "Saving…" : "Save Weighing"}
+              </button>
+
+              {/* recent weighings for this business */}
+              <div className="pt-1">
+                <p className="text-[10px] uppercase font-bold text-slate-500 mb-1.5">Recent weighings</p>
+                <div className="space-y-1 max-h-28 overflow-y-auto" data-testid="poaw-recent">
+                  {weightLogs.length === 0 && <p className="text-[11px] text-slate-500">No weighings recorded yet.</p>}
+                  {[...weightLogs].slice(0, 6).map((w) => (
+                    <div key={w.id} className="flex items-center justify-between text-[11px] bg-slate-900/60 border border-slate-700/40 rounded-lg px-2.5 py-1.5">
+                      <span className="text-slate-300">{w.recordedDate} · <span className="font-bold text-slate-200">{w.weightKind === "EGG" ? "Egg" : "Bird"}</span> · {w.batchNumber}</span>
+                      <span className="font-bold text-emerald-300">{Number(w.avgWeightG).toLocaleString()} g <span className="text-slate-500 font-normal">×{w.sampleSize}</span></span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

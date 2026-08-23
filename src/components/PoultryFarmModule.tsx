@@ -159,6 +159,8 @@ export default function PoultryFarmModule({
   const [waterLogs, setWaterLogs] = useState<any[]>([]);
   const [healthRecords, setHealthRecords] = useState<any[]>([]);
   const [production, setProduction] = useState<any[]>([]);
+  // Daily bird/egg weighing logs (growth analysis)
+  const [weightLogs, setWeightLogs] = useState<any[]>([]);
   const [checklists, setChecklists] = useState<any[]>([]);
   // Master Product List (poultry_products) — production types incl. user-added
   const [products, setProducts] = useState<any[]>([]);
@@ -186,6 +188,7 @@ export default function PoultryFarmModule({
         setHealthRecords(d.healthRecords || []);
         setProduction(d.production || []);
         setProducts(d.products || []);
+        setWeightLogs(d.weightLogs || []);
       }
       // Daily checklists come from the unified enterprise checklist engine
       // (same row shape: checklistDate, isCompleted, completedByName/Role/At).
@@ -745,10 +748,15 @@ export default function PoultryFarmModule({
               feed, FCR, mortality, broiler output, lay targets & more, with
               Batch / Flock / Branch scoping on top of the dashboard filters */}
           <PoultryGrowthAnalytics
+            businessId={bizId}
             flocks={flocks}
             feedLogs={feedLogs}
             healthRecords={healthRecords}
             production={production}
+            weightLogs={weightLogs}
+            currentUserName={currentUser?.name}
+            currentUserRole={currentUser?.role}
+            onRefresh={refresh}
             dateFilter={dashDateFilter}
             productFilter={dashProductFilter}
           />

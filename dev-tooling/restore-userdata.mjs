@@ -100,5 +100,12 @@ if (!grants.some((g) => g.userId === 3 && g.businessId === 2 && g.isActive)) {
   must("grant Emmanuel → Mina Concrete & Blocks (all 8 modules)", await api("/api/audit", "POST", { action: "GRANT", userId: 3, businessId: 2, modules: AUDIT_MODULES }));
 } else console.log("• Emmanuel grant already active, skipping");
 
+// 4b) The OWNER revoked Comfort Agbenyega's Auditor grant (2026-08-23) — a
+// sandbox rollback may resurrect the OLD row (id=1) as active. Pin THAT row
+// to revoked on every recovery (any future NEW grant the owner makes carries
+// a new id and is left alone).
+const rev = await dbc.query("UPDATE audit_assignments SET is_active=false, updated_at=now() WHERE id=1 AND user_id=13 AND business_id=1 AND is_active=true RETURNING id");
+console.log(rev.rowCount ? "✔ Comfort's revoked audit grant kept revoked (rollback heal)" : "• Comfort grant already revoked / absent");
+
 await dbc.end();
 console.log("\nRESTORE COMPLETE");

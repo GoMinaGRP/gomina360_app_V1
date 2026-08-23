@@ -2,6 +2,7 @@
 
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import AiSectionGuide from "./AiSectionGuide";
+import FishGrowthAnalytics from "./FishGrowthAnalytics";
 import {
   Fish, Droplets, HeartPulse, Activity, Egg as EggIcon, Boxes,
   Wallet, ClipboardCheck, Plus, X, Loader2, Building2,
@@ -57,6 +58,8 @@ export default function AquacultureModule({
   const [waterLogs, setWaterLogs] = useState<any[]>([]);
   const [harvests, setHarvests] = useState<any[]>([]);
   const [checklists, setChecklists] = useState<any[]>([]);
+  // Daily fish weight-sampling logs (growth & biomass analysis)
+  const [weightLogs, setWeightLogs] = useState<any[]>([]);
 
   const today = new Date().toISOString().split("T")[0];
   const bizId = businessInfo?.id;
@@ -78,6 +81,7 @@ export default function AquacultureModule({
         setWaterLogs(d.waterLogs || []);
         setHarvests(d.harvests || []);
         setChecklists(d.checklists || []);
+        setWeightLogs(d.weightLogs || []);
       }
     } finally {
       setLoading(false);
@@ -288,6 +292,21 @@ export default function AquacultureModule({
               <div className="p-4">{(() => { const comp = growingBatches.filter((b: any) => b.species).reduce((acc: Record<string, number>, b: any) => { acc[b.species] = (acc[b.species] || 0) + (b.currentCount || 0); return acc; }, {}); return Object.entries(comp).length ? <ResponsiveContainer width="100%" height={200}><PieChart><Pie data={Object.entries(comp).map(([name, value]) => ({ name, value }))} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={65} label={(e: any) => e.name}>{Object.entries(comp).map((_, i) => <Cell key={i} fill={["#06b6d4", "#3b82f6", "#a855f7", "#ec4899"][i % 4]} />)}</Pie><Tooltip contentStyle={{ backgroundColor: "#1e293b", border: "1px solid #334155" }} /></PieChart></ResponsiveContainer> : <p className="text-xs text-slate-400 text-center py-6">No active batches.</p>; })()}</div>
             </Card>
           </div>
+
+          {/* Fish Growth & Production Analytics — daily weight sampling vs
+              species standard, weight by age, feed, FCR, survival/mortality,
+              harvests and biomass, scoped by pond/batch/species/branch/date */}
+          <FishGrowthAnalytics
+            businessId={bizId}
+            ponds={ponds}
+            batches={batches}
+            feedLogs={feedLogs}
+            harvests={harvests}
+            weightLogs={weightLogs}
+            currentUserName={currentUser?.name}
+            currentUserRole={currentUser?.role}
+            onRefresh={refresh}
+          />
 
           {/* Performance metrics cards */}
           <div>

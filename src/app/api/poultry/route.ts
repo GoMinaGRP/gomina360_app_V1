@@ -8,6 +8,7 @@ import {
   poultryProduction,
   poultryChecklists,
   poultryProducts,
+  poultryWeightLogs,
   businesses,
   transactions,
 } from "@/db/schema";
@@ -75,7 +76,7 @@ export async function GET(request: NextRequest) {
         ? db.select().from(table).where(eq(table.businessId, bizId))
         : db.select().from(table);
 
-    const [flocks, feedLogs, waterLogs, healthRecords, production, checklists] =
+    const [flocks, feedLogs, waterLogs, healthRecords, production, checklists, weightLogs] =
       await Promise.all([
         scope(poultryFlocks),
         scope(poultryFeedLogs),
@@ -83,6 +84,7 @@ export async function GET(request: NextRequest) {
         scope(poultryHealthRecords),
         scope(poultryProduction),
         scope(poultryChecklists),
+        scope(poultryWeightLogs),
       ]);
 
     // Master Product List — self-seed the two system products the first time a
@@ -134,6 +136,7 @@ export async function GET(request: NextRequest) {
       waterLogs: waterLogs.sort(sortByIdDesc),
       healthRecords: healthRecords.sort(sortByIdDesc),
       production: production.sort(sortByIdDesc),
+      weightLogs: weightLogs.sort(sortByIdDesc),
       checklists: checklists.sort((a: any, b: any) => (a.id || 0) - (b.id || 0)),
       products: products.sort((a: any, b: any) => (a.id || 0) - (b.id || 0)),
     });
@@ -148,7 +151,7 @@ export async function GET(request: NextRequest) {
 
 /**
  * POST /api/poultry
- * Body: { entity: 'FLOCK'|'FEED'|'WATER'|'HEALTH'|'PRODUCTION'|'PRODUCT'|'CHECKLIST', data: {...} }
+ * Body: { entity: 'FLOCK'|'FEED'|'WATER'|'WEIGHT'|'HEALTH'|'PRODUCTION'|'PRODUCT'|'CHECKLIST', data: {...} }
  */
 export async function POST(request: NextRequest) {
   try {
@@ -284,6 +287,47 @@ export async function POST(request: NextRequest) {
           treatmentUsed: data.treatmentUsed || null,
           recordedDate: data.recordedDate || today,
           recordedByName: data.recordedByName || "Farm Staff",
+        })
+        .returning();
+      return NextResponse.json({ success: true, item: row });
+    }
+
+    // ── WEIGHT (daily bird/egg weighing) ──────────────────────────
+    // One weighing event: a sample of birds (BIRD, broilers or layers) or
+    // eggs (EGG, layer flocks only) from ONE flock. Batch + branch are
+    // auto-filled from the flock so the growth analytics can join the row to
+    // feed, mortality and production by (batch, date). Pure measurement —
+    // never creates transactions or inventory movement.
+    if (entity === "WEIGHT") {
+      const flockId = Number(data.flockId) || 0;
+      const weightKind = String(data.weightKind || "BIRD").toUpperCase();
+      const avgWeightG = Number(data.avgWeightG);
+      const sampleSize = Math.max(1, Number(data.sampleSize) || 1);
+      if (!flockId) return NextResponse.json({ success: false, error: "flockId is required" }, { status: 400 });
+      if (!["BIRD", "EGG"].includes(weightKind)) return NextResponse.json({ success: false, error: "weightKind must be BIRD or EGG" }, { status: 400 });
+      if (!(avgWeightG > 0)) return NextResponse.json({ success: false, error: "avgWeightG (grams) must be > 0" }, { status: 400 });
+      const [flock] = await db
+        .select()
+        .from(poultryFlocks)
+        .where(and(eq(poultryFlocks.id, flockId), eq(poultryFlocks.businessId, businessId)));
+      if (!flock) return NextResponse.json({ success: false, error: "Flock not found for this business." }, { status: 404 });
+      if (weightKind === "EGG" && flock.birdType !== "LAYERS") {
+        return NextResponse.json({ success: false, error: "Egg weight can only be recorded for a LAYERS flock." }, { status: 400 });
+      }
+      const [row] = await db
+        .insert(poultryWeightLogs)
+        .values({
+          businessId,
+          branchCode: flock.branchCode || branchCode,
+          flockId: flock.id,
+          batchNumber: flock.batchNumber,
+          weightKind,
+          sampleSize,
+          avgWeightG,
+          recordedDate: data.recordedDate || today,
+          notes: data.notes || null,
+          recordedByName: data.recordedByName || session.user?.name || "Farm Staff",
+          recordedByRole: data.recordedByRole || session.user?.role || "WORKER",
         })
         .returning();
       return NextResponse.json({ success: true, item: row });

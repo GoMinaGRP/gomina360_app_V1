@@ -120,7 +120,7 @@ export default function AuditCommandCenter({ currentUser, businesses, focusIssue
   const [threadId, setThreadId] = useState<number | null>(null);
   const [focusIssue, setFocusIssue] = useState<number | null>(null);
   const [issuesView, setIssuesView] = useState<"OPEN" | "FLAGGED" | "UNDER_REVIEW" | "CORRECTION_REQUIRED" | "RESOLVED" | "VERIFIED" | "ALL">("OPEN");
-  const [grantForm, setGrantForm] = useState({ userId: "", businessId: "", branchCode: "", note: "", modules: [] as string[] });
+  const [grantForm, setGrantForm] = useState<{ userId: string; businessIds: number[]; branches: Record<number, string[]>; note: string; modules: string[] }>({ userId: "", businessIds: [], branches: {}, note: "", modules: [] });
   const [accessMsg, setAccessMsg] = useState("");
   const [accessErr, setAccessErr] = useState("");
   const [busy, setBusy] = useState(false);
@@ -183,6 +183,21 @@ export default function AuditCommandCenter({ currentUser, businesses, focusIssue
     () => (allowedBusinessIds === null || allowedBusinessIds === undefined ? bizSource : bizSource.filter((b: any) => (allowedBusinessIds as number[]).includes(b.id))),
     [bizSource, allowedBusinessIds]
   );
+  // Businesses the granter may CREATE grants for (OWNER: all; delegated
+  // manager: only inside their accessible businesses — independent of any
+  // audit grants they themselves hold).
+  const grantableBusinessIds: number[] | null = scope?.canGrant ? (scope?.grantBusinessIds ?? null) : [];
+  const grantableBusinesses = useMemo(
+    () => (grantableBusinessIds === null ? bizSource : bizSource.filter((b: any) => (grantableBusinessIds as number[]).includes(b.id))),
+    [bizSource, grantableBusinessIds]
+  );
+  // Branch candidates per business: the business code itself + every branch
+  // code seen on records in scope.
+  const branchOptionsFor = (businessId: number): string[] => {
+    const own = bizSource.find((b: any) => b.id === businessId)?.code;
+    const fromRecords = records.filter((r: Rec) => r.businessId === businessId && r.branchCode).map((r: Rec) => String(r.branchCode));
+    return [...new Set([...(own ? [own] : []), ...fromRecords])].sort();
+  };
   const workerOptions = useMemo(() => [...new Set(records.map((r) => r.workerName).filter(Boolean))].sort() as string[], [records]);
   const allIssues = useMemo(() => reviews.filter((r: Rev) => ISSUE_ACTION_SET.includes(r.action)), [reviews]);
   const issues = useMemo(() => {
@@ -262,12 +277,22 @@ export default function AuditCommandCenter({ currentUser, businesses, focusIssue
     try {
       const res = await fetch("/api/audit", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "GRANT", userId: Number(grantForm.userId), businessId: Number(grantForm.businessId), modules: grantForm.modules, branchCode: grantForm.branchCode || undefined, note: grantForm.note || undefined }),
+        body: JSON.stringify({
+          action: "GRANT",
+          userId: Number(grantForm.userId),
+          businessIds: grantForm.businessIds,
+          branches: Object.fromEntries(Object.entries(grantForm.branches).filter(([, v]) => v.length > 0)),
+          modules: grantForm.modules,
+          note: grantForm.note || undefined,
+        }),
       });
       const body = await res.json();
       if (!res.ok) throw new Error(body.error || "Grant failed");
-      setAccessMsg(body.updated ? "Auditor access updated — modules & scope replaced." : "Auditor access granted. They can now sign in and audit that scope only.");
-      setGrantForm({ userId: "", businessId: "", branchCode: "", note: "", modules: [] });
+      const n = Number(body.count || 1);
+      setAccessMsg(body.updated && n === 1
+        ? "Auditor access updated — modules & scope replaced."
+        : `Auditor access granted — ${n} assignment${n > 1 ? "s" : ""} saved. They can now sign in and audit exactly that scope.`);
+      setGrantForm({ userId: "", businessIds: [], branches: {}, note: "", modules: [] });
       await load();
     } catch (e: any) { setAccessErr(e.message); } finally { setBusy(false); }
   };
@@ -768,8 +793,8 @@ export default function AuditCommandCenter({ currentUser, businesses, focusIssue
           <div className="space-y-3">
             <div className="bg-slate-900 border border-slate-700/80 rounded-xl p-4 space-y-3" data-testid="aud-grant-form">
               <h4 className="text-sm font-bold text-white flex items-center gap-2"><KeyRound className="w-4 h-4 text-teal-400" /> Grant Auditor access</h4>
-              <p className="text-[10px] text-slate-500">Choose a user, the business they may audit, and exactly what modules they can see and review. Re-saving the same pair updates the grant.</p>
-              <div className="grid grid-cols-2 gap-2">
+              <p className="text-[10px] text-slate-500">Pick a user, one or MORE businesses, optionally narrow each to specific branches, then exactly the modules they may see and review. Re-saving the same scope updates it; the auditor only ever sees their assigned businesses, branches and sections.</p>
+              <div className="space-y-2.5">
                 <div>
                   <label className={labelCls}>Auditor (existing user)</label>
                   <select className={inputCls} value={grantForm.userId} onChange={(e) => setGrantForm({ ...grantForm, userId: e.target.value })} data-testid="aud-grant-user">
@@ -778,16 +803,51 @@ export default function AuditCommandCenter({ currentUser, businesses, focusIssue
                   </select>
                 </div>
                 <div>
-                  <label className={labelCls}>Business to audit</label>
-                  <select className={inputCls} value={grantForm.businessId} onChange={(e) => setGrantForm({ ...grantForm, businessId: e.target.value })} data-testid="aud-grant-business">
-                    <option value="">Select business…</option>
-                    {visibleBusinesses.map((b: any) => <option key={b.id} value={b.id}>{b.name}</option>)}
-                  </select>
+                  <label className={labelCls}>Businesses to audit (select one or more)</label>
+                  <div className="flex flex-wrap gap-1.5" data-testid="aud-grant-biz-list">
+                    {grantableBusinesses.map((b: any) => {
+                      const on = grantForm.businessIds.includes(b.id);
+                      return (
+                        <button key={b.id} type="button"
+                          onClick={() => setGrantForm((gf) => ({
+                            ...gf,
+                            businessIds: on ? gf.businessIds.filter((x) => x !== b.id) : [...gf.businessIds, b.id],
+                            branches: on ? Object.fromEntries(Object.entries(gf.branches).filter(([k]) => Number(k) !== b.id)) : gf.branches,
+                          }))}
+                          className={`px-2.5 py-1.5 rounded-lg text-[10px] font-bold border transition ${on ? "bg-teal-500/15 text-teal-300 border-teal-500/40" : "bg-slate-800/60 text-slate-500 border-slate-700 hover:border-slate-500"}`}
+                          data-testid={`aud-grant-biz-${b.id}`}>
+                          {b.name}
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
-                <div>
-                  <label className={labelCls}>Branch (optional)</label>
-                  <input className={inputCls} value={grantForm.branchCode} placeholder="blank = all branches" onChange={(e) => setGrantForm({ ...grantForm, branchCode: e.target.value })} data-testid="aud-grant-branch" />
-                </div>
+                {grantForm.businessIds.map((bid) => {
+                  const opts = branchOptionsFor(bid);
+                  const chosen = grantForm.branches[bid] || [];
+                  return (
+                    <div key={bid} className="bg-slate-950/50 border border-slate-800 rounded-lg p-2.5">
+                      <label className={labelCls}>{bizName(bid)} — branches <span className="normal-case text-slate-600">(none selected = all branches)</span></label>
+                      <div className="flex flex-wrap gap-1.5" data-testid={`aud-grant-branches-${bid}`}>
+                        {opts.map((code) => {
+                          const on = chosen.includes(code);
+                          return (
+                            <button key={code} type="button"
+                              onClick={() => setGrantForm((gf) => {
+                                const cur = gf.branches[bid] || [];
+                                return { ...gf, branches: { ...gf.branches, [bid]: on ? cur.filter((x) => x !== code) : [...cur, code] } };
+                              })}
+                              className={`px-2 py-1 rounded-lg text-[9px] font-bold border transition ${on ? "bg-cyan-500/15 text-cyan-300 border-cyan-500/40" : "bg-slate-800/60 text-slate-500 border-slate-700 hover:border-slate-500"}`}
+                              data-testid={`aud-grant-branch-${bid}-${code}`}>
+                              {code}
+                            </button>
+                          );
+                        })}
+                        {opts.length === 0 && <span className="text-[9px] text-slate-600">Single-branch business — grant covers it automatically.</span>}
+                      </div>
+                    </div>
+                  );
+                })}
                 <div>
                   <label className={labelCls}>Note (optional)</label>
                   <input className={inputCls} value={grantForm.note} placeholder="e.g. Q3 books review" onChange={(e) => setGrantForm({ ...grantForm, note: e.target.value })} data-testid="aud-grant-note" />
@@ -807,8 +867,8 @@ export default function AuditCommandCenter({ currentUser, businesses, focusIssue
               </div>
               {accessErr && <div className="text-[11px] text-rose-300" data-testid="aud-access-error">{accessErr}</div>}
               {accessMsg && <div className="text-[11px] text-emerald-300" data-testid="aud-access-notice">{accessMsg}</div>}
-              <button onClick={submitGrant} disabled={busy || !grantForm.userId || !grantForm.businessId || grantForm.modules.length === 0} className="px-4 py-2 rounded-lg bg-teal-600 hover:bg-teal-500 disabled:opacity-40 text-white text-xs font-bold" data-testid="aud-grant-save">
-                Save auditor access
+              <button onClick={submitGrant} disabled={busy || !grantForm.userId || grantForm.businessIds.length === 0 || grantForm.modules.length === 0} className="px-4 py-2 rounded-lg bg-teal-600 hover:bg-teal-500 disabled:opacity-40 text-white text-xs font-bold" data-testid="aud-grant-save">
+                Save auditor access{grantForm.businessIds.length > 1 ? ` (${grantForm.businessIds.length} businesses)` : ""}
               </button>
             </div>
 
