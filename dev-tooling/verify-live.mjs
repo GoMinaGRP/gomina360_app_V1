@@ -73,7 +73,12 @@ async function logout() {
 writeFileSync("/home/user/pgtooling/test-photo.png", Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==", "base64"));
 
 const sessionMax0 = (await q1("SELECT COALESCE(max(id),0) m FROM user_sessions")).m;
+// Baseline counts captured at suite start — user data evolves between runs
+// (the owner manages auditor grants / issues himself), so the forensics
+// gate compares against THIS baseline, not hardcoded numbers.
+const base0 = await q1("SELECT (SELECT count(*) FROM audit_reviews) rev, (SELECT count(*) FROM audit_issue_updates) thr, (SELECT count(*) FROM notifications) nof, (SELECT count(*) FROM audit_trail) trl, (SELECT count(*) FROM transactions) txn, (SELECT count(*) FROM payroll_runs) runs, (SELECT count(*) FROM audit_assignments) grants");
 let ISSUE_ID = null;
+let TEST_GRANT_ID = null;
 
 try {
   console.log("── A. Checklists review + flag with evidence ──");
@@ -186,7 +191,12 @@ try {
   await logout();
 
   console.log("── D. Scope + restored-state regression ──");
-  await login(COMFORT);
+  // Scoped-auditor check uses a TEMPORARY TEST grant (purged in cleanup):
+  // Comfort's own grant belongs to the owner — he may grant/revoke it in the
+  // UI at any time, and we must never mutate his data.
+  TEST_GRANT_ID = (await q1(`INSERT INTO audit_assignments (user_id, user_name, user_role, business_id, branch_code, modules, note, is_active, granted_by_user_id, granted_by_name, granted_by_role)
+    VALUES (${KWABENA.id}, '${KWABENA.name}', 'WORKER', 1, NULL, '["FINANCE","PAYROLL","ATTENDANCE"]'::jsonb, 'TEST scoped audit grant', true, 1, 'Kwame Mina', 'OWNER') RETURNING id`)).id;
+  await login(KWABENA);
   await clickTid("audit-tab");
   await waitSel('[data-testid="aud-scope"]');
   ok("D1 auditor scope enforced (no OPERATIONS/checklists)", (await textOf('[data-testid="aud-scope"]')).includes("AUDITOR") &&
@@ -194,13 +204,20 @@ try {
   await logout();
   const f = await q1(`SELECT
     (SELECT count(*) FROM payroll_runs WHERE status='PAID') runs_paid,
-    (SELECT count(*) FROM payroll_attendance) att,
-    (SELECT count(*) FROM audit_assignments WHERE is_active) grants,
-    (SELECT status FROM audit_reviews WHERE id=2) seeded_status,
-    (SELECT count(*) FROM notifications WHERE issue_id=2 AND user_id=7 AND is_read=false) seeded_notif`);
+    (SELECT count(*) FROM payroll_attendance) att`);
+  // Grant/issue identity checks (not raw counts — the owner adds/revokes
+  // auditor grants and progresses seeded issues himself in the UI).
+  const emanGrant = await q1(`SELECT is_active, modules FROM audit_assignments WHERE user_id=3 AND business_id=2`);
+  const comfortGrant = await q1(`SELECT modules FROM audit_assignments WHERE user_id=13 AND business_id=1`);
+  const seededIssue = await q1(`SELECT status, issue_title, assigned_user_id FROM audit_reviews WHERE id=2`);
+  const seededNotif = await q1(`SELECT id, is_read FROM notifications WHERE id=1 AND issue_id=2 AND user_id=7 AND type='AUDIT_ISSUE_ASSIGNED'`);
   ok("D2 restored payroll runs all PAID (4)", Number(f.runs_paid) === 4 && Number(f.att) === 11, `paid=${f.runs_paid} att=${f.att}`);
-  ok("D3 Emmanuel's restored grant active + Comfort's intact", Number(f.grants) === 2);
-  ok("D4 seeded flag still FLAGGED & its notification intact", f.seeded_status === "FLAGGED" && Number(f.seeded_notif) === 1);
+  ok("D3 Emmanuel's restored grant active + Comfort's grant intact", emanGrant?.is_active === true && !!comfortGrant &&
+    JSON.stringify(comfortGrant.modules) === JSON.stringify(["FINANCE", "PAYROLL", "ATTENDANCE"]),
+    `emmanuel=${emanGrant?.is_active} comfort=${JSON.stringify(comfortGrant?.modules)}`);
+  ok("D4 seeded issue & its seeded notification intact (owner may progress it)", !!seededIssue &&
+    Number(seededIssue.assigned_user_id) === 7 && seededIssue.issue_title?.includes("deposit slip") && !!seededNotif,
+    `status=${seededIssue?.status}`);
 } catch (e) {
   ok("FATAL suite error", false, String(e?.message || e));
   try { await page.screenshot({ path: SHOT("error") }); } catch {}
@@ -214,10 +231,12 @@ try {
   }
   await client.query(`DELETE FROM audit_trail WHERE reason LIKE 'TEST%' OR detail LIKE '%TEST%' OR target_label LIKE 'TEST%'`);
   await client.query(`DELETE FROM notifications WHERE title LIKE 'TEST%' OR body LIKE '%TEST%'`);
+  const purgedGrants = (await client.query(`DELETE FROM audit_assignments WHERE note LIKE 'TEST%' RETURNING id`)).rows.map((r) => r.id);
   await client.query(`DELETE FROM user_sessions WHERE id > ${sessionMax0}`);
-  console.log(`purged ${testIds.length} test issues + thread/notifs/trail/sessions`);
-  const z = await q1("SELECT (SELECT count(*) FROM audit_reviews) rev, (SELECT count(*) FROM audit_issue_updates) thr, (SELECT count(*) FROM notifications) nof, (SELECT count(*) FROM audit_trail) trl, (SELECT count(*) FROM transactions) txn, (SELECT count(*) FROM payroll_runs) runs");
-  ok("Z1 forensics clean after cleanup", Number(z.rev) === 2 && Number(z.thr) === 1 && Number(z.nof) === 1 && Number(z.trl) === 4 && Number(z.txn) === 10 && Number(z.runs) === 4, JSON.stringify(z));
+  console.log(`purged ${testIds.length} test issues + thread/notifs/trail/sessions + ${purgedGrants.length} TEST grants`);
+  const z = await q1("SELECT (SELECT count(*) FROM audit_reviews) rev, (SELECT count(*) FROM audit_issue_updates) thr, (SELECT count(*) FROM notifications) nof, (SELECT count(*) FROM audit_trail) trl, (SELECT count(*) FROM transactions) txn, (SELECT count(*) FROM payroll_runs) runs, (SELECT count(*) FROM audit_assignments) grants");
+  ok("Z1 forensics back to pre-test baseline", Number(z.rev) === Number(base0.rev) && Number(z.thr) === Number(base0.thr) && Number(z.nof) === Number(base0.nof) &&
+    Number(z.trl) === Number(base0.trl) && Number(z.txn) === Number(base0.txn) && Number(z.runs) === Number(base0.runs) && Number(z.grants) === Number(base0.grants), JSON.stringify(z));
   ok("Z2 zero page errors", pageErrors.length === 0, pageErrors.slice(0, 3).join(" | "));
   console.log(`\n═══ RESULT: ${checks.filter((c) => c.pass).length}/${checks.length} passed, ${failures} failed ═══`);
   await browser.close();

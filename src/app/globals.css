@@ -24,3 +24,41 @@
 ::-webkit-scrollbar-thumb:hover {
   background: #10b981;
 }
+
+/* ── Responsive & mobile safety ──────────────────────────────────────────
+   The app shell (sidebar + main) and every module grid are built responsive;
+   these base rules are a safety net so no page can ever sprout a horizontal
+   scrollbar on any device, touch targets stay usable, and mobile browsers
+   don't auto-zoom into form fields. */
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+html,
+body {
+  max-width: 100%;
+  overflow-x: clip; /* never let decorative overflow produce page-level h-scroll */
+}
+
+/* Mobile browsers zoom when an input's font-size < 16px; keep form fields
+   at 16px on phones so forms stay put while typing. */
+@media (max-width: 640px) {
+  input,
+  select,
+  textarea {
+    font-size: 16px !important;
+  }
+}
+
+/* Comfortable tap targets on coarse pointers (phones/tablets) */
+@media (pointer: coarse) {
+  button,
+  [role="button"],
+  select,
+  input[type="checkbox"],
+  input[type="radio"],
+  a {
+    min-height: 36px;
+  }
+}

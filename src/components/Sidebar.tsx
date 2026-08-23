@@ -28,6 +28,7 @@ import {
   HardHat,
   Landmark,
   Wifi,
+  X,
 } from "lucide-react";
 
 export type ActiveTab =
@@ -63,6 +64,9 @@ interface SidebarProps {
   businesses: any[];
   currentUser: any;
   auditEligible?: boolean;
+  /** Mobile/tablet (<lg): drawer visibility + close callback. */
+  mobileOpen?: boolean;
+  onCloseMobile?: () => void;
 }
 
 export default function Sidebar({
@@ -71,6 +75,8 @@ export default function Sidebar({
   businesses,
   currentUser,
   auditEligible,
+  mobileOpen = false,
+  onCloseMobile,
 }: SidebarProps) {
   const isBusinessManager = currentUser?.role === "BRANCH_MANAGER";
   const isWorker = currentUser?.role === "WORKER";
@@ -100,6 +106,11 @@ export default function Sidebar({
     "Telecom & Digital Services": Wifi,
   };
 
+  const selectTab = (tab: ActiveTab) => {
+    onSelectTab(tab);
+    onCloseMobile?.();
+  };
+
   const isAccessible = (biz: any) => {
     // WORKER can only see their assigned branch
     if (isWorker && assignedBusinessId) return biz.id === assignedBusinessId;
@@ -110,12 +121,40 @@ export default function Sidebar({
   };
 
   return (
-    <aside className="w-64 bg-slate-900 border-r border-slate-800 flex flex-col h-[calc(100vh-65px)] sticky top-[65px] text-slate-300 overflow-y-auto shrink-0 select-none">
+    <>
+      {/* Mobile/tablet backdrop — taps outside the drawer close it */}
+      <div
+        data-testid="nav-backdrop"
+        onClick={onCloseMobile}
+        className={`lg:hidden fixed inset-0 z-40 bg-black/60 backdrop-blur-sm transition-opacity duration-200 ${
+          mobileOpen ? "opacity-100" : "opacity-0 pointer-events-none"
+        }`}
+      />
+      {/* Navigation: inline sidebar on desktop (lg+), slide-in drawer below */}
+      <aside
+        data-testid="nav-sidebar"
+        className={`w-72 max-w-[86vw] lg:w-64 lg:max-w-none bg-slate-900 border-r border-slate-800 flex flex-col text-slate-300 overflow-y-auto shrink-0 select-none
+          fixed lg:sticky top-0 lg:top-[65px] left-0 z-50 lg:z-auto h-screen lg:h-[calc(100vh-65px)]
+          transition-transform duration-200 ease-out
+          ${mobileOpen ? "translate-x-0" : "-translate-x-full"} lg:translate-x-0`}
+      >
+      {/* Drawer header (mobile/tablet only) */}
+      <div className="lg:hidden flex items-center justify-between px-4 py-3 border-b border-slate-800">
+        <span className="text-sm font-bold text-white">Menu</span>
+        <button
+          onClick={onCloseMobile}
+          data-testid="nav-menu-close"
+          aria-label="Close navigation menu"
+          className="p-1.5 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-white"
+        >
+          <X className="w-5 h-5" />
+        </button>
+      </div>
       {/* Top section: Executive Command Center (Owner / General Manager only) */}
       {isExecutive && (
         <div className="p-3 border-b border-slate-800">
           <button
-            onClick={() => onSelectTab("COMMAND_CENTER")}
+            onClick={() => selectTab("COMMAND_CENTER")}
             className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl font-semibold text-sm transition ${
               activeTab === "COMMAND_CENTER"
                 ? "bg-gradient-to-r from-emerald-600 to-teal-700 text-white shadow-lg shadow-emerald-900/30 font-bold"
@@ -152,7 +191,7 @@ export default function Sidebar({
               <button
                 key={biz.code}
                 onClick={() => {
-                  if (accessible) onSelectTab(biz.code as ActiveTab);
+                  if (accessible) selectTab(biz.code as ActiveTab);
                 }}
                 disabled={!accessible}
                 className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-medium transition ${
@@ -199,7 +238,7 @@ export default function Sidebar({
           </div>
           <div className="space-y-1 mt-1">
             <button
-              onClick={() => onSelectTab("SALES_CENTER")}
+              onClick={() => selectTab("SALES_CENTER")}
               className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-medium transition ${
                 activeTab === "SALES_CENTER"
                   ? "bg-cyan-500/15 text-cyan-400 font-bold border-l-2 border-cyan-400"
@@ -214,7 +253,7 @@ export default function Sidebar({
             </button>
 
             <button
-              onClick={() => onSelectTab("FINANCE")}
+              onClick={() => selectTab("FINANCE")}
               data-testid="sidebar-tab-finance"
               className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-medium transition ${
                 activeTab === "FINANCE"
@@ -230,7 +269,7 @@ export default function Sidebar({
             </button>
 
             <button
-              onClick={() => onSelectTab("CUSTOMERS")}
+              onClick={() => selectTab("CUSTOMERS")}
               className={`w-full flex items-center space-x-2.5 px-3 py-2 rounded-lg text-xs font-medium transition ${
                 activeTab === "CUSTOMERS"
                   ? "bg-emerald-500/15 text-emerald-400 font-bold border-l-2 border-emerald-400"
@@ -242,7 +281,7 @@ export default function Sidebar({
             </button>
 
             <button
-              onClick={() => onSelectTab("SUPPLIERS")}
+              onClick={() => selectTab("SUPPLIERS")}
               className={`w-full flex items-center space-x-2.5 px-3 py-2 rounded-lg text-xs font-medium transition ${
                 activeTab === "SUPPLIERS"
                   ? "bg-emerald-500/15 text-emerald-400 font-bold border-l-2 border-emerald-400"
@@ -254,7 +293,7 @@ export default function Sidebar({
             </button>
 
             <button
-              onClick={() => onSelectTab("EMPLOYEES")}
+              onClick={() => selectTab("EMPLOYEES")}
               className={`w-full flex items-center space-x-2.5 px-3 py-2 rounded-lg text-xs font-medium transition ${
                 activeTab === "EMPLOYEES"
                   ? "bg-emerald-500/15 text-emerald-400 font-bold border-l-2 border-emerald-400"
@@ -266,7 +305,7 @@ export default function Sidebar({
             </button>
 
             <button
-              onClick={() => onSelectTab("ASSETS")}
+              onClick={() => selectTab("ASSETS")}
               className={`w-full flex items-center space-x-2.5 px-3 py-2 rounded-lg text-xs font-medium transition ${
                 activeTab === "ASSETS"
                   ? "bg-emerald-500/15 text-emerald-400 font-bold border-l-2 border-emerald-400"
@@ -278,7 +317,7 @@ export default function Sidebar({
             </button>
 
             <button
-              onClick={() => onSelectTab("INVENTORY")}
+              onClick={() => selectTab("INVENTORY")}
               className={`w-full flex items-center space-x-2.5 px-3 py-2 rounded-lg text-xs font-medium transition ${
                 activeTab === "INVENTORY"
                   ? "bg-emerald-500/15 text-emerald-400 font-bold border-l-2 border-emerald-400"
@@ -290,7 +329,7 @@ export default function Sidebar({
             </button>
 
             <button
-              onClick={() => onSelectTab("TRANSACTIONS")}
+              onClick={() => selectTab("TRANSACTIONS")}
               className={`w-full flex items-center space-x-2.5 px-3 py-2 rounded-lg text-xs font-medium transition ${
                 activeTab === "TRANSACTIONS"
                   ? "bg-emerald-500/15 text-emerald-400 font-bold border-l-2 border-emerald-400"
@@ -327,7 +366,7 @@ export default function Sidebar({
           </div>
           <div className="space-y-1 mt-1">
             <button
-              onClick={() => onSelectTab("BRANCH_SALES")}
+              onClick={() => selectTab("BRANCH_SALES")}
               className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-medium transition ${
                 activeTab === "BRANCH_SALES"
                   ? "bg-cyan-500/15 text-cyan-400 font-bold border-l-2 border-cyan-400"
@@ -341,7 +380,7 @@ export default function Sidebar({
               <span className="text-[9px] bg-cyan-500/20 text-cyan-300 px-1 py-0.5 rounded font-bold border border-cyan-500/30">SALES</span>
             </button>
             <button
-              onClick={() => onSelectTab("BRANCH_ASSETS")}
+              onClick={() => selectTab("BRANCH_ASSETS")}
               className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-medium transition ${
                 activeTab === "BRANCH_ASSETS"
                   ? "bg-purple-500/15 text-purple-300 font-bold border-l-2 border-purple-400"
@@ -354,7 +393,7 @@ export default function Sidebar({
               </div>
             </button>
             <button
-              onClick={() => onSelectTab("WORKERS_MANAGE")}
+              onClick={() => selectTab("WORKERS_MANAGE")}
               className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-medium transition ${
                 activeTab === "WORKERS_MANAGE"
                   ? "bg-cyan-500/15 text-cyan-400 font-bold border-l-2 border-cyan-400"
@@ -380,7 +419,7 @@ export default function Sidebar({
             Oversight & Assurance
           </div>
           <button
-            onClick={() => onSelectTab("AUDIT")}
+            onClick={() => selectTab("AUDIT")}
             data-testid="audit-tab"
             className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-medium transition ${
               activeTab === "AUDIT"
@@ -410,7 +449,7 @@ export default function Sidebar({
           <div className="space-y-1 mt-1">
             {isExecutive && (
             <button
-              onClick={() => onSelectTab("AI_ADVISOR")}
+              onClick={() => selectTab("AI_ADVISOR")}
               className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-medium transition ${
                 activeTab === "AI_ADVISOR"
                   ? "bg-gradient-to-r from-emerald-500/20 to-teal-500/20 text-emerald-300 font-bold border-l-2 border-emerald-400"
@@ -429,7 +468,7 @@ export default function Sidebar({
 
             {isExecutive && (
             <button
-              onClick={() => onSelectTab("SCENARIO_PLANNER")}
+              onClick={() => selectTab("SCENARIO_PLANNER")}
               className={`w-full flex items-center space-x-2.5 px-3 py-2 rounded-lg text-xs font-medium transition ${
                 activeTab === "SCENARIO_PLANNER"
                   ? "bg-emerald-500/15 text-emerald-400 font-bold border-l-2 border-emerald-400"
@@ -442,7 +481,7 @@ export default function Sidebar({
             )}
 
             <button
-              onClick={() => onSelectTab("INTEGRATIONS")}
+              onClick={() => selectTab("INTEGRATIONS")}
               className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-medium transition ${
                 activeTab === "INTEGRATIONS"
                   ? "bg-emerald-500/15 text-emerald-400 font-bold border-l-2 border-emerald-400"
@@ -461,7 +500,7 @@ export default function Sidebar({
             {/* OWNER or GENERAL_MANAGER User & Branch Assignment Management */}
             {(currentUser?.role === "OWNER" || currentUser?.role === "GENERAL_MANAGER") && (
               <button
-                onClick={() => onSelectTab("USERS_MANAGE")}
+                onClick={() => selectTab("USERS_MANAGE")}
                 className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-medium transition ${
                   activeTab === "USERS_MANAGE"
                     ? "bg-cyan-500/15 text-cyan-400 font-bold border-l-2 border-cyan-400"
@@ -491,6 +530,7 @@ export default function Sidebar({
           GH₵ Base Currency • Multi-Branch Ready
         </p>
       </div>
-    </aside>
+      </aside>
+    </>
   );
 }

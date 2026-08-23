@@ -86,6 +86,7 @@ export default function GoMinaApp() {
   const [offlineQueueCount, setOfflineQueueCount] = useState<number>(0);
   const [isNewBusinessModalOpen, setIsNewBusinessModalOpen] = useState(false);
   const [isManageBizOpen, setIsManageBizOpen] = useState(false);
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [isUserAccessOpen, setIsUserAccessOpen] = useState(false);
   // Self-service password change (account menu → Change Password).
   const [isChangePwOpen, setIsChangePwOpen] = useState(false);
@@ -987,6 +988,7 @@ export default function GoMinaApp() {
         usersList={usersList}
         onUserSelect={setCurrentUser}
         onLogout={handleLogout}
+        onMenuToggle={() => setMobileNavOpen(true)}
         onOpenChangePassword={() => setIsChangePwOpen(true)}
         bellSlot={
           <NotificationBell
@@ -1039,9 +1041,11 @@ export default function GoMinaApp() {
           businesses={businesses}
           currentUser={currentUser}
           auditEligible={auditEligible}
+          mobileOpen={mobileNavOpen}
+          onCloseMobile={() => setMobileNavOpen(false)}
         />
 
-        <main className="flex-1 overflow-y-auto bg-slate-950/95 pb-12">
+        <main className="flex-1 min-w-0 overflow-y-auto bg-slate-950/95 pb-12">
           <div className="sticky top-0 z-30 flex items-center justify-end px-4 sm:px-6 py-2 bg-slate-950/90 backdrop-blur border-b border-slate-800/80">
             <UniversalExportCenter
               activeModule={activeTab}

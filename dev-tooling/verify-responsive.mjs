@@ -1,0 +1,278 @@
+// Live responsiveness verification of the entire GoMina 360 interface in
+// real headless Chromium across phone / tablet / laptop / desktop viewports:
+// no horizontal page overflow on any page, navigation drawer behavior on
+// small screens (open → navigate → auto-close → backdrop dismiss), static
+// sidebar on large screens, all module pages, modals and the worker view —
+// with zero page errors everywhere.
+// Run: LD_LIBRARY_PATH=/tmp/al2023/lib node dev-tooling/verify-responsive.mjs
+
+import { createRequire } from "node:module";
+const req = createRequire("/home/user/pgtooling/package.json");
+const puppeteer = req("puppeteer-core");
+
+const BASE = process.env.BASE_URL || "http://localhost:3000";
+const OWNER = { email: "kwame.owner@gomina360.com", pw: process.env.OWNER_PW || "Owner@GoMina26" };
+const AKUA = { email: "akua.donkor@gomina360.com", pw: process.env.AKUA_PW || "GoMina@User10" };
+
+const checks = [];
+let failures = 0;
+const ok = (name, cond, extra = "") => { checks.push({ name, pass: !!cond }); if (!cond) failures++; console.log(`${cond ? "✅" : "❌"} ${name}${extra ? ` — ${extra}` : ""}`); };
+
+const pageErrors = [];
+const browser = await puppeteer.launch({ executablePath: "/tmp/al2023/chromium", headless: "new", args: ["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"] });
+const page = await browser.newPage();
+page.on("pageerror", (e) => pageErrors.push(String(e)));
+page.on("console", (m) => { if (m.type() === "error") { const t = m.text(); if (!/401|Failed to load resource|net::ERR_/.test(t)) pageErrors.push(t); } });
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const waitSel = (sel, timeout = 15000) => page.waitForSelector(sel, { timeout });
+const exists = async (sel) => !!(await page.$(sel));
+const setVal = async (sel, val) => {
+  await waitSel(sel);
+  await page.evaluate((s, v) => {
+    const el = document.querySelector(s);
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(el, v);
+    el.dispatchEvent(new Event("input", { bubbles: true }));
+  }, sel, val);
+};
+const setTid = (tid, val) => setVal(`[data-testid="${tid}"]`, val);
+const clickTid = async (tid) => { await waitSel(`[data-testid="${tid}"]`); await page.$eval(`[data-testid="${tid}"]`, (e) => e.click()); };
+const clickText = async (text) => page.evaluate((t) => {
+  const el = [...document.querySelectorAll("button, a")].find((b) => (b.textContent || "").replace(/\s+/g, " ").trim().toLowerCase().includes(t.toLowerCase()));
+  if (el) { el.click(); return true; }
+  return false;
+}, text);
+const noOverflow = async () => page.evaluate(() => {
+  const de = document.documentElement;
+  return { ok: de.scrollWidth <= window.innerWidth + 1, sw: de.scrollWidth, iw: window.innerWidth };
+});
+/** Elements visibly poking past the right viewport edge (offenders list). */
+const offenders = async () => page.evaluate(() => {
+  const iw = window.innerWidth;
+  const bad = [];
+  for (const el of document.querySelectorAll("body *")) {
+    const r = el.getBoundingClientRect();
+    if (r.width === 0 || r.height === 0) continue;
+    if (r.right > iw + 2 && r.left < iw) {
+      const cs = getComputedStyle(el);
+      if (cs.visibility === "hidden" || cs.display === "none") continue;
+      const tid = el.getAttribute?.("data-testid");
+      bad.push(tid || `${el.tagName.toLowerCase()}.${String(el.className).split(" ")[0]}`);
+      if (bad.length >= 4) break;
+    }
+  }
+  return bad;
+});
+const visible = async (sel) => page.evaluate((s) => {
+  const el = document.querySelector(s);
+  if (!el) return false;
+  const cs = getComputedStyle(el);
+  const r = el.getBoundingClientRect();
+  return cs.display !== "none" && cs.visibility !== "hidden" && r.width > 0;
+}, sel);
+const drawerOpen = async () => page.evaluate(() => {
+  const a = document.querySelector('[data-testid="nav-sidebar"]');
+  if (!a) return null;
+  return !a.className.includes("-translate-x-full");
+});
+
+async function login(cred) {
+  await page.goto(BASE, { waitUntil: "networkidle0", timeout: 45000 });
+  if (await exists('[data-testid="login-email"]')) {
+    await setTid("login-email", cred.email);
+    await setTid("login-password", cred.pw);
+    await clickTid("login-submit");
+    await page.waitForFunction(() => !document.querySelector('[data-testid="login-screen"]'), { timeout: 30000 });
+  }
+  await sleep(2000);
+}
+async function logoutIfNeeded() {
+  await page.evaluate(() => { try { sessionStorage.clear(); localStorage.clear(); } catch {} });
+  const cookies = await page.cookies(BASE);
+  if (cookies.length) await page.deleteCookie(...cookies);
+}
+
+let shotN = 0;
+const shot = async (name) => { shotN++; await page.screenshot({ path: `/home/user/rsp-${String(shotN).padStart(2, "0")}-${name}.png` }); };
+
+try {
+  // ══ A. Login screen on a phone ════════════════════════════════════════
+  console.log("── A. Phone: login ──");
+  await page.setViewport({ width: 375, height: 812, isMobile: true, hasTouch: true });
+  await page.goto(BASE, { waitUntil: "networkidle0", timeout: 45000 });
+  await sleep(1200);
+  let r = await noOverflow();
+  ok("A1 login screen fits 375px", r.ok, `sw=${r.sw}`);
+  await shot("phone-login");
+  await login(OWNER);
+
+  // ══ B. Phone: drawer navigation ═══════════════════════════════════════
+  console.log("── B. Phone: navigation drawer ──");
+  ok("B1 hamburger visible on phone", await visible('[data-testid="nav-menu-btn"]'));
+  ok("B2 drawer starts hidden off-canvas", (await drawerOpen()) === false);
+  await clickTid("nav-menu-btn");
+  await sleep(500);
+  ok("B3 hamburger opens the drawer", (await drawerOpen()) === true);
+  ok("B4 backdrop present while open", await exists('[data-testid="nav-backdrop"]'));
+  await shot("phone-drawer-open");
+  await page.$eval('[data-testid="nav-menu-close"]', (e) => e.click());
+  await sleep(500);
+  ok("B5 close button dismisses the drawer", (await drawerOpen()) === false);
+  await clickTid("nav-menu-btn");
+  await sleep(400);
+  await page.$eval('[data-testid="nav-backdrop"]', (e) => e.click());
+  await sleep(500);
+  ok("B6 tapping the backdrop closes it too", (await drawerOpen()) === false);
+
+  // Navigate via the drawer — must auto-close and land on the module
+  await clickTid("nav-menu-btn");
+  await sleep(400);
+  ok("B7 drawer navigates to a business", await clickText("Mina Akuafo Poultry Farm"));
+  await sleep(2500);
+  ok("B8 drawer auto-closed after selection", (await drawerOpen()) === false);
+  ok("B9 poultry module mounted", await exists('[data-testid="pltry-root"]') || (await page.evaluate(() => document.body.innerText.includes("Poultry"))), "");
+
+  // ══ C. Phone: every major page fits without horizontal overflow ════════
+  console.log("── C. Phone: page-by-page overflow sweep ──");
+  const pages = [
+    ["Command Center", "Command Center"],
+    ["Mina Concrete & Blocks", "Block Factory"],
+    ["Mina Volta Tilapia", "Aquaculture"],
+    ["Mina Heritage Kitchen", "Restaurant"],
+    ["Mina Tech & Electronics", "Electronics"],
+    ["GoMina Hardware", "Hardware"],
+    ["Mina Express Auto Wash", "Car Wash"],
+    ["Sales & Payments", "Sales"],
+    ["Finance & Reports", "Finance"],
+    ["Customers & CRM", "Customers"],
+    ["Suppliers & Vendors", "Suppliers"],
+    ["Employees & Payroll", "Employees"],
+    ["Assets & Equipment", "Assets"],
+    ["Inventory & Stock", "Inventory"],
+    ["Transactions & MoMo", "Transactions"],
+  ];
+  let allFit = true;
+  const badPages = [];
+  for (const [label, name] of pages) {
+    await clickTid("nav-menu-btn");
+    await sleep(350);
+    const clicked = await clickText(label);
+    await sleep(2400);
+    const res = await noOverflow();
+    const offs = res.ok ? [] : await offenders();
+    if (!clicked || !res.ok) { allFit = false; badPages.push(`${name}${clicked ? "" : " (missing)"} sw=${res.sw} ${offs.join(",")}`); }
+  }
+  ok("C1 all 15 module pages fit 375px (no h-overflow)", allFit, badPages.slice(0, 4).join(" | ") || "clean");
+  await shot("phone-transactions");
+  // back to command center for a stable screenshot
+  await clickTid("nav-menu-btn");
+  await sleep(350);
+  await clickText("Command Center");
+  await sleep(2200);
+  await shot("phone-command-center");
+
+  // ══ D. Phone: modal forms fit ═════════════════════════════════════════
+  console.log("── D. Phone: modal forms ──");
+  await clickTid("nav-menu-btn");
+  await sleep(350);
+  await clickText("Mina Express Auto Wash");
+  await sleep(2400);
+  await clickTid("cw-open-wash");
+  await sleep(900);
+  const modalFit = await page.evaluate(() => {
+    const f = document.querySelector("form.fixed, .fixed form");
+    if (!f) return { found: false };
+    const r = f.getBoundingClientRect();
+    return { found: true, w: r.width, iw: window.innerWidth, fits: r.width <= window.innerWidth + 1 };
+  });
+  ok("D1 car-wash form modal fits the phone", modalFit.found && modalFit.fits, `w=${modalFit.w}/${modalFit.iw}`);
+  await shot("phone-carwash-form");
+  await page.keyboard.press("Escape").catch(() => {});
+  await page.evaluate(() => { const b = document.querySelector('[data-testid="telf-close"], .fixed button'); });
+  // close via the X in the modal header
+  await page.evaluate(() => {
+    const btns = [...document.querySelectorAll(".fixed button")];
+    const x = btns.find((b) => (b.getAttribute("aria-label") || "").toLowerCase().includes("close") || b.querySelector("svg.lucide-x"));
+    if (x) x.click();
+  });
+  await sleep(600);
+
+  // Payroll center on a phone (dense data UI)
+  await clickTid("nav-menu-btn");
+  await sleep(350);
+  await clickText("Employees & Payroll");
+  await sleep(2400);
+  await clickTid("emp-payroll-open");
+  await sleep(2400);
+  r = await noOverflow();
+  ok("D2 payroll center fits the phone", r.ok, `sw=${r.sw}`);
+  await shot("phone-payroll");
+
+  // ══ E. Worker view on a phone ═════════════════════════════════════════
+  console.log("── E. Phone: worker role ──");
+  await logoutIfNeeded();
+  await login(AKUA);
+  r = await noOverflow();
+  ok("E1 worker dashboard fits the phone", r.ok, `sw=${r.sw}`);
+  await shot("phone-worker");
+  await logoutIfNeeded();
+
+  // ══ F. Tablet (834×1194) ══════════════════════════════════════════════
+  console.log("── F. Tablet ──");
+  await page.setViewport({ width: 834, height: 1194, isMobile: true, hasTouch: true });
+  await login(OWNER);
+  ok("F1 tablet uses the drawer (below lg)", await visible('[data-testid="nav-menu-btn"]'));
+  r = await noOverflow();
+  ok("F2 command center fits tablet", r.ok, `sw=${r.sw}`);
+  await shot("tablet-command-center");
+  await clickTid("nav-menu-btn");
+  await sleep(350);
+  await clickText("Mina Tech & Electronics");
+  await sleep(2400);
+  r = await noOverflow();
+  ok("F3 electronics module fits tablet", r.ok, `sw=${r.sw}`);
+  await shot("tablet-tech");
+  await clickTid("nav-menu-btn");
+  await sleep(350);
+  await clickText("Finance & Reports");
+  await sleep(2400);
+  r = await noOverflow();
+  ok("F4 finance fits tablet", r.ok, `sw=${r.sw}`);
+
+  // ══ G. Laptop (1280×800) ══════════════════════════════════════════════
+  console.log("── G. Laptop ──");
+  await page.setViewport({ width: 1280, height: 800 });
+  await page.reload({ waitUntil: "networkidle0", timeout: 45000 });
+  await sleep(2500);
+  ok("G1 sidebar static on laptop (no hamburger shown)", !(await visible('[data-testid="nav-menu-btn"]')));
+  const sideRect = await page.evaluate(() => {
+    const a = document.querySelector('[data-testid="nav-sidebar"]');
+    const r = a?.getBoundingClientRect();
+    return r ? { x: r.x, w: r.width } : null;
+  });
+  ok("G2 sidebar docked at left edge", !!sideRect && sideRect.x === 0, JSON.stringify(sideRect));
+  r = await noOverflow();
+  ok("G3 command center fits laptop", r.ok, `sw=${r.sw}`);
+  await shot("laptop-command-center");
+
+  // ══ H. Desktop (1500×950) ═════════════════════════════════════════════
+  console.log("── H. Desktop ──");
+  await page.setViewport({ width: 1500, height: 950 });
+  await page.reload({ waitUntil: "networkidle0", timeout: 45000 });
+  await sleep(2500);
+  ok("H1 sidebar static on desktop (no hamburger shown)", !(await visible('[data-testid="nav-menu-btn"]')));
+  r = await noOverflow();
+  ok("H2 desktop command center clean", r.ok, `sw=${r.sw}`);
+  await shot("desktop-command-center");
+} catch (err) {
+  console.error("FATAL", err);
+  failures++;
+} finally {
+  await browser.close();
+}
+
+console.log(`\n══ verify-responsive: ${checks.filter((c) => c.pass).length}/${checks.length} passed, ${failures} failed ══`);
+const pe = pageErrors.filter((e) => !/ResizeObserver/.test(e));
+if (pe.length) { console.log("PAGE ERRORS:"); pe.slice(0, 10).forEach((e) => console.log(" •", e.slice(0, 240))); }
+else console.log("Page errors: none");
+process.exit(failures || pe.length ? 1 : 0);

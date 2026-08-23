@@ -110,6 +110,10 @@ async function openTelecom() {
 try {
   // ══ A. Create the Telecom business (type now exists in the pickers) ═════
   console.log("── A. New business type + auto-provisioning ──");
+  // The code sequence follows whatever telecom units already exist (the owner
+  // may have created real ones in the UI) — expect max numeric suffix + 1.
+  const prevTel = await q(`SELECT code FROM businesses WHERE code ~ '^TELECOM-[0-9]+$'`);
+  const expectedCode = `TELECOM-${String(Math.max(0, ...prevTel.map((r) => parseInt(r.code.split("-")[1], 10))) + 1).padStart(2, "0")}`;
   const created = await api("/api/businesses", "POST", {
     name: "TEST Telecom Hub",
     category: "Telecom & Digital Services",
@@ -122,7 +126,7 @@ try {
   });
   BIZ = created.body?.business;
   ok("A1 Telecom & Digital Services unit created", created.status === 200 && !!BIZ, BIZ?.code);
-  ok("A2 auto-coded TELECOM-01 with Wifi icon", BIZ?.code === "TELECOM-01" && BIZ?.iconName === "Wifi", `${BIZ?.code}/${BIZ?.iconName}`);
+  ok(`A2 auto-coded ${expectedCode} with Wifi icon`, BIZ?.code === expectedCode && BIZ?.iconName === "Wifi", `${BIZ?.code}/${BIZ?.iconName}`);
   const prov = created.body?.provisioned || {};
   const lines0 = await q(`SELECT * FROM telecom_lines WHERE business_id=${BIZ.id} ORDER BY id`);
   const pkgs0 = await q(`SELECT * FROM telecom_wifi_packages WHERE business_id=${BIZ.id} ORDER BY id`);

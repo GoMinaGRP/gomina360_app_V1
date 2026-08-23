@@ -13,6 +13,7 @@ import {
   Briefcase,
   CheckCircle2,
   KeyRound,
+  Menu,
 } from "lucide-react";
 import { CurrencyCode, CURRENCIES } from "@/lib/currency";
 import { synchronizeOfflineQueue, getOfflineQueue } from "@/lib/offlineSync";
@@ -33,6 +34,8 @@ interface NavbarProps {
   onOpenChangePassword?: () => void;
   /** Notification bell element (rendered before the account menu). */
   bellSlot?: React.ReactNode;
+  /** Mobile/tablet (<lg): opens the navigation drawer. */
+  onMenuToggle?: () => void;
 }
 
 export default function Navbar({
@@ -48,6 +51,7 @@ export default function Navbar({
   onLogout,
   onOpenChangePassword,
   bellSlot,
+  onMenuToggle,
 }: NavbarProps) {
   const [isSyncing, setIsSyncing] = useState(false);
   const [showCurrencyDropdown, setShowCurrencyDropdown] = useState(false);
@@ -63,14 +67,24 @@ export default function Navbar({
   return (
     <header className="sticky top-0 z-40 bg-slate-900 border-b border-slate-800 text-white shadow-lg">
       <div className="flex items-center justify-between px-4 sm:px-6 py-3">
-        {/* Left Branding */}
-        <div className="flex items-center space-x-3">
-          <div className="flex items-center justify-center w-10 h-10 rounded-xl bg-gradient-to-br from-emerald-500 to-teal-700 text-white font-black text-lg shadow-md border border-emerald-400/30">
+        {/* Left Branding — shrink-0 so the brand chip can never be squashed by the controls */}
+        <div className="flex items-center space-x-2 sm:space-x-3 min-w-0 shrink-0">
+          {onMenuToggle && (
+            <button
+              onClick={onMenuToggle}
+              data-testid="nav-menu-btn"
+              aria-label="Open navigation menu"
+              className="lg:hidden flex items-center justify-center w-9 h-9 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 transition shrink-0"
+            >
+              <Menu className="w-5 h-5" />
+            </button>
+          )}
+          <div className="flex items-center justify-center w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-gradient-to-br from-emerald-500 to-teal-700 text-white font-black text-[10px] sm:text-lg shadow-md border border-emerald-400/30 shrink-0 tracking-tight">
             360
           </div>
-          <div>
+          <div className="hidden sm:block min-w-0">
             <div className="flex items-center space-x-2">
-              <h1 className="text-lg sm:text-xl font-bold tracking-tight bg-gradient-to-r from-emerald-400 via-teal-200 to-yellow-300 bg-clip-text text-transparent">
+              <h1 className="text-lg sm:text-xl font-bold tracking-tight whitespace-nowrap bg-gradient-to-r from-emerald-400 via-teal-200 to-yellow-300 bg-clip-text text-transparent">
                 GoMina 360
               </h1>
               <span className="hidden sm:inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-emerald-950 text-emerald-400 border border-emerald-800">
@@ -84,18 +98,19 @@ export default function Navbar({
         </div>
 
         {/* Right Controls */}
-        <div className="flex items-center space-x-2 sm:space-x-4">
+        <div className="flex items-center space-x-1.5 sm:space-x-4 shrink-0">
           {/* Currency Switcher */}
           <div className="relative">
             <button
               onClick={() => setShowCurrencyDropdown(!showCurrencyDropdown)}
-              className="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs sm:text-sm font-medium transition"
+              className="flex items-center space-x-1.5 px-2 sm:px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs sm:text-sm font-medium transition"
               title="Switch currency for future international expansion"
+              data-testid="currency-switcher"
             >
-              <Globe className="w-4 h-4 text-emerald-400" />
+              <Globe className="w-4 h-4 text-emerald-400 hidden sm:block" />
               <span>{CURRENCIES[currentCurrency].symbol}</span>
               <span className="hidden sm:inline">{currentCurrency}</span>
-              <ChevronDown className="w-3.5 h-3.5 text-slate-400" />
+              <ChevronDown className="w-3.5 h-3.5 text-slate-400 hidden sm:block" />
             </button>
 
             {showCurrencyDropdown && (
@@ -133,7 +148,7 @@ export default function Navbar({
           </div>
 
           {/* Online / Offline Mode Toggle & Sync Button */}
-          <div className="flex items-center space-x-1.5 bg-slate-800/80 border border-slate-700 rounded-lg px-2.5 py-1.5">
+          <div className="flex items-center space-x-1.5 bg-slate-800/80 border border-slate-700 rounded-lg px-1.5 sm:px-2.5 py-1.5">
             <button
               onClick={onToggleOnline}
               className={`flex items-center space-x-1.5 text-xs font-medium px-2 py-0.5 rounded-md transition ${
@@ -178,7 +193,7 @@ export default function Navbar({
           <div className="relative">
             <button
               onClick={() => setShowUserDropdown(!showUserDropdown)}
-              className="flex items-center space-x-2 px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 transition"
+              className="flex items-center space-x-1.5 sm:space-x-2 px-1.5 sm:px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 transition"
             >
               <div className="w-7 h-7 rounded-full bg-emerald-500/30 border border-emerald-400/50 flex items-center justify-center text-xs font-bold text-emerald-300">
                 {currentUser?.name ? currentUser.name.charAt(0) : "K"}
