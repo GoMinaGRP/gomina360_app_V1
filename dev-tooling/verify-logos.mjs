@@ -285,8 +285,14 @@ try {
   await client.query(`DELETE FROM payroll_entries WHERE run_id IN (SELECT id FROM payroll_runs WHERE notes LIKE '%TEST%')`);
   await client.query(`DELETE FROM payroll_runs WHERE notes LIKE '%TEST%'`);
   await client.query(`DELETE FROM transactions WHERE description LIKE '%TEST%'`);
-  // Restore pre-test branding state exactly (all logo columns were NULL)
-  await client.query("UPDATE businesses SET logo=NULL, branch_logos=NULL");
+  // Restore pre-test branding state EXACTLY from the captured baseline —
+  // the owner manages his real logos through the UI (e.g. the GoMina GRP
+  // poultry crest); never blank columns, put every row back as found.
+  const baseLogos = JSON.parse(B.logos);
+  for (const row of baseLogos) {
+    await client.query("UPDATE businesses SET logo=$1, branch_logos=$2 WHERE id=$3",
+      [row.logo, row.branch_logos == null ? null : JSON.stringify(row.branch_logos), row.id]);
+  }
   const cfgB = JSON.parse(B.company);
   await client.query("UPDATE company_settings SET company_logo=$1, updated_by_user_id=$2, updated_by_name=$3, updated_by_role=$4 WHERE id=1",
     [cfgB.company_logo, cfgB.updated_by_user_id, cfgB.updated_by_name, cfgB.updated_by_role]);

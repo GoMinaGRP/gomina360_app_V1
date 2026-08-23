@@ -1,8 +1,7 @@
 // Live responsiveness verification of the entire GoMina 360 interface in
 // real headless Chromium across phone / tablet / laptop / desktop viewports:
-// no horizontal page overflow on any page, navigation drawer behavior on
-// small screens (open → navigate → auto-close → backdrop dismiss), static
-// sidebar on large screens, all module pages, modals and the worker view —
+// no horizontal page overflow on any page, the restored STATIC left navigation
+// menu on every screen (compact on phones, always pinned, no hamburger drawer), all module pages, modals and the worker view —
 // with zero page errors everywhere.
 // Run: LD_LIBRARY_PATH=/tmp/al2023/lib node dev-tooling/verify-responsive.mjs
 
@@ -70,11 +69,12 @@ const visible = async (sel) => page.evaluate((s) => {
   const r = el.getBoundingClientRect();
   return cs.display !== "none" && cs.visibility !== "hidden" && r.width > 0;
 }, sel);
-const drawerOpen = async () => page.evaluate(() => {
-  const a = document.querySelector('[data-testid="nav-sidebar"]');
-  if (!a) return null;
-  return !a.className.includes("-translate-x-full");
-});
+const geoOf = async (sel) => page.evaluate((s) => {
+  const el = document.querySelector(s);
+  if (!el) return null;
+  const r = el.getBoundingClientRect();
+  return { x: Math.round(r.left), w: Math.round(r.width) };
+}, sel);
 
 async function login(cred) {
   await page.goto(BASE, { waitUntil: "networkidle0", timeout: 45000 });
@@ -107,30 +107,17 @@ try {
   await login(OWNER);
 
   // ══ B. Phone: drawer navigation ═══════════════════════════════════════
-  console.log("── B. Phone: navigation drawer ──");
-  ok("B1 hamburger visible on phone", await visible('[data-testid="nav-menu-btn"]'));
-  ok("B2 drawer starts hidden off-canvas", (await drawerOpen()) === false);
-  await clickTid("nav-menu-btn");
-  await sleep(500);
-  ok("B3 hamburger opens the drawer", (await drawerOpen()) === true);
-  ok("B4 backdrop present while open", await exists('[data-testid="nav-backdrop"]'));
-  await shot("phone-drawer-open");
-  await page.$eval('[data-testid="nav-menu-close"]', (e) => e.click());
-  await sleep(500);
-  ok("B5 close button dismisses the drawer", (await drawerOpen()) === false);
-  await clickTid("nav-menu-btn");
-  await sleep(400);
-  await page.$eval('[data-testid="nav-backdrop"]', (e) => e.click());
-  await sleep(500);
-  ok("B6 tapping the backdrop closes it too", (await drawerOpen()) === false);
-
-  // Navigate via the drawer — must auto-close and land on the module
-  await clickTid("nav-menu-btn");
-  await sleep(400);
-  ok("B7 drawer navigates to a business", await clickText("Mina Akuafo Poultry Farm"));
+  console.log("── B. Phone: static left menu ──");
+  ok("B1 STATIC left menu always visible on phones (no hamburger needed)", (await visible('[data-testid="nav-sidebar"]')) && !(await exists('[data-testid="nav-menu-btn"]')));
+  const sbGeo = await geoOf('[data-testid="nav-sidebar"]');
+  ok("B2 menu compact on phones (≤170px — content keeps room)", sbGeo && sbGeo.w <= 170, `w=${sbGeo?.w}`);
+  ok("B3 menu docked flush at the left edge", sbGeo && sbGeo.x === 0, `x=${sbGeo?.x}`);
+  await shot("phone-static-menu");
+  ok("B4 menu navigates to a business (no drawer)", await clickText("Mina Akuafo Poultry Farm"));
   await sleep(2500);
-  ok("B8 drawer auto-closed after selection", (await drawerOpen()) === false);
-  ok("B9 poultry module mounted", await exists('[data-testid="pltry-root"]') || (await page.evaluate(() => document.body.innerText.includes("Poultry"))), "");
+  ok("B5 poultry module mounted", await exists('[data-testid="pltry-root"]') || (await page.evaluate(() => document.body.innerText.includes("Poultry"))), "");
+  r = await noOverflow();
+  ok("B6 content column fits beside the static menu", r.ok, `sw=${r.sw}`);
 
   // ══ C. Phone: every major page fits without horizontal overflow ════════
   console.log("── C. Phone: page-by-page overflow sweep ──");
@@ -154,8 +141,6 @@ try {
   let allFit = true;
   const badPages = [];
   for (const [label, name] of pages) {
-    await clickTid("nav-menu-btn");
-    await sleep(350);
     const clicked = await clickText(label);
     await sleep(2400);
     const res = await noOverflow();
@@ -165,16 +150,12 @@ try {
   ok("C1 all 15 module pages fit 375px (no h-overflow)", allFit, badPages.slice(0, 4).join(" | ") || "clean");
   await shot("phone-transactions");
   // back to command center for a stable screenshot
-  await clickTid("nav-menu-btn");
-  await sleep(350);
   await clickText("Command Center");
   await sleep(2200);
   await shot("phone-command-center");
 
   // ══ D. Phone: modal forms fit ═════════════════════════════════════════
   console.log("── D. Phone: modal forms ──");
-  await clickTid("nav-menu-btn");
-  await sleep(350);
   await clickText("Mina Express Auto Wash");
   await sleep(2400);
   await clickTid("cw-open-wash");
@@ -198,8 +179,6 @@ try {
   await sleep(600);
 
   // Payroll center on a phone (dense data UI)
-  await clickTid("nav-menu-btn");
-  await sleep(350);
   await clickText("Employees & Payroll");
   await sleep(2400);
   await clickTid("emp-payroll-open");
@@ -221,19 +200,15 @@ try {
   console.log("── F. Tablet ──");
   await page.setViewport({ width: 834, height: 1194, isMobile: true, hasTouch: true });
   await login(OWNER);
-  ok("F1 tablet uses the drawer (below lg)", await visible('[data-testid="nav-menu-btn"]'));
+  ok("F1 static left menu present on tablets (no hamburger)", (await visible('[data-testid="nav-sidebar"]')) && !(await exists('[data-testid="nav-menu-btn"]')));
   r = await noOverflow();
   ok("F2 command center fits tablet", r.ok, `sw=${r.sw}`);
   await shot("tablet-command-center");
-  await clickTid("nav-menu-btn");
-  await sleep(350);
   await clickText("Mina Tech & Electronics");
   await sleep(2400);
   r = await noOverflow();
   ok("F3 electronics module fits tablet", r.ok, `sw=${r.sw}`);
   await shot("tablet-tech");
-  await clickTid("nav-menu-btn");
-  await sleep(350);
   await clickText("Finance & Reports");
   await sleep(2400);
   r = await noOverflow();

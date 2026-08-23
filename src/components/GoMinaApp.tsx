@@ -87,7 +87,6 @@ export default function GoMinaApp() {
   const [offlineQueueCount, setOfflineQueueCount] = useState<number>(0);
   const [isNewBusinessModalOpen, setIsNewBusinessModalOpen] = useState(false);
   const [isManageBizOpen, setIsManageBizOpen] = useState(false);
-  const [mobileNavOpen, setMobileNavOpen] = useState(false);
   // Right-side navigation & "you are here" panel — drawer below xl.
   const [contextNavOpen, setContextNavOpen] = useState(false);
   const [isUserAccessOpen, setIsUserAccessOpen] = useState(false);
@@ -991,7 +990,6 @@ export default function GoMinaApp() {
         usersList={usersList}
         onUserSelect={setCurrentUser}
         onLogout={handleLogout}
-        onMenuToggle={() => setMobileNavOpen(true)}
         onOpenChangePassword={() => setIsChangePwOpen(true)}
         bellSlot={
           <NotificationBell
@@ -1044,8 +1042,6 @@ export default function GoMinaApp() {
           businesses={businesses}
           currentUser={currentUser}
           auditEligible={auditEligible}
-          mobileOpen={mobileNavOpen}
-          onCloseMobile={() => setMobileNavOpen(false)}
         />
 
         <main className="flex-1 min-w-0 overflow-y-auto bg-slate-950/95 pb-12">

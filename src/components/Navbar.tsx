@@ -13,7 +13,6 @@ import {
   Briefcase,
   CheckCircle2,
   KeyRound,
-  Menu,
 } from "lucide-react";
 import { CurrencyCode, CURRENCIES } from "@/lib/currency";
 import { synchronizeOfflineQueue, getOfflineQueue } from "@/lib/offlineSync";
@@ -34,8 +33,6 @@ interface NavbarProps {
   onOpenChangePassword?: () => void;
   /** Notification bell element (rendered before the account menu). */
   bellSlot?: React.ReactNode;
-  /** Mobile/tablet (<lg): opens the navigation drawer. */
-  onMenuToggle?: () => void;
 }
 
 export default function Navbar({
@@ -51,7 +48,6 @@ export default function Navbar({
   onLogout,
   onOpenChangePassword,
   bellSlot,
-  onMenuToggle,
 }: NavbarProps) {
   const [isSyncing, setIsSyncing] = useState(false);
   const [showCurrencyDropdown, setShowCurrencyDropdown] = useState(false);
@@ -69,16 +65,6 @@ export default function Navbar({
       <div className="flex items-center justify-between px-4 sm:px-6 py-3">
         {/* Left Branding — shrink-0 so the brand chip can never be squashed by the controls */}
         <div className="flex items-center space-x-2 sm:space-x-3 min-w-0 shrink-0">
-          {onMenuToggle && (
-            <button
-              onClick={onMenuToggle}
-              data-testid="nav-menu-btn"
-              aria-label="Open navigation menu"
-              className="lg:hidden flex items-center justify-center w-9 h-9 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 transition shrink-0"
-            >
-              <Menu className="w-5 h-5" />
-            </button>
-          )}
           <div className="flex items-center justify-center w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-gradient-to-br from-emerald-500 to-teal-700 text-white font-black text-[10px] sm:text-lg shadow-md border border-emerald-400/30 shrink-0 tracking-tight">
             360
           </div>

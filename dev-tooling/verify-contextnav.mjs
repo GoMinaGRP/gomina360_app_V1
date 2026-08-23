@@ -167,9 +167,7 @@ try {
   await page.setViewport({ width: 1000, height: 800 });
   await page.reload({ waitUntil: "networkidle0" });
   await sleep(2000);
-  // Reload resets to HQ — navigate to the poultry unit via the left drawer.
-  await clickTid("nav-menu-btn");
-  await sleep(500);
+  // Reload resets to HQ — navigate via the STATIC left menu (always visible).
   await clickBizButton("Mina Akuafo Poultry Farm");
   await sleep(900);
   ok("C1 rail hidden on tablet, compact bar shown", !(await visible('[data-testid="ctx-panel"]')) && (await visible('[data-testid="ctx-bar"]')));
@@ -199,8 +197,6 @@ try {
   await sleep(500);
   ok("D2 drawer opens on phone & X closes it", (await visible('[data-testid="ctx-drawer"]')) && (await clickTid("ctx-drawer-close"), await sleep(400), await drawerOff()));
   // Navigate into a business first (the HQ shortcut only renders off-HQ).
-  await clickTid("nav-menu-btn");
-  await sleep(400);
   await clickBizButton("Mina Akuafo Poultry Farm");
   await sleep(900);
   await clickTid("ctx-open-btn");

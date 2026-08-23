@@ -14,6 +14,10 @@ const client = new pg.Client(process.env.DATABASE_URL || "postgresql://postgres:
 await client.connect();
 const B = {
   sessionMax: (await client.query("SELECT COALESCE(max(id),0) m FROM user_sessions")).rows[0].m,
+  // Exact branding baseline — the owner manages real logos via the UI; put
+  // every column back as found instead of blanking it.
+  logos: JSON.stringify((await client.query("SELECT id, logo, branch_logos FROM businesses ORDER BY id")).rows),
+  company: JSON.stringify((await client.query("SELECT company_logo, updated_by_user_id, updated_by_name, updated_by_role FROM company_settings WHERE id=1")).rows[0]),
 };
 
 const browser = await puppeteer.launch({ executablePath: "/tmp/al2023/chromium", headless: "new", args: ["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"] });
@@ -76,10 +80,17 @@ try {
   console.log("shot 2 done (payslip with branch logo)");
 } finally {
   await browser.close();
-  await client.query("UPDATE businesses SET logo=NULL, branch_logos=NULL");
-  await client.query("UPDATE company_settings SET company_logo=NULL, updated_by_user_id=NULL, updated_by_name=NULL, updated_by_role=NULL WHERE id=1");
+  const baseLogos = JSON.parse(B.logos);
+  for (const row of baseLogos) {
+    await client.query("UPDATE businesses SET logo=$1, branch_logos=$2 WHERE id=$3",
+      [row.logo, row.branch_logos == null ? null : JSON.stringify(row.branch_logos), row.id]);
+  }
+  const cfgB = JSON.parse(B.company);
+  await client.query("UPDATE company_settings SET company_logo=$1, updated_by_user_id=$2, updated_by_name=$3, updated_by_role=$4 WHERE id=1",
+    [cfgB.company_logo, cfgB.updated_by_user_id, cfgB.updated_by_name, cfgB.updated_by_role]);
   await client.query(`DELETE FROM user_sessions WHERE id > ${B.sessionMax}`);
-  const chk = (await client.query("SELECT (SELECT count(*) FROM businesses WHERE logo IS NOT NULL) + (SELECT count(*) FROM businesses WHERE branch_logos IS NOT NULL) b, (SELECT count(*) FROM company_settings WHERE company_logo IS NOT NULL) c")).rows[0];
-  console.log("branding restored to baseline:", chk.b === "0" && chk.c === "0" ? "OK" : JSON.stringify(chk));
+  const chk = JSON.stringify((await client.query("SELECT id, logo, branch_logos FROM businesses ORDER BY id")).rows);
+  const chkC = JSON.stringify((await client.query("SELECT company_logo, updated_by_user_id, updated_by_name, updated_by_role FROM company_settings WHERE id=1")).rows[0]);
+  console.log("branding restored to baseline:", chk === B.logos && chkC === B.company ? "OK" : "MISMATCH");
   await client.end();
 }
