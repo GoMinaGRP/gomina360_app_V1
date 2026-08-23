@@ -78,6 +78,17 @@ const WASH_TASKS: TaskSeed[] = [
   { taskKey: "YARD_CLOSING", taskLabel: "Close bays, drain lines & store equipment", category: "SECURITY" },
 ];
 
+const TELECOM_TASKS: TaskSeed[] = [
+  { taskKey: "FLOAT_OPENING", taskLabel: "Record opening float & cash on every MoMo line", category: "FINANCE" },
+  { taskKey: "SIM_COMPLIANCE", taskLabel: "Verify agent SIM registration & KYC documents current", category: "COMPLIANCE" },
+  { taskKey: "ROUTER_UPTIME", taskLabel: "Check Wi-Fi routers powered & broadcasting", category: "NETWORK" },
+  { taskKey: "VOUCHER_STOCK", taskLabel: "Count available Wi-Fi vouchers per package", category: "STOCK" },
+  { taskKey: "FAILED_REVIEW", taskLabel: "Review & re-attempt yesterday's failed transactions", category: "OPERATIONS" },
+  { taskKey: "COMMISSION_RECON", taskLabel: "Reconcile network commission statements vs books", category: "FINANCE" },
+  { taskKey: "CASH_BANKING", taskLabel: "Bank excess cash / top up floats for tomorrow", category: "FINANCE" },
+  { taskKey: "SHOP_SECURE", taskLabel: "Lock till, secure SIMs & close kiosk", category: "SECURITY" },
+];
+
 const HARDWARE_TASKS: TaskSeed[] = [
   { taskKey: "SILO_CEMENT_COUNT", taskLabel: "Count cement bags & steel sections before opening", category: "STOCK" },
   { taskKey: "DELIVERY_SCHEDULE", taskLabel: "Confirm today's site delivery & dispatch schedule", category: "DELIVERIES" },
@@ -118,6 +129,7 @@ const DEFAULT_TASKS_BY_CATEGORY: Record<string, TaskSeed[]> = {
   "Electronic Shop": TECH_TASKS,
   "Car Wash": WASH_TASKS,
   "Hardware Store": HARDWARE_TASKS,
+  "Telecom & Digital Services": TELECOM_TASKS,
 };
 
 /** Pick the best task set for a business: exact code → category → generic. */

@@ -40,6 +40,11 @@ import {
   carWashBookings,
   carWashWashes,
   carWashActivities,
+  telecomLines,
+  telecomTxns,
+  telecomWifiPackages,
+  telecomVouchers,
+  telecomActivities,
   hardwareLogs,
   hardwareOrders,
   hardwarePurchases,
@@ -112,7 +117,9 @@ async function relatedCounts(businessId: number) {
       (await count(hardwareDeliveries, hardwareDeliveries.businessId)) +
       (await count(carWashServices, carWashServices.businessId)) +
       (await count(carWashBookings, carWashBookings.businessId)) +
-      (await count(carWashWashes, carWashWashes.businessId)),
+      (await count(carWashWashes, carWashWashes.businessId)) +
+      (await count(telecomTxns, telecomTxns.businessId)) +
+      (await count(telecomVouchers, telecomVouchers.businessId)),
     productionAndOps:
       (await count(poultryLogs, poultryLogs.businessId)) +
       (await count(poultryFlocks, poultryFlocks.businessId)) +
@@ -140,7 +147,10 @@ async function relatedCounts(businessId: number) {
       (await count(electronicsLogs, electronicsLogs.businessId)) +
       (await count(carWashLogs, carWashLogs.businessId)) +
       (await count(carWashActivities, carWashActivities.businessId)) +
-      (await count(hardwareLogs, hardwareLogs.businessId)),
+      (await count(hardwareLogs, hardwareLogs.businessId)) +
+      (await count(telecomLines, telecomLines.businessId)) +
+      (await count(telecomWifiPackages, telecomWifiPackages.businessId)) +
+      (await count(telecomActivities, telecomActivities.businessId)),
     checklists:
       (await count(checklistTemplates, checklistTemplates.businessId)) +
       (await count(checklistEntries, checklistEntries.businessId)),
@@ -396,6 +406,11 @@ export async function DELETE(request: Request, { params }: { params: Promise<{ i
       [carWashBookings, carWashBookings.businessId],
       [carWashWashes, carWashWashes.businessId],
       [carWashActivities, carWashActivities.businessId],
+      [telecomLines, telecomLines.businessId],
+      [telecomTxns, telecomTxns.businessId],
+      [telecomWifiPackages, telecomWifiPackages.businessId],
+      [telecomVouchers, telecomVouchers.businessId],
+      [telecomActivities, telecomActivities.businessId],
       [hardwareLogs, hardwareLogs.businessId],
       [hardwareOrders, hardwareOrders.businessId],
       [hardwarePurchases, hardwarePurchases.businessId],
@@ -558,6 +573,11 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       [carWashBookings, carWashBookings.businessId],
       [carWashWashes, carWashWashes.businessId],
       [carWashActivities, carWashActivities.businessId],
+      [telecomLines, telecomLines.businessId],
+      [telecomTxns, telecomTxns.businessId],
+      [telecomWifiPackages, telecomWifiPackages.businessId],
+      [telecomVouchers, telecomVouchers.businessId],
+      [telecomActivities, telecomActivities.businessId],
       [hardwareLogs, hardwareLogs.businessId],
       [hardwareOrders, hardwareOrders.businessId],
       [hardwarePurchases, hardwarePurchases.businessId],

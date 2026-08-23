@@ -52,6 +52,7 @@ const CATEGORIES = [
   "Electronic Shop",
   "Car Wash",
   "Hardware Store",
+  "Telecom & Digital Services",
 ];
 
 const STATUSES = ["ACTIVE", "EXPANDING", "MAINTENANCE", "INACTIVE"];

@@ -1442,6 +1442,76 @@ export const GUIDES: Record<string, Record<string, SectionGuide>> = {
     },
   },
 
+  TELECOM: {
+    DASHBOARD: {
+      title: "Telecom & Digital Services Dashboard",
+      intro:
+        "The trading picture of {biz}: today's MoMo turnover, commissions & margins, float and cash per till, failed transactions to chase, Wi-Fi vouchers in stock and users online — everything updates itself as the desk sells.",
+      tasks: [
+        {
+          name: "Take a MoMo deposit or withdrawal",
+          steps: [
+            "Click the yellow “MoMo Txn” button (top right).",
+            "Choose Deposit (cash in) or Withdrawal (cash out), pick the agent till, enter the customer, amount and the commission you earn.",
+            "Save — float and cash move on the till automatically and the commission posts to Finance as income.",
+            "If the network fails, record it again with outcome “Failed” and the reason — failed txns move no money and are listed for follow-up.",
+          ],
+          tip: "Deposits need enough float; withdrawals need enough cash in the till. The desk blocks the txn before it can fail at the network.",
+        },
+        {
+          name: "Sell a Wi-Fi voucher",
+          steps: [
+            "Open Wi-Fi & Vouchers, find an AVAILABLE voucher card and press “Sell & Activate”.",
+            "Enter the user's name and payment method — the voucher activates immediately and its expiry starts counting.",
+            "Hand the customer the code, the 6-digit access PIN, or let them scan the QR card to connect.",
+          ],
+          tip: "Run low on stock? Press “+ Vouchers” on any package to print a fresh batch with codes, PINs and QR cards in one go.",
+        },
+        {
+          name: "Top up float or cash on a till",
+          steps: [
+            "On the Dashboard (or MoMo tab) find the line card and press “Top-up”.",
+            "Pick Float or Cash, choose Top up / Draw down, enter the amount and save.",
+            "Balances update instantly and the movement is logged in the activity feed — never double-counted as profit.",
+          ],
+        },
+      ],
+      faqs: [
+        {
+          q: "How is profit calculated?",
+          match: ["profit", "earn", "margin"],
+          answer:
+            "Profit = income − expenses from the shared Finance ledger. Income is MoMo commissions, airtime/data margins (retail minus wholesale cost from float), service fees and Wi-Fi voucher sales; expenses are wholesale top-up costs and logged branch expenses.",
+        },
+        {
+          q: "What happens with failed transactions?",
+          match: ["failed", "fail", "declined", "network issue"],
+          answer:
+            "Record them with outcome “Failed” and the reason. They never move float, cash or Finance — they appear in the red failed counts and tables so you can re-attempt and reconcile with the network.",
+        },
+        {
+          q: "How do vouchers and expiry work?",
+          match: ["voucher", "expiry", "expire", "wifi code", "access code"],
+          answer:
+            "Generate batches per package (code + 6-digit PIN + QR card each). A voucher is AVAILABLE until sold; selling activates it and starts the package duration; when time runs out it is marked EXPIRED automatically. Staff can mark USED when the user connects, or REVOKE a voucher.",
+        },
+        {
+          q: "Where do customer records come from?",
+          match: ["customer"],
+          answer:
+            "The first time someone buys — MoMo, airtime, data or Wi-Fi — their record is created (or matched by phone) in the shared Customers directory and their spend and loyalty points grow with every successful transaction.",
+        },
+      ],
+    },
+    DEFAULT: {
+      title: "Telecom & Digital Services",
+      intro:
+        "The complete MoMo / airtime / data / Wi-Fi desk for {biz}: agent lines with float & cash, transactions with commissions and failed-txn tracking, Wi-Fi packages, vouchers, QR codes, access PINs, users, expiry, sales, finance, customers and reports — all linked automatically.",
+      tasks: COMMON.DEFAULT.tasks,
+      faqs: COMMON.DEFAULT.faqs,
+    },
+  },
+
   HARDWARE: {
     DASHBOARD: {
       title: "Hardware Store Dashboard",

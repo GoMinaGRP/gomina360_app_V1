@@ -29,6 +29,7 @@ import ElectronicsShopModule from "./ElectronicsShopModule";
 import RestaurantKitchenModule from "./RestaurantKitchenModule";
 import HardwareStoreModule from "./HardwareStoreModule";
 import CarWashModule from "./CarWashModule";
+import TelecomServicesModule from "./TelecomServicesModule";
 import BusinessDashboardModule from "./BusinessDashboardModule";
 import UniversalExportCenter from "./UniversalExportCenter";
 import { CurrencyCode } from "@/lib/currency";
@@ -618,8 +619,9 @@ export default function GoMinaApp() {
       Livestock: "LIVESTOCK",
       "Car Wash": "WASH",
       "Hardware Store": "HARDWARE",
+      "Telecom & Digital Services": "TELECOM",
     };
-    const KNOWN_PREFIXES = ["POULTRY", "BLOCK", "TECH", "FOOD", "AQUA", "LIVESTOCK", "WASH", "HARDWARE"];
+    const KNOWN_PREFIXES = ["POULTRY", "BLOCK", "TECH", "FOOD", "AQUA", "LIVESTOCK", "WASH", "HARDWARE", "TELECOM"];
     const tabBiz = businesses.find((b) => b.code === activeTab);
     if (tabBiz) {
       const bizInfo = tabBiz;
@@ -749,6 +751,27 @@ export default function GoMinaApp() {
       if (moduleKey === "WASH") {
         return (
           <CarWashModule
+            currentUser={currentUser}
+            businessInfo={bizInfo}
+            businessMetrics={bizMetric}
+            inventory={inventory}
+            customers={customers}
+            transactions={transactions}
+            assets={assets}
+            employees={employees}
+            currentCurrency={currentCurrency}
+            onRefreshData={refreshAllData}
+          />
+        );
+      }
+
+      // Telecom & Digital Services units get the full integrated module —
+      // MoMo float & cash tills, airtime/data sales, Wi-Fi packages &
+      // vouchers (codes, PINs, QR, expiry), sales, finance, customers and
+      // reports, all interlinked with the shared ledger and customer base.
+      if (moduleKey === "TELECOM") {
+        return (
+          <TelecomServicesModule
             currentUser={currentUser}
             businessInfo={bizInfo}
             businessMetrics={bizMetric}

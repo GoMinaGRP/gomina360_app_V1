@@ -2,6 +2,8 @@ import { db } from "@/db";
 import {
   businessMetrics,
   carWashServices,
+  telecomLines,
+  telecomWifiPackages,
   checklistTemplates,
   inventoryItems,
 } from "@/db/schema";
@@ -29,6 +31,7 @@ export const CATEGORY_PREFIX: Record<string, string> = {
   "Electronic Shop": "TECH",
   "Car Wash": "WASH",
   "Hardware Store": "HARDWARE",
+  "Telecom & Digital Services": "TELECOM",
 };
 
 export const CATEGORY_ICON: Record<string, string> = {
@@ -40,6 +43,7 @@ export const CATEGORY_ICON: Record<string, string> = {
   "Electronic Shop": "Cpu",
   "Car Wash": "Droplets",
   "Hardware Store": "HardHat",
+  "Telecom & Digital Services": "Wifi",
 };
 
 export interface StarterItem {
@@ -97,6 +101,14 @@ const KITS: Record<string, StarterItem[]> = {
     { name: "Alu-Zinc Roofing Sheets 0.5mm", skuSuffix: "ROOF-ALZINC", category: "Roofing & Cladding", quantity: 150, unit: "Sheets", costPriceGhs: 95, sellingPriceGhs: 125, minStockThreshold: 40 },
     { name: "Emulsion Paint 20L Bucket", skuSuffix: "PAINT-20L", category: "Paints & Finishing", quantity: 30, unit: "Buckets", costPriceGhs: 340, sellingPriceGhs: 420, minStockThreshold: 10 },
     { name: "uPVC Pipe 110mm (4m Length)", skuSuffix: "UPVC-110MM", category: "Plumbing & Drainage", quantity: 80, unit: "Lengths", costPriceGhs: 65, sellingPriceGhs: 85, minStockThreshold: 20 },
+  ],
+  "Telecom & Digital Services": [
+    { name: "MTN Airtime Top-Up (per GH₵)", skuSuffix: "AIR-MTN", category: "Airtime", quantity: 2000, unit: "GH₵", costPriceGhs: 0.96, sellingPriceGhs: 1, minStockThreshold: 200 },
+    { name: "Telecel Airtime Top-Up (per GH₵)", skuSuffix: "AIR-TEL", category: "Airtime", quantity: 1000, unit: "GH₵", costPriceGhs: 0.96, sellingPriceGhs: 1, minStockThreshold: 100 },
+    { name: "AT Airtime Top-Up (per GH₵)", skuSuffix: "AIR-AT", category: "Airtime", quantity: 800, unit: "GH₵", costPriceGhs: 0.96, sellingPriceGhs: 1, minStockThreshold: 100 },
+    { name: "MTN Data Bundle 5GB (1 Month)", skuSuffix: "DATA-5GB", category: "Data Bundles", quantity: 60, unit: "Bundles", costPriceGhs: 28, sellingPriceGhs: 35, minStockThreshold: 15 },
+    { name: "MTN Data Bundle 10GB (1 Month)", skuSuffix: "DATA-10GB", category: "Data Bundles", quantity: 40, unit: "Bundles", costPriceGhs: 55, sellingPriceGhs: 68, minStockThreshold: 10 },
+    { name: "Wi-Fi Access Voucher (1 Hour)", skuSuffix: "WIFI-1HR", category: "Wi-Fi Vouchers", quantity: 999, unit: "Vouchers", costPriceGhs: 0.4, sellingPriceGhs: 2, minStockThreshold: 50 },
   ],
 };
 
@@ -193,6 +205,82 @@ export async function ensureCarWashServiceCatalogue(biz: {
     });
   }
   return CAR_WASH_SERVICES_DEFAULTS.length;
+}
+
+// ─── Telecom & Digital Services default network setup ────────────────────
+export interface TelecomLineSeed {
+  network: string;
+  kind: string;
+  label: string;
+}
+export interface WifiPackageSeed {
+  name: string;
+  durationHours: number;
+  dataCapMb: number | null;
+  priceGhs: number;
+  routerLabel: string;
+}
+
+export const TELECOM_LINE_DEFAULTS: TelecomLineSeed[] = [
+  { network: "MTN", kind: "MOMO_AGENT", label: "MTN MoMo Agent Till" },
+  { network: "TELECEL", kind: "MOMO_AGENT", label: "Telecel Cash Agent Till" },
+  { network: "AT", kind: "MOMO_AGENT", label: "AT Money Agent Till" },
+  { network: "MTN", kind: "AIRTIME_WALLET", label: "MTN Airtime/Data Wallet" },
+];
+
+export const WIFI_PACKAGE_DEFAULTS: WifiPackageSeed[] = [
+  { name: "1-Hour Quick Surf", durationHours: 1, dataCapMb: 512, priceGhs: 2, routerLabel: "Wi-Fi Zone A" },
+  { name: "1-Day Unlimited", durationHours: 24, dataCapMb: null, priceGhs: 10, routerLabel: "Wi-Fi Zone A" },
+  { name: "1-Week Unlimited", durationHours: 168, dataCapMb: null, priceGhs: 45, routerLabel: "Wi-Fi Zone A" },
+  { name: "5GB Night Bundle (7 Days)", durationHours: 168, dataCapMb: 5120, priceGhs: 20, routerLabel: "Wi-Fi Zone A" },
+];
+
+/**
+ * Ensure a Telecom & Digital Services unit has its default agent lines
+ * (MTN/Telecel/AT MoMo tills + airtime wallet) and default Wi-Fi packages.
+ * Idempotent: units that already have lines/packages are left alone.
+ */
+export async function ensureTelecomDefaults(biz: {
+  id: number;
+  code: string;
+  category: string;
+}): Promise<{ lines: number; packages: number }> {
+  if (biz.category !== "Telecom & Digital Services") return { lines: 0, packages: 0 };
+  let lines = 0;
+  let packages = 0;
+  const existingLines = await db.select().from(telecomLines).where(eq(telecomLines.businessId, biz.id));
+  if (existingLines.length === 0) {
+    for (const l of TELECOM_LINE_DEFAULTS) {
+      await db.insert(telecomLines).values({
+        businessId: biz.id,
+        branchCode: biz.code,
+        network: l.network,
+        kind: l.kind,
+        label: l.label,
+        floatGhs: 0,
+        cashGhs: 0,
+        active: true,
+      });
+      lines++;
+    }
+  }
+  const existingPkgs = await db.select().from(telecomWifiPackages).where(eq(telecomWifiPackages.businessId, biz.id));
+  if (existingPkgs.length === 0) {
+    for (const p of WIFI_PACKAGE_DEFAULTS) {
+      await db.insert(telecomWifiPackages).values({
+        businessId: biz.id,
+        branchCode: biz.code,
+        name: p.name,
+        durationHours: p.durationHours,
+        dataCapMb: p.dataCapMb,
+        priceGhs: p.priceGhs,
+        routerLabel: p.routerLabel,
+        active: true,
+      });
+      packages++;
+    }
+  }
+  return { lines, packages };
 }
 
 /** Next sequential code for a category: BLOCK-02, BLOCK-03, … (race-tolerant). */
@@ -316,8 +404,14 @@ export async function provisionBusiness(biz: {
   }
 
   // 4. Auto Car Wash units get the default service catalogue (chemical
-  //    consumption auto-linked to the branch's chemical drum when present).
+  //    consumption auto-linked to the branch's chemical drum when present),
+  //    and Telecom units get their default MoMo agent lines + Wi-Fi packages.
   const servicesCreated = await ensureCarWashServiceCatalogue({
+    id: businessId,
+    code: biz.code,
+    category: biz.category,
+  });
+  const telecomCreated = await ensureTelecomDefaults({
     id: businessId,
     code: biz.code,
     category: biz.category,
@@ -329,6 +423,8 @@ export async function provisionBusiness(biz: {
     starterKitCostGhs: Math.round(kitCost * 100) / 100,
     checklistTemplates: templateCount,
     carWashServices: servicesCreated,
+    telecomLines: telecomCreated.lines,
+    telecomWifiPackages: telecomCreated.packages,
   };
 }
 
@@ -446,8 +542,14 @@ export async function reprovisionForTypeChange(biz: {
     createdTpls++;
   }
 
-  // Re-pointed INTO a Car Wash: make sure the service catalogue exists too.
+  // Re-pointed INTO a Car Wash / Telecom: make sure the catalogue / agent
+  // lines + Wi-Fi packages exist too.
   const servicesCreated = await ensureCarWashServiceCatalogue({
+    id: businessId,
+    code: biz.code,
+    category: biz.category,
+  });
+  await ensureTelecomDefaults({
     id: businessId,
     code: biz.code,
     category: biz.category,

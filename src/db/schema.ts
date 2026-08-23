@@ -1076,6 +1076,99 @@ export const carWashActivities = pgTable("car_wash_activities", {
   recordedAt: timestamp("recorded_at").defaultNow(),
 });
 
+// ── Telecom & Digital Services (MoMo / airtime / data bundles / Wi-Fi) ─────
+// Agent lines (MoMo SIMs, airtime wallets, hotspot routers) carry the
+// e-money float and physical cash each till holds; every MoMo/airtime/data/
+// Wi-Fi sale is a telecom_txns row (with commission, cost & profit) that also
+// posts to the shared Finance ledger; Wi-Fi vouchers carry printable codes,
+// access PINs and QR payloads with activation-based expiry.
+export const telecomLines = pgTable("telecom_lines", {
+  id: serial("id").primaryKey(),
+  businessId: integer("business_id").notNull(),
+  branchCode: text("branch_code"),
+  network: text("network").notNull(), // MTN, TELECEL, AT, WIFI
+  kind: text("kind").notNull(), // MOMO_AGENT, AIRTIME_WALLET, DATA_WALLET, WIFI_HOTSPOT
+  label: text("label").notNull(), // e.g. "MTN MoMo Agent Till 1"
+  msisdn: text("msisdn"), // agent number / SIM number
+  floatGhs: doublePrecision("float_ghs").notNull().default(0), // e-money float balance
+  cashGhs: doublePrecision("cash_ghs").notNull().default(0), // physical cash at this till
+  active: boolean("active").default(true),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const telecomTxns = pgTable("telecom_txns", {
+  id: serial("id").primaryKey(),
+  businessId: integer("business_id").notNull(),
+  branchCode: text("branch_code"),
+  txnNumber: text("txn_number").notNull().unique(), // e.g. "TEL-2026-48213"
+  lineId: integer("line_id"), // agent line used (MoMo/airtime/data)
+  network: text("network"), // MTN / TELECEL / AT / WIFI
+  type: text("type").notNull(), // MOMO_DEPOSIT, MOMO_WITHDRAWAL, MOMO_TRANSFER, AIRTIME, DATA, WIFI_VOUCHER
+  customerName: text("customer_name"),
+  customerPhone: text("customer_phone"),
+  amountGhs: doublePrecision("amount_ghs").notNull().default(0), // face value of the transaction
+  chargeGhs: doublePrecision("charge_ghs").notNull().default(0), // convenience fee charged to the customer
+  commissionGhs: doublePrecision("commission_ghs").notNull().default(0), // MoMo commission earned / airtime-data margin
+  costGhs: doublePrecision("cost_ghs").notNull().default(0), // wholesale cost paid from float (airtime/data)
+  status: text("status").notNull().default("SUCCESS"), // SUCCESS, FAILED
+  failReason: text("fail_reason"),
+  reference: text("reference"), // network transaction reference
+  paymentMethod: text("payment_method").default("CASH"),
+  voucherId: integer("voucher_id"), // Wi-Fi voucher sold in this txn
+  txnDate: text("txn_date").notNull(),
+  notes: text("notes"),
+  createdByUserId: integer("created_by_user_id"),
+  createdByName: text("created_by_name"),
+  createdByRole: text("created_by_role"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const telecomWifiPackages = pgTable("telecom_wifi_packages", {
+  id: serial("id").primaryKey(),
+  businessId: integer("business_id").notNull(),
+  branchCode: text("branch_code"),
+  name: text("name").notNull(), // e.g. "1-Day Unlimited"
+  durationHours: integer("duration_hours").notNull(), // validity once activated
+  dataCapMb: integer("data_cap_mb"), // null = unlimited
+  priceGhs: doublePrecision("price_ghs").notNull(),
+  routerLabel: text("router_label"), // hotspot the voucher is valid on, e.g. "Wi-Fi Zone A"
+  active: boolean("active").default(true),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const telecomVouchers = pgTable("telecom_vouchers", {
+  id: serial("id").primaryKey(),
+  businessId: integer("business_id").notNull(),
+  branchCode: text("branch_code"),
+  packageId: integer("package_id").notNull(),
+  packageName: text("package_name").notNull(),
+  code: text("code").notNull().unique(), // printed login code, e.g. "WF-8F3K-2Q9X"
+  accessCode: text("access_code").notNull(), // 6-digit access PIN
+  qrData: text("qr_data"), // QR data-URL encoding code+PIN for scan-to-connect
+  status: text("status").notNull().default("AVAILABLE"), // AVAILABLE, SOLD, USED, EXPIRED, REVOKED
+  customerName: text("customer_name"), // the Wi-Fi user once sold
+  customerPhone: text("customer_phone"),
+  priceGhs: doublePrecision("price_ghs").notNull().default(0),
+  soldAt: timestamp("sold_at"),
+  activatedAt: timestamp("activated_at"),
+  expiresAt: timestamp("expires_at"), // activation + package duration
+  createdByName: text("created_by_name"),
+  createdByRole: text("created_by_role"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const telecomActivities = pgTable("telecom_activities", {
+  id: serial("id").primaryKey(),
+  businessId: integer("business_id").notNull(),
+  branchCode: text("branch_code"),
+  action: text("action").notNull(), // LINE_CREATED, FLOAT_TOPUP, TXN_SUCCESS, TXN_FAILED, PACKAGE_CREATED, VOUCHERS_GENERATED, VOUCHER_SOLD, VOUCHER_EXPIRED, ...
+  detail: text("detail").notNull(),
+  actorName: text("actor_name"),
+  actorRole: text("actor_role"),
+  refNumber: text("ref_number"),
+  recordedAt: timestamp("recorded_at").defaultNow(),
+});
+
 // 17. AI Strategic Insights & Risk Recommendations
 export const aiInsights = pgTable("ai_insights", {
   id: serial("id").primaryKey(),

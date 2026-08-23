@@ -138,6 +138,7 @@ export default function NewBusinessModal({
               <option value="Electronic Shop">Electronic Shop</option>
               <option value="Car Wash">Car Wash</option>
               <option value="Hardware Store">Hardware Store (Construction & Building Materials)</option>
+              <option value="Telecom & Digital Services">Telecom & Digital Services (MoMo, Airtime, Data, Wi-Fi)</option>
             </select>
           </div>
 

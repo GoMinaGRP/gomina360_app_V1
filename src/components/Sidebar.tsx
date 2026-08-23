@@ -27,6 +27,7 @@ import {
   ShoppingCart,
   HardHat,
   Landmark,
+  Wifi,
 } from "lucide-react";
 
 export type ActiveTab =
@@ -96,6 +97,7 @@ export default function Sidebar({
     "Electronic Shop": Cpu,
     "Car Wash": Droplets,
     "Hardware Store": HardHat,
+    "Telecom & Digital Services": Wifi,
   };
 
   const isAccessible = (biz: any) => {
