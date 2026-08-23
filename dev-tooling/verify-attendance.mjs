@@ -23,6 +23,9 @@ const { Client } = require("pg");
 
 const BASE = "http://127.0.0.1:3000";
 const OWNER = { email: "kwame.owner@gomina360.com", pw: "Owner@GoMina26" };
+// Privileged clock flows run as the GENERAL_MANAGER so a live OWNER's own
+// open shift (real user data) is never clocked out or otherwise modified.
+const GM = { email: "abena.gm@gomina360.com", pw: "GoMina@User2" };
 const WORKER = { id: 11, email: "kwabena.mensah@gomina360.com", pw: "GoMina@User11" };
 const BIZ1 = 1; // POULTRY-01 — Kwabena's assignment
 const ACCRA = { latitude: 5.6037, longitude: -0.187 };
@@ -236,36 +239,36 @@ async function main() {
       Array.isArray(wMeta.body?.logs) && wMeta.body.logs.length === 0 && (wMeta.body?.myLogs?.length ?? 0) >= 1, JSON.stringify({ logs: wMeta.body?.logs?.length, mine: wMeta.body?.myLogs?.length }));
 
     // ── E. Double clock-in refused; owner shift completes ────────────────
-    console.log("── E. Double-in guard + owner shift ──");
-    await op.goto(`${BASE}/`, { waitUntil: "networkidle2", timeout: 45000 }); // leave the payroll overlay so the navbar is clickable
-    await sleep(2200);
-    await openClock(op);
-    await op.waitForSelector("[data-testid='att-clock-biz']", { timeout: 10000 });
-    await op.select("[data-testid='att-clock-biz']", String(BIZ1));
-    await op.click("[data-testid='att-clockin']");
-    await op.waitForFunction(
+    console.log("── E. Double-in guard + privileged shift (GM) ──");
+    const gm = await loginPersona(browser, GM, ACCRA);
+    const gp = gm.page; pages.push(gp);
+    await openClock(gp);
+    await gp.waitForSelector("[data-testid='att-clock-biz']", { timeout: 10000 });
+    await gp.select("[data-testid='att-clock-biz']", String(BIZ1));
+    await gp.click("[data-testid='att-clockin']");
+    await gp.waitForFunction(
       () => /Clocked in/.test(document.querySelector("[data-testid='att-clock-status']")?.textContent || ""),
       { timeout: 20000 },
     );
-    await op.waitForSelector("[data-testid='att-clockout']", { timeout: 10000 }); // state settled: now On duty
-    const dbl = await apiPost(op, "/api/attendance", { action: "CLOCK_IN", businessId: BIZ1 });
+    await gp.waitForSelector("[data-testid='att-clockout']", { timeout: 10000 }); // state settled: now On duty
+    const dbl = await apiPost(gp, "/api/attendance", { action: "CLOCK_IN", businessId: BIZ1 });
     check("E1 double clock-in refused (409) with clear message",
       dbl.status === 409 && /clock out first/i.test(dbl.body?.error || ""), JSON.stringify(dbl).slice(0, 200));
-    await op.screenshot({ path: "/home/user/att-1-clock-open.png" });
-    await openClock(op);
-    await op.waitForSelector("[data-testid='att-clockout']", { timeout: 10000 });
-    await op.click("[data-testid='att-clockout']");
-    await op.waitForFunction(
+    await gp.screenshot({ path: "/home/user/att-1-clock-open.png" });
+    await openClock(gp);
+    await gp.waitForSelector("[data-testid='att-clockout']", { timeout: 10000 });
+    await gp.click("[data-testid='att-clockout']");
+    await gp.waitForFunction(
       () => /Clocked out/.test(document.querySelector("[data-testid='att-clock-status']")?.textContent || ""),
       { timeout: 20000 },
     );
-    const ownLog = (await q(`SELECT * FROM attendance_logs WHERE user_id=(SELECT id FROM users WHERE email=$1) ORDER BY id DESC LIMIT 1`, [OWNER.email])).rows[0];
-    check("E2 owner shift recorded + closed (on-site, branch POULTRY-01)",
+    const ownLog = (await q(`SELECT * FROM attendance_logs WHERE user_id=(SELECT id FROM users WHERE email=$1) ORDER BY id DESC LIMIT 1`, [GM.email])).rows[0];
+    check("E2 privileged shift recorded + closed (on-site, branch POULTRY-01)",
       !!ownLog && !!ownLog.clock_out_at && ownLog.branch_code === "POULTRY-01" && ownLog.off_site_in === false);
 
     // ── F. GPS denied → MANUAL no-fix record still works ─────────────────
     console.log("── F. GPS denied fallback ──");
-    const noGeo = await loginPersona(browser, OWNER, null); // no permission grant
+    const noGeo = await loginPersona(browser, GM, null); // no permission grant
     const np = noGeo.page; pages.push(np);
     await np.evaluate(() => {
       delete navigator.geolocation; // simulate a device/browser without GPS support
@@ -287,7 +290,7 @@ async function main() {
       () => /Clocked out/.test(document.querySelector("[data-testid='att-clock-status']")?.textContent || ""),
       { timeout: 20000 },
     );
-    const mLog = (await q(`SELECT * FROM attendance_logs WHERE user_id=(SELECT id FROM users WHERE email=$1) ORDER BY id DESC LIMIT 1`, [OWNER.email])).rows[0];
+    const mLog = (await q(`SELECT * FROM attendance_logs WHERE user_id=(SELECT id FROM users WHERE email=$1) ORDER BY id DESC LIMIT 1`, [GM.email])).rows[0];
     check("F2 MANUAL method recorded on both events (truthful evidence)",
       mLog.clock_in_method === "MANUAL" && mLog.clock_out_method === "MANUAL" &&
       mLog.clock_in_lat === null && !!mLog.clock_out_at);
@@ -339,7 +342,8 @@ async function main() {
     await op.setViewport({ width: 1440, height: 960 });
 
     for (const p of pages) {
-      check(`Z0.${p === op ? "owner" : p === wp ? "worker" : "manual"} zero page errors`, p.errors.length === 0, p.errors.slice(0, 2).join(" | ").slice(0, 300));
+      const tag = p === op ? "owner-review" : p === wp ? "worker" : p === gp ? "gm" : "manual";
+      check(`Z0.${tag} zero page errors`, p.errors.length === 0, p.errors.slice(0, 2).join(" | ").slice(0, 300));
     }
   } catch (err) {
     console.error("FATAL", err);
