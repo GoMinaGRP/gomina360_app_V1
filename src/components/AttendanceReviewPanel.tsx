@@ -93,6 +93,27 @@ export default function AttendanceReviewPanel({
   }
 
   const hhmm = (t: any) => (t ? new Date(t).toISOString().slice(11, 16) : "—");
+  /** One stored GPS point (IN or OUT): coordinates + accuracy + map link. */
+  const GpsRow = ({ label, lat, lng, acc, method, dist, tid }: any) => (
+    <div className="flex items-center gap-1 whitespace-nowrap">
+      <span className={`text-[8px] font-black w-6 shrink-0 ${label === "IN" ? "text-emerald-500" : "text-rose-400"}`}>{label}</span>
+      {lat != null ? (
+        <a
+          data-testid={tid}
+          className="text-teal-300 underline decoration-dotted text-[10px]"
+          href={`https://www.openstreetmap.org/?mlat=${lat}&mlon=${lng}#map=17/${lat}/${lng}`}
+          target="_blank" rel="noreferrer"
+          title={`${method === "GPS" ? "GPS" : "Manual"} fix stored permanently — open in OpenStreetMap`}
+        >
+          {Number(lat).toFixed(4)}, {Number(lng).toFixed(4)}
+        </a>
+      ) : (
+        <span className="text-slate-600 text-[10px]" data-testid={tid}>no GPS fix (manual)</span>
+      )}
+      {lat != null && acc != null && <span className="text-[9px] text-slate-500">±{Math.round(acc)}m</span>}
+      {dist != null && <span className="text-[9px] text-slate-600">· {Math.round(dist)}m away</span>}
+    </div>
+  );
   const Chip = ({ label, value, sub, tone = "cyan", tid }: any) => (
     <div className="bg-slate-900/70 border border-slate-700/70 rounded-lg px-3 py-2" data-testid={tid}>
       <div className="text-[9px] uppercase font-bold text-slate-500">{label}</div>
@@ -107,7 +128,7 @@ export default function AttendanceReviewPanel({
       <div className="px-4 py-2.5 border-b border-slate-700/60 flex flex-wrap items-center gap-2">
         <MapPin className="w-4 h-4 text-teal-400" />
         <h4 className="text-xs font-bold text-white">Clock In / Out Log — location & hours review</h4>
-        <span className="text-[9px] text-slate-500">feeds payroll attendance & OT automatically</span>
+        <span className="text-[9px] text-slate-500" data-testid="attl-subnote">GPS captured & permanently stored at BOTH clock-in and clock-out · feeds payroll attendance & OT automatically</span>
         <div className="ml-auto flex items-center gap-2">
           {meta.canSetLocation && (
             <button
@@ -212,21 +233,29 @@ export default function AttendanceReviewPanel({
                       {l.clockInDistanceM != null && <div className="text-[9px] text-slate-500">{Math.round(l.clockInDistanceM)}m away</div>}
                     </td>
                     <td className="py-2 pr-3 whitespace-nowrap">
-                      {l.clockOutAt ? hhmm(l.clockOutAt) : <span className="text-emerald-400 font-bold">on duty</span>}
+                      {l.clockOutAt ? (
+                        <>
+                          {hhmm(l.clockOutAt)}
+                          <span className={`ml-1 text-[9px] ${l.clockOutMethod === "GPS" ? "text-slate-500" : "text-amber-400"}`}>
+                            {l.clockOutMethod === "GPS" ? "GPS" : "no-fix"}
+                          </span>
+                        </>
+                      ) : (
+                        <span className="text-emerald-400 font-bold">on duty</span>
+                      )}
                     </td>
                     <td className="py-2 pr-3 font-bold">{l.hoursWorked != null ? l.hoursWorked : "—"}</td>
                     <td className="py-2 pr-3">{l.overtimeHours > 0 ? <span className="text-violet-300 font-bold">+{l.overtimeHours}</span> : "—"}</td>
                     <td className="py-2 pr-3">
-                      {l.clockInLat != null ? (
-                        <a
-                          className="text-teal-300 underline decoration-dotted text-[10px]"
-                          href={`https://www.openstreetmap.org/?mlat=${l.clockInLat}&mlon=${l.clockInLng}#map=17/${l.clockInLat}/${l.clockInLng}`}
-                          target="_blank" rel="noreferrer"
-                        >
-                          {Number(l.clockInLat).toFixed(4)}, {Number(l.clockInLng).toFixed(4)}
-                        </a>
+                      {/* Both stored fixes: where the shift started AND where it ended. */}
+                      <GpsRow label="IN" lat={l.clockInLat} lng={l.clockInLng} acc={l.clockInAccuracyM} method={l.clockInMethod} dist={l.clockInDistanceM} tid={`attl-gps-in-${l.id}`} />
+                      {l.clockOutAt ? (
+                        <GpsRow label="OUT" lat={l.clockOutLat} lng={l.clockOutLng} acc={l.clockOutAccuracyM} method={l.clockOutMethod} dist={l.clockOutDistanceM} tid={`attl-gps-out-${l.id}`} />
                       ) : (
-                        <span className="text-slate-600 text-[10px]">no GPS fix</span>
+                        <div className="flex items-center gap-1">
+                          <span className="text-[8px] font-black w-6 shrink-0 text-slate-600">OUT</span>
+                          <span className="text-slate-600 text-[10px]" data-testid={`attl-gps-out-pending-${l.id}`}>pending clock-out</span>
+                        </div>
                       )}
                     </td>
                     <td className="py-2">

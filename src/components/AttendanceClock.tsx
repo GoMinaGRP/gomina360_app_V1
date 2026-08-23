@@ -77,11 +77,17 @@ export default function AttendanceClock({ currentUser }: { currentUser: any }) {
       });
       const d = await r.json();
       if (d.success) {
-        const methodNote = fix.method === "MANUAL" ? " (no GPS fix)" : "";
+        // Explicit confirmation that the GPS position was captured AND
+        // permanently stored for THIS event (in-location or out-location),
+        // so staff never have to guess whether their location was saved.
+        const gpsNote =
+          fix.method === "GPS"
+            ? ` · GPS ${action === "CLOCK_IN" ? "in" : "out"}-location recorded${fix.accuracy != null ? ` (±${Math.round(fix.accuracy)}m)` : ""}`
+            : " · no GPS fix — recorded without location";
         setStatus(
           d.offSite
-            ? `⚠ ${action === "CLOCK_IN" ? "Clocked in" : "Clocked out"} OFF-SITE — ${Math.round(d.distanceM)}m from branch — flagged for review${methodNote}`
-            : `✔ ${action === "CLOCK_IN" ? `Clocked in at ${anchorName(d.item)}` : `Clocked out — ${d.hoursWorked}h${d.overtimeHours > 0 ? ` (+${d.overtimeHours}h OT)` : ""}${d.payrollLinked ? " · sent to payroll" : ""}`}${methodNote}`,
+            ? `⚠ ${action === "CLOCK_IN" ? "Clocked in" : "Clocked out"} OFF-SITE — ${Math.round(d.distanceM)}m from branch — flagged for review${gpsNote}`
+            : `✔ ${action === "CLOCK_IN" ? `Clocked in at ${anchorName(d.item)}` : `Clocked out — ${d.hoursWorked}h${d.overtimeHours > 0 ? ` (+${d.overtimeHours}h OT)` : ""}${d.payrollLinked ? " · sent to payroll" : ""}`}${gpsNote}`,
         );
         await refresh();
         window.dispatchEvent(new CustomEvent("attendance-changed"));
