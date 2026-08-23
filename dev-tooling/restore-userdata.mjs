@@ -107,5 +107,47 @@ if (!grants.some((g) => g.userId === 3 && g.businessId === 2 && g.isActive)) {
 const rev = await dbc.query("UPDATE audit_assignments SET is_active=false, updated_at=now() WHERE id=1 AND user_id=13 AND business_id=1 AND is_active=true RETURNING id");
 console.log(rev.rowCount ? "✔ Comfort's revoked audit grant kept revoked (rollback heal)" : "• Comfort grant already revoked / absent");
 
+// 4c) The OWNER's sparse poultry records entered Sun 2026-08-23 (plus one
+// feed entry from 2026-08-13) — lost whenever a rollback predates them.
+// Replayed through /api/poultry so every side-effect (egg crates + dressed
+// birds stocked into Inventory) reproduces exactly like the original entry.
+// Each row guarded by its exact values → idempotent.
+const P = { recordedByName: "Kwame Mina", recordedByRole: "OWNER", businessId: 1 };
+const replayOnce = async (label, guardSql, entity, data) => {
+  const n = Number((await dbc.query(guardSql)).rows[0].c);
+  if (n > 0) { console.log(`• ${label} already present, skipping`); return; }
+  must(label, await api("/api/poultry", "POST", { entity, data }));
+};
+await replayOnce(
+  "eggs 709 — BATCH-2026-L01 (2026-08-23)",
+  "SELECT count(*) c FROM poultry_production WHERE production_type='EGGS' AND eggs_collected=709 AND recorded_date='2026-08-23'",
+  "PRODUCTION",
+  { ...P, productionType: "EGGS", eggsCollected: 709, flockId: 1, batchNumber: "BATCH-2026-L01", recordedDate: "2026-08-23" },
+);
+await replayOnce(
+  "broiler harvest 13 — BATCH-2026-B02 (2026-08-23)",
+  "SELECT count(*) c FROM poultry_production WHERE production_type='BROILER_WEIGHT' AND birds_harvested=13 AND recorded_date='2026-08-23'",
+  "PRODUCTION",
+  { ...P, productionType: "BROILER_WEIGHT", birdsHarvested: 13, totalWeightKg: 0, avgWeightKg: 0, flockId: 2, batchNumber: "BATCH-2026-B02", recordedDate: "2026-08-23" },
+);
+await replayOnce(
+  "feed 0.6kg LAYER_MASH (2026-08-13)",
+  "SELECT count(*) c FROM poultry_feed_logs WHERE quantity_kg=0.6 AND feed_type='LAYER_MASH' AND recorded_date='2026-08-13'",
+  "FEED",
+  { ...P, flockId: 1, batchNumber: "BATCH-2026-L01", feedType: "LAYER_MASH", quantityKg: 0.6, entryType: "CONSUMPTION", recordedDate: "2026-08-13" },
+);
+await replayOnce(
+  "vaccination 'Routine vaccination' (2026-08-23)",
+  "SELECT count(*) c FROM poultry_health_records WHERE record_type='VACCINATION' AND recorded_date='2026-08-23'",
+  "HEALTH",
+  { ...P, recordType: "VACCINATION", vaccineOrDrug: "Routine vaccination", recordedDate: "2026-08-23" },
+);
+await replayOnce(
+  "water 7L BOREHOLE (2026-08-23)",
+  "SELECT count(*) c FROM poultry_water_logs WHERE volume_liters=7 AND recorded_date='2026-08-23'",
+  "WATER",
+  { ...P, volumeLiters: 7, sourceType: "BOREHOLE", recordedDate: "2026-08-23" },
+);
+
 await dbc.end();
 console.log("\nRESTORE COMPLETE");
