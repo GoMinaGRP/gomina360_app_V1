@@ -11,6 +11,7 @@ const req = createRequire("/home/user/pgtooling/package.json");
 const puppeteer = req("puppeteer-core");
 const pg = req("pg");
 import { writeFileSync, mkdirSync, readdirSync, statSync, rmSync, readFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
 import zlib from "node:zlib";
 
 const BASE = process.env.BASE_URL || "http://localhost:3000";
@@ -102,6 +103,12 @@ const logosApi = (token) => async (body, method = "POST") => {
   const r = await fetch(`${BASE}/api/logos`, { method, headers: { "Content-Type": "application/json", "x-gomina-session": token }, body: method === "POST" ? JSON.stringify(body) : undefined });
   return { status: r.status, body: await r.json().catch(() => null) };
 };
+
+// ── Branding self-heal BEFORE baseline capture: never let a TEST run start ──
+// from (and later "restore" back to) a blanked crest. If the live rows lost
+// the owner's real GoMina crest (e.g. sandbox rollback), refill them from the
+// backup first — byte-identically; live non-empty values always win.
+console.log(spawnSync("node", ["dev-tooling/restore-branding.mjs"], { encoding: "utf8" }).stdout.trim());
 
 // ── Baselines (captured before any TEST data) ───────────────────────────────
 const B = {

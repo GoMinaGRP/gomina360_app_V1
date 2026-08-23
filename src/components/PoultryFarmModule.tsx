@@ -16,6 +16,7 @@ import { CurrencyCode, formatMoney } from "@/lib/currency";
 import { addToOfflineQueue } from "@/lib/offlineSync";
 import { analyzePoultry } from "@/lib/poultryAnalytics";
 import PoultryAnalyticsAlerts from "./PoultryAnalyticsAlerts";
+import PoultryGrowthAnalytics from "./PoultryGrowthAnalytics";
 import DailyChecklistPanel from "./DailyChecklistPanel";
 import FinancialReportSection from "./FinancialReportSection";
 
@@ -672,6 +673,7 @@ export default function PoultryFarmModule({
               <select
                 value={dashDateFilter}
                 onChange={(e) => setDashDateFilter(e.target.value)}
+                data-testid="dash-date-filter"
                 className="px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-white text-xs focus:outline-none focus:border-emerald-500"
               >
                 <option value="ALL">All Time</option>
@@ -685,6 +687,7 @@ export default function PoultryFarmModule({
               <select
                 value={dashProductFilter}
                 onChange={(e) => setDashProductFilter(e.target.value)}
+                data-testid="dash-product-filter"
                 className="px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-white text-xs focus:outline-none focus:border-emerald-500"
               >
                 <option value="ALL">All Products (Layers & Broilers)</option>
@@ -737,6 +740,18 @@ export default function PoultryFarmModule({
               />
             );
           })()}
+
+          {/* Production & Growth Analytics — daily weight/growth vs target,
+              feed, FCR, mortality, broiler output, lay targets & more, with
+              Batch / Flock / Branch scoping on top of the dashboard filters */}
+          <PoultryGrowthAnalytics
+            flocks={flocks}
+            feedLogs={feedLogs}
+            healthRecords={healthRecords}
+            production={production}
+            dateFilter={dashDateFilter}
+            productFilter={dashProductFilter}
+          />
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
             <Card title="Egg Production Trend" icon={Egg}>
