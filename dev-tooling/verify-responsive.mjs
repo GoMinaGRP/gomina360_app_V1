@@ -239,6 +239,44 @@ try {
   r = await noOverflow();
   ok("H2 desktop command center clean", r.ok, `sw=${r.sw}`);
   await shot("desktop-command-center");
+
+  // ══ I. Collapsible static menu ════════════════════════════════════════
+  console.log("── I. Collapsible menu (toggle → icon rail → persists) ──");
+  let g = await geoOf('[data-testid="nav-sidebar"]');
+  ok("I1 menu starts expanded on desktop", g && g.w >= 250, `w=${g?.w}`);
+  await clickTid("sidebar-collapse-toggle");
+  await sleep(500);
+  g = await geoOf('[data-testid="nav-sidebar"]');
+  ok("I2 toggle collapses menu to icon rail", g && g.w <= 60, `w=${g?.w}`);
+  ok("I3 page still clean beside the rail", (await noOverflow()).ok);
+  await shot("desktop-menu-collapsed");
+  await page.reload({ waitUntil: "networkidle0", timeout: 45000 });
+  await sleep(2200);
+  g = await geoOf('[data-testid="nav-sidebar"]');
+  ok("I4 collapse persists across reload", g && g.w <= 60, `w=${g?.w}`);
+  await clickTid("sidebar-collapse-toggle");
+  await sleep(500);
+  g = await geoOf('[data-testid="nav-sidebar"]');
+  ok("I5 toggle re-expands the menu", g && g.w >= 250, `w=${g?.w}`);
+  // Icon rail still navigates: icon-only buttons remain clickable
+  const navOk = await clickText("Finance & Reports").catch(() => false);
+  await sleep(2200);
+  ok("I6 expanded menu navigates after restore", navOk === true, String(navOk));
+
+  // Phone: same collapse behavior with the compact menu
+  await page.setViewport({ width: 375, height: 812, isMobile: true, hasTouch: true });
+  await page.reload({ waitUntil: "networkidle0", timeout: 45000 });
+  await sleep(2200);
+  await clickTid("sidebar-collapse-toggle");
+  await sleep(500);
+  g = await geoOf('[data-testid="nav-sidebar"]');
+  ok("I7 phone menu collapses to icon rail", g && g.w <= 52, `w=${g?.w}`);
+  ok("I8 collapsed phone menu keeps page clean", (await noOverflow()).ok);
+  await shot("phone-menu-collapsed");
+  await clickTid("sidebar-collapse-toggle");
+  await sleep(500);
+  g = await geoOf('[data-testid="nav-sidebar"]');
+  ok("I9 phone menu re-expands", g && g.w === 160, `w=${g?.w}`);
 } catch (err) {
   console.error("FATAL", err);
   failures++;

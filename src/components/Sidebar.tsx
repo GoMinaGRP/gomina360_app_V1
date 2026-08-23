@@ -1,6 +1,6 @@
 "use client";
 
-import React from "react";
+import React, { useEffect, useState } from "react";
 import {
   Beef,
   LayoutDashboard,
@@ -22,6 +22,8 @@ import {
   Share2,
   BarChart3,
   ChevronRight,
+  ChevronsLeft,
+  ChevronsRight,
   ShieldAlert,
   ShieldCheck,
   ShoppingCart,
@@ -78,6 +80,24 @@ export default function Sidebar({
     currentUser?.role === "OWNER" || currentUser?.role === "GENERAL_MANAGER";
   const assignedBusinessId = currentUser?.assignedBusinessId;
 
+  // Collapsible static menu: pinned rail at all times (never hidden) — the
+  // toggle shrinks it to an icon-only strip so content gets the room back.
+  // The choice persists across reloads (per browser).
+  const [collapsed, setCollapsed] = useState(false);
+  useEffect(() => {
+    try {
+      if (window.localStorage.getItem("gomina.sidebarCollapsed") === "1") setCollapsed(true);
+    } catch {}
+  }, []);
+  const toggleCollapsed = () => {
+    setCollapsed((c) => {
+      try {
+        window.localStorage.setItem("gomina.sidebarCollapsed", c ? "0" : "1");
+      } catch {}
+      return !c;
+    });
+  };
+
   const businessIcons: Record<string, any> = {
     "POULTRY-01": Egg,
     "BLOCK-01": Boxes,
@@ -115,13 +135,30 @@ export default function Sidebar({
 
   return (
     /* STATIC left navigation menu — permanently pinned on every screen
-       size (restored behavior). Width adapts so phone content keeps room:
-       160px on phones, 224px on tablets, 256px on laptops/desktops. It
+       size (restored behavior), and COLLAPSIBLE: the header chevron folds
+       it to an icon-only rail (48–56px). Expanded width adapts so page
+       content keeps room: 160px phones, 224px tablets, 256px desktop. It
        never slides in/out and never covers the page. */
     <aside
       data-testid="nav-sidebar"
-      className="w-40 sm:w-56 lg:w-64 shrink-0 bg-slate-900 border-r border-slate-800 flex flex-col text-slate-300 overflow-y-auto overflow-x-hidden select-none"
+      data-collapsed={collapsed}
+      className={`${
+        collapsed ? "w-12 sm:w-14" : "w-40 sm:w-56 lg:w-64"
+      } shrink-0 bg-slate-900 border-r border-slate-800 flex flex-col text-slate-300 overflow-y-auto overflow-x-hidden select-none transition-[width] duration-200`}
     >
+      {/* Collapse / expand toggle — always one tap away */}
+      <div className={`flex items-center px-1.5 py-1.5 border-b border-slate-800/60 ${collapsed ? "justify-center" : "justify-end"}`}>
+        <button
+          onClick={toggleCollapsed}
+          data-testid="sidebar-collapse-toggle"
+          aria-label={collapsed ? "Expand navigation menu" : "Collapse navigation menu"}
+          aria-expanded={!collapsed}
+          title={collapsed ? "Expand menu" : "Collapse menu"}
+          className="p-1.5 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-white transition"
+        >
+          {collapsed ? <ChevronsRight className="w-4 h-4" /> : <ChevronsLeft className="w-4 h-4" />}
+        </button>
+      </div>
 
       {/* Top section: Executive Command Center (Owner / General Manager only) */}
       {isExecutive && (

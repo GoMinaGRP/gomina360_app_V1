@@ -62,3 +62,23 @@ body {
     min-height: 36px;
   }
 }
+
+/* Collapsed STATIC left menu — icon-only rail: center the icons and hide
+   labels, corner badges, section headers and helper text. Scoped strictly
+   to the sidebar via its data-collapsed attribute. */
+aside[data-testid="nav-sidebar"][data-collapsed="true"] button {
+  justify-content: center;
+  padding-left: 0;
+  padding-right: 0;
+}
+aside[data-testid="nav-sidebar"][data-collapsed="true"] button span,
+aside[data-testid="nav-sidebar"][data-collapsed="true"] [class*="uppercase"],
+aside[data-testid="nav-sidebar"][data-collapsed="true"] [class*="text-[11px]"],
+aside[data-testid="nav-sidebar"][data-collapsed="true"] .mt-auto p,
+aside[data-testid="nav-sidebar"][data-collapsed="true"] .mt-auto span {
+  display: none;
+}
+aside[data-testid="nav-sidebar"][data-collapsed="true"] .mt-auto {
+  display: flex;
+  justify-content: center;
+}
