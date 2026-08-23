@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 import { CurrencyCode, CURRENCIES } from "@/lib/currency";
 import { synchronizeOfflineQueue, getOfflineQueue } from "@/lib/offlineSync";
+import AttendanceClock from "./AttendanceClock";
 
 interface NavbarProps {
   currentCurrency: CurrencyCode;
@@ -132,6 +133,9 @@ export default function Navbar({
               </div>
             )}
           </div>
+
+          {/* Staff Attendance — Clock In / Out with GPS */}
+          <AttendanceClock currentUser={currentUser} />
 
           {/* Online / Offline Mode Toggle & Sync Button */}
           <div className="flex items-center space-x-1.5 bg-slate-800/80 border border-slate-700 rounded-lg px-1.5 sm:px-2.5 py-1.5">

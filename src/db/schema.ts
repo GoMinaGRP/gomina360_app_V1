@@ -119,6 +119,13 @@ export const businesses = pgTable("businesses", {
   // Resolution on documents: branch logo → business logo → company logo.
   logo: text("logo"),
   branchLogos: jsonb("branch_logos"), // { "BRANCH-CODE": "data:image/..." }
+  // GPS anchor for attendance geofencing: set once by the OWNER / authorized
+  // manager from the branch itself; clock events farther than gpsRadiusM
+  // metres are flagged off-site. Nullable — unanchored branches simply skip
+  // the off-site check.
+  gpsLat: doublePrecision("gps_lat"),
+  gpsLng: doublePrecision("gps_lng"),
+  gpsRadiusM: integer("gps_radius_m").default(300),
   createdAt: timestamp("created_at").defaultNow(),
 });
 
@@ -1410,6 +1417,43 @@ export const payrollAttendance = pgTable("payroll_attendance", {
   note: text("note"),
   recordedByUserId: integer("recorded_by_user_id"),
   recordedByName: text("recorded_by_name"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+// 19e. Staff Clock In / Clock Out — the real-time attendance log. One row per
+// shift: who (user + linked employee), where (assigned Business & Branch,
+// auto-recorded), when (date + in/out timestamps), and the worker's GPS fix
+// captured at each event. Distance from the branch anchor (businesses.gps_*)
+// flags off-site clock events for manager review. On clock-out the shift's
+// hours + overtime are derived and flow into payroll_attendance (never
+// clobbering a manager's manual register row), which is exactly what the
+// payroll run engine consumes — Attendance → Payroll → Reports stays linked.
+export const attendanceLogs = pgTable("attendance_logs", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").notNull(), // users.id of the person clocking
+  employeeId: integer("employee_id"), // employees.id when the user matches a staff row
+  employeeName: text("employee_name").notNull(),
+  businessId: integer("business_id").notNull(),
+  branchCode: text("branch_code").notNull(),
+  branchName: text("branch_name"),
+  date: text("date").notNull(), // shift day, YYYY-MM-DD (day of clock-in)
+  clockInAt: timestamp("clock_in_at").notNull(),
+  clockInLat: doublePrecision("clock_in_lat"),
+  clockInLng: doublePrecision("clock_in_lng"),
+  clockInAccuracyM: doublePrecision("clock_in_accuracy_m"),
+  clockInMethod: text("clock_in_method").notNull().default("GPS"), // GPS | MANUAL (no fix)
+  clockInDistanceM: doublePrecision("clock_in_distance_m"), // metres from branch anchor
+  clockOutAt: timestamp("clock_out_at"),
+  clockOutLat: doublePrecision("clock_out_lat"),
+  clockOutLng: doublePrecision("clock_out_lng"),
+  clockOutAccuracyM: doublePrecision("clock_out_accuracy_m"),
+  clockOutMethod: text("clock_out_method"), // GPS | MANUAL | null while open
+  clockOutDistanceM: doublePrecision("clock_out_distance_m"),
+  hoursWorked: doublePrecision("hours_worked"), // derived at clock-out (2dp)
+  overtimeHours: doublePrecision("overtime_hours"), // derived: max(0, hours − 8)
+  offSiteIn: boolean("off_site_in").notNull().default(false),
+  offSiteOut: boolean("off_site_out").notNull().default(false),
+  note: text("note"),
   createdAt: timestamp("created_at").defaultNow(),
 });
 

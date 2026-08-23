@@ -42,6 +42,7 @@ import {
   Cell,
 } from "recharts";
 import AiSectionGuide from "./AiSectionGuide";
+import AttendanceReviewPanel from "./AttendanceReviewPanel";
 import { resolveLogo, getCompanyLogo } from "@/lib/logos";
 
 /**
@@ -770,6 +771,9 @@ export default function PayrollCenter({ currentUser, businesses, employees, onCh
           {/* ── ATTENDANCE ───────────────────────────────────────── */}
           {tab === "ATTENDANCE" && (
             <div className="space-y-4">
+              {/* Live clock-in/out log with GPS — manager/supervisor review;
+                  hours + OT here flow into the register below and the next run. */}
+              <AttendanceReviewPanel currentUser={currentUser} businesses={businesses} employees={employees} />
               {(scope.isOwner || scope.canManage) && (
                 <div className="bg-slate-900 border border-slate-700/80 rounded-xl p-4 space-y-3" data-testid="prl-att-form">
                   <div className="text-xs font-bold text-teal-300 uppercase tracking-wider flex items-center gap-2"><CalendarClock className="w-4 h-4" /> Record attendance, leave & overtime</div>
