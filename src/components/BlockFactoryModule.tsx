@@ -2,11 +2,12 @@
 
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import AiSectionGuide from "./AiSectionGuide";
+import BlockQcCenter from "./BlockQcCenter";
 import {
   Boxes, Package, Truck, Wallet, AlertTriangle, CheckCircle, Settings,
   Users, Plus, X, Calendar, Filter, TrendingUp, TrendingDown, Loader2,
   Building2, Wrench, Activity, ShoppingCart, LayoutDashboard, ClipboardCheck,
-  BadgeDollarSign, PackagePlus, CircleDot, CheckCircle2,
+  BadgeDollarSign, PackagePlus, CircleDot, CheckCircle2, ShieldCheck,
 } from "lucide-react";
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend,
@@ -29,12 +30,13 @@ interface Props {
 }
 
 type FormType = "PRODUCTION" | "ORDER" | "DELIVERY" | "EXPENSE" | "SALE" | "RESTOCK" | "ITEM" | null;
-type Tab = "DASHBOARD" | "INVENTORY" | "FINANCE" | "CHECKLIST";
+type Tab = "DASHBOARD" | "INVENTORY" | "FINANCE" | "QC" | "CHECKLIST";
 
 const TABS: { key: Tab; label: string; icon: any }[] = [
   { key: "DASHBOARD", label: "Dashboard", icon: LayoutDashboard },
   { key: "INVENTORY", label: "Inventory", icon: Boxes },
   { key: "FINANCE", label: "Finance", icon: Wallet },
+  { key: "QC", label: "Quality Control", icon: ShieldCheck },
   { key: "CHECKLIST", label: "Daily Checklist", icon: ClipboardCheck },
 ];
 
@@ -55,6 +57,7 @@ export default function BlockFactoryModule({
   const [deliveries, setDeliveries] = useState<any[]>([]);
   const [checklists, setChecklists] = useState<any[]>([]);
   const [blockTypesList, setBlockTypesList] = useState<any[]>([]);
+  const [qcChecks, setQcChecks] = useState<any[]>([]);
   const [checklistDate, setChecklistDate] = useState<string>(new Date().toISOString().split("T")[0]);
   const [showForm, setShowForm] = useState<FormType>(null);
   const [restockItemId, setRestockItemId] = useState<number | null>(null);
@@ -77,6 +80,7 @@ export default function BlockFactoryModule({
         setOrders(d.orders || []);
         setDeliveries(d.deliveries || []);
         setBlockTypesList(d.blockTypes || []);
+        setQcChecks(d.qcChecks || []);
       }
     } finally {
       setLoading(false);
@@ -640,7 +644,24 @@ export default function BlockFactoryModule({
         </div>
       )}
 
-            {/* ══════════════ DAILY CHECKLIST ══════════════ */}
+            {/* ══════════════ QUALITY CONTROL ══════════════ */}
+      {tab === "QC" && (
+        <BlockQcCenter
+          businessId={bizId}
+          businessCode={businessInfo?.code}
+          production={production}
+          orders={orders}
+          deliveries={deliveries}
+          inventory={branchInventory}
+          blockTypes={blockTypesList}
+          qcChecks={qcChecks}
+          currentUserName={currentUser?.name}
+          currentUserRole={currentUser?.role}
+          onRefresh={refresh}
+        />
+      )}
+
+      {/* ══════════════ DAILY CHECKLIST ══════════════ */}
       {tab === "CHECKLIST" && (
         <DailyChecklistPanel
           businessId={bizId}

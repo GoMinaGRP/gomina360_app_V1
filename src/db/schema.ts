@@ -751,6 +751,51 @@ export const blockTypes = pgTable("block_types", {
   createdAt: timestamp("created_at").defaultNow(),
 });
 
+// 11f. Block Factory Quality Control — one row per QC check at any pipeline
+// stage (RAW_MATERIAL → MIXING → PRODUCTION → CURING → FINISHED_BLOCK). A
+// check captures the sample, measured result vs the required standard, a
+// Pass/Fail verdict, notes, date+time, tester and optional photo evidence.
+// Finer metrics (weight, dimensions, density, cracks, surface quality,
+// defects, curing day, compressive strength) live in typed columns so the QC
+// dashboard can chart strength/weight trends, defect and rejection rates, and
+// link every batch Raw Materials → Production → Curing → QC → Stock → Sales.
+export const blockQcChecks = pgTable("block_qc_checks", {
+  id: serial("id").primaryKey(),
+  businessId: integer("business_id").notNull(),
+  branchCode: text("branch_code"),
+  stage: text("stage").notNull(), // RAW_MATERIAL | MIXING | PRODUCTION | CURING | FINISHED_BLOCK
+  batchId: text("batch_id"), // links block_factory_logs.batch_id (null for raw-material checks)
+  batchNumber: text("batch_number"), // display copy kept for purge/forensics stability
+  blockType: text("block_type"), // e.g. 6-INCH-SOLID
+  sampleRef: text("sample_ref"), // e.g. "Sample 3 — 5 blocks from the east stack"
+  testName: text("test_name").notNull(), // e.g. "Compressive strength", "Sand silt content"
+  requiredStandard: text("required_standard"), // e.g. "≥ 3.5 MPa (GS 1193)"
+  testResult: text("test_result"), // human-readable result, e.g. "4.2 MPa — uniform crush"
+  resultValue: doublePrecision("result_value"), // numeric parse for trend charts
+  resultUnit: text("result_unit"), // MPa | kg | mm | kg/m3 | % | count
+  passFail: text("pass_fail").notNull().default("PASS"), // PASS | FAIL
+  // typed measurements (optional, stage-appropriate)
+  weightKg: doublePrecision("weight_kg"),
+  lengthMm: doublePrecision("length_mm"),
+  widthMm: doublePrecision("width_mm"),
+  heightMm: doublePrecision("height_mm"),
+  densityKgm3: doublePrecision("density_kgm3"),
+  compressiveStrengthMpa: doublePrecision("compressive_strength_mpa"),
+  cracksCount: integer("cracks_count"),
+  surfaceQuality: text("surface_quality"), // GOOD | FAIR | POOR
+  defectsCount: integer("defects_count"),
+  curingDays: integer("curing_days"),
+  rejectedBlocks: integer("rejected_blocks").default(0),
+  notes: text("notes"),
+  photo: text("photo"), // photo evidence (compressed data URL), like the logo system
+  testedAt: timestamp("tested_at").notNull().defaultNow(), // date & time of the check
+  testerName: text("tester_name"),
+  testerRole: text("tester_role"),
+  recordedByName: text("recorded_by_name"),
+  recordedByRole: text("recorded_by_role"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
 // 12. Aquaculture Log (Tilapia/Catfish, water quality pH & dissolved O2, FCR)
 export const aquacultureLogs = pgTable("aquaculture_logs", {
   id: serial("id").primaryKey(),

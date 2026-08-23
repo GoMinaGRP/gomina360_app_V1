@@ -728,6 +728,108 @@ export const GUIDES: Record<string, Record<string, SectionGuide>> = {
       tasks: CHECKLIST_TASKS,
       faqs: CHECKLIST_FAQS,
     },
+    QC: {
+      title: "Quality Control (QC)",
+      intro:
+        "Proof that blocks from {biz} meet the Ghana standard before a single one is sold: checks at raw materials, mixing, production and curing, then full finished-block testing — weight, dimensions, density, cracks, surface, defects and compressive strength — with Pass/Fail, photos and batch links.",
+      tasks: [
+        {
+          name: "Check raw materials (cement, sand, water)",
+          steps: [
+            "Open Quality Control → “+ Record QC Check” and tap the RAW MATERIALS stage chip.",
+            "Pick the test (e.g. “Cement freshness”, “Sand silt content”, “Water purity”).",
+            "Read the suggested standard chip (e.g. “Sand silt content ≤ 6%”) — tap it to fill the Required Standard box.",
+            "Do the check on site: squeeze a cement handful (fresh = powdery, no lumps), or put sand in a bottle with water, shake and let it settle — the silt layer on top must be ≤ 6% of the sand height.",
+            "Enter the Test Result, mark PASS or FAIL, add notes/photo and save.",
+          ],
+          tip: "Failing cement or silty sand is the #1 cause of weak blocks — reject the material before it reaches the mixer, never QC it after moulding.",
+        },
+        {
+          name: "Check the mix",
+          steps: [
+            "Choose the MIXING stage and the test “Mix ratio”.",
+            "The standard for most blocks is 1:6 (one bag cement to six wheelbarrows sand) — richer for solid/load-bearing.",
+            "Watch the mix: uniform colour, no dry pockets; a squeezed ball should hold together without crumbling or dripping.",
+            "Record result + verdict; a FAIL here means remix before moulding.",
+          ],
+        },
+        {
+          name: "Record a curing check",
+          steps: [
+            "Choose CURING, enter the Curing Day number (blocks need at least 7 moist days).",
+            "Standard: blocks kept damp (sprinkle morning + evening) and shaded from harsh sun/rain.",
+            "PASS only if the stack is actually moist — curing decides up to half the final strength.",
+          ],
+        },
+        {
+          name: "Test a finished block (weight, size, strength)",
+          steps: [
+            "Choose FINISHED BLOCK and pick the production batch — the block type fills in automatically.",
+            "Weigh 3–5 blocks on the scale, enter the Average Weight (kg).",
+            "Measure Length × Width × Height in mm — the app computes Density for you.",
+            "Count visible Cracks and other Defects, grade the Surface (Good/Fair/Poor).",
+            "Enter Compressive Strength (MPa) from the crush-test machine if you have one — the standard is ≥ 3.5 MPa for load-bearing blocks (GS 1193).",
+            "The app suggests PASS/FAIL from your numbers; confirm or override, add a photo of the sample as evidence, then save.",
+          ],
+          tip: "Sample at least one check per batch per day of moulding — 3 to 5 blocks is a good sample for a yard batch.",
+        },
+        {
+          name: "Read the QC dashboard",
+          steps: [
+            "The chips on top summarise the selected scope: checks done, pass rate, passed/failed batches, defect rate, rejected blocks, average strength and weight variation.",
+            "Every production batch shows its pipeline: Production → Curing → QC → Inventory → Sales — a FAILED batch is flagged HOLD so it is not sold.",
+            "Filter by Branch, Batch, Block Type, Date or Tester to answer “what happened on this batch?”.",
+            "The red/amber Alerts strip calls out failed checks, batches with no QC, and strength below standard — handle those first.",
+          ],
+        },
+        {
+          name: "Handle a failed batch",
+          steps: [
+            "A FAIL marks the batch FAILED in the pipeline panel — keep it in the yard, do not deliver it.",
+            "Use “Rejected Blocks” on the check to count how many pieces are condemned.",
+            "Recheck after re-curing or remoulding: record a new FINISHED BLOCK check; if it now passes, the batch returns to PASSED.",
+          ],
+        },
+      ],
+      faqs: [
+        {
+          q: "What strength must blocks have?",
+          match: ["strength", "mpa", "compressive", "crush", "standard", "gs 1193", "gs1193"],
+          answer:
+            "For load-bearing concrete blocks the Ghana standard (GS 1193, aligned to BS 6073) expects at least 3.5 MPa average compressive strength after 28 days of curing. Non-load-bearing blocks may target 2.8 MPa. Enter the machine reading in the Compressive Strength field and the app compares it automatically.",
+        },
+        {
+          q: "How many blocks should I test per batch?",
+          match: ["sample", "how many", "number", "test per"],
+          answer:
+            "Sample 3–5 blocks per batch per day of moulding, taken from different parts of the stack. Record their average on one check — the Sample box is where you note “3 blocks from east stack”.",
+        },
+        {
+          q: "How do I calculate density?",
+          match: ["density", "kg/m3", "kgm3"],
+          answer:
+            "You don't — enter weight (kg) and the three dimensions (mm) and the app computes kg/m³ for you. Solid blocks typically run 1,800–2,100 kg/m³; hollow blocks less. Very low density points to poor compaction or a weak mix.",
+        },
+        {
+          q: "What if a batch fails QC?",
+          match: ["fail", "failed", "reject", "rejected", "hold"],
+          answer:
+            "The batch flips to FAILED on the pipeline panel and a HOLD alert appears so staff don't sell or deliver it. Count condemned pieces in Rejected Blocks, fix the cause (mix, compaction, curing), and test again — a fresh PASS returns the batch to saleable.",
+        },
+        {
+          q: "How long must blocks cure?",
+          match: ["cure", "curing", "days", "watering"],
+          answer:
+            "At least 7 days kept moist (sprinkle twice daily) and shaded; try not to sell before 14 days, and full design strength arrives around 28 days. Log a CURING check each day you water so the batch pipeline shows CURING ✓.",
+        },
+        {
+          q: "Can I attach a photo?",
+          match: ["photo", "picture", "image", "evidence", "camera"],
+          answer:
+            "Yes — in the Record QC Check form tap “Add Photo Evidence” and pick or take a photo. It is compressed and stored inside GoMina 360 with the check, and appears in the Recent QC Checks table.",
+        },
+      ],
+    },
   },
 
   /* ════════════════════════ ELECTRONICS SHOP ════════════════════════ */

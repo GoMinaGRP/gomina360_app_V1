@@ -6,10 +6,12 @@ import {
   blockFactoryDeliveries,
   blockFactoryChecklists,
   blockTypes,
+  blockQcChecks,
   inventoryItems,
   transactions,
   businesses,
 } from "@/db/schema";
+import { deriveDensityKgm3 } from "@/lib/blockQc";
 import { and, eq } from "drizzle-orm";
 import { computeStockStatus, ensureInventoryItem } from "@/lib/stock";
 import { getSessionInfo, UNAUTHENTICATED } from "@/lib/auth";
@@ -133,13 +135,14 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ success: false, error: "businessId required" }, { status: 400 });
     }
 
-    const [production, orders, deliveries, inventory, checklists, existingTypes] = await Promise.all([
+    const [production, orders, deliveries, inventory, checklists, existingTypes, qcChecks] = await Promise.all([
       db.select().from(blockFactoryLogs).where(eq(blockFactoryLogs.businessId, businessId)),
       db.select().from(blockFactoryOrders).where(eq(blockFactoryOrders.businessId, businessId)),
       db.select().from(blockFactoryDeliveries).where(eq(blockFactoryDeliveries.businessId, businessId)),
       db.select().from(inventoryItems).where(eq(inventoryItems.businessId, businessId)),
       db.select().from(blockFactoryChecklists).where(eq(blockFactoryChecklists.businessId, businessId)),
       db.select().from(blockTypes).where(eq(blockTypes.businessId, businessId)),
+      db.select().from(blockQcChecks).where(eq(blockQcChecks.businessId, businessId)),
     ]);
 
     // Seed the block type master list once with the factory's original types
@@ -167,6 +170,7 @@ export async function GET(request: NextRequest) {
       inventory,
       checklists: checklists.sort((a: any, b: any) => (a.id || 0) - (b.id || 0)),
       blockTypes: types.sort((a: any, b: any) => (a.id || 0) - (b.id || 0)),
+      qcChecks: qcChecks.sort((a: any, b: any) => (b.id || 0) - (a.id || 0)),
     });
   } catch (error: any) {
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });
@@ -402,6 +406,88 @@ export async function POST(request: NextRequest) {
         rows.push(row);
       }
       return NextResponse.json({ success: true, items: rows });
+    }
+
+    // ── QC_CHECK (Quality Control at any pipeline stage) ─────────────────
+    // Pure quality evidence — never mutates stock or transactions. Links the
+    // check to its production batch (auto-filling block type + branch), derives
+    // density from weight × dimensions, and stamps tester + recorder identity.
+    if (entity === "QC_CHECK") {
+      const stages = ["RAW_MATERIAL", "MIXING", "PRODUCTION", "CURING", "FINISHED_BLOCK"];
+      const stage = String(data.stage || "").toUpperCase();
+      if (!stages.includes(stage)) {
+        return NextResponse.json(
+          { success: false, error: "stage must be one of " + stages.join(", ") },
+          { status: 400 },
+        );
+      }
+      const testName = String(data.testName || "").trim();
+      if (!testName) {
+        return NextResponse.json({ success: false, error: "testName is required" }, { status: 400 });
+      }
+      const passFail = String(data.passFail || "").toUpperCase() === "FAIL" ? "FAIL" : "PASS";
+
+      // Batch link: the batch must belong to THIS business (404 otherwise).
+      let batchRow: any = null;
+      const batchId = data.batchId ? String(data.batchId).trim() : null;
+      if (batchId) {
+        const [found] = await db
+          .select()
+          .from(blockFactoryLogs)
+          .where(and(eq(blockFactoryLogs.businessId, businessId), eq(blockFactoryLogs.batchId, batchId)))
+          .limit(1);
+        if (!found) {
+          return NextResponse.json(
+            { success: false, error: `Batch ${batchId} not found for this business` },
+            { status: 404 },
+          );
+        }
+        batchRow = found;
+      }
+
+      const num = (v: any) => (v === undefined || v === null || v === "" || isNaN(Number(v)) ? null : Number(v));
+      const densityKgm3 = deriveDensityKgm3({
+        weightKg: num(data.weightKg),
+        lengthMm: num(data.lengthMm),
+        widthMm: num(data.widthMm),
+        heightMm: num(data.heightMm),
+        densityKgm3: num(data.densityKgm3),
+      });
+
+      const [row] = await db.insert(blockQcChecks).values({
+        businessId,
+        branchCode: data.branchCode || batchRow?.branchCode || branchCode,
+        stage,
+        batchId: batchId || null,
+        batchNumber: batchId || null,
+        blockType: batchRow?.blockType || data.blockType || null,
+        sampleRef: data.sampleRef || null,
+        testName,
+        requiredStandard: data.requiredStandard || null,
+        testResult: data.testResult || null,
+        resultValue: num(data.resultValue),
+        resultUnit: data.resultUnit || null,
+        passFail,
+        weightKg: num(data.weightKg),
+        lengthMm: num(data.lengthMm),
+        widthMm: num(data.widthMm),
+        heightMm: num(data.heightMm),
+        densityKgm3,
+        compressiveStrengthMpa: num(data.compressiveStrengthMpa),
+        cracksCount: num(data.cracksCount) === null ? null : Math.round(num(data.cracksCount)!),
+        surfaceQuality: data.surfaceQuality ? String(data.surfaceQuality).toUpperCase() : null,
+        defectsCount: num(data.defectsCount) === null ? null : Math.round(num(data.defectsCount)!),
+        curingDays: num(data.curingDays) === null ? null : Math.round(num(data.curingDays)!),
+        rejectedBlocks: Math.max(0, Math.round(num(data.rejectedBlocks) || 0)),
+        notes: data.notes || null,
+        photo: data.photo || null,
+        testedAt: data.testedAt ? new Date(data.testedAt) : new Date(),
+        testerName: data.testerName || __authSession.user?.name || null,
+        testerRole: data.testerRole || __authSession.user?.role || null,
+        recordedByName: data.recordedByName || __authSession.user?.name || null,
+        recordedByRole: data.recordedByRole || __authSession.user?.role || null,
+      }).returning();
+      return NextResponse.json({ success: true, item: row });
     }
 
     // ── RESTOCK (receive purchased materials/finished goods) ───────
