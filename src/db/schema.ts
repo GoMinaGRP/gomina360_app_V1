@@ -518,6 +518,17 @@ export const customerTrackings = pgTable("customer_trackings", {
   driverLat: doublePrecision("driver_lat"),
   driverLng: doublePrecision("driver_lng"),
   driverLocationAt: timestamp("driver_location_at"),
+  // Online ordering & payment linkage (Business → Branch → Customer →
+  // Product → Payment → Delivery):
+  orderSource: text("order_source").notNull().default("MANUAL"), // 'SALE' (till), 'MANUAL' (staff), 'ONLINE' (customer storefront)
+  paymentChoice: text("payment_choice"), // 'ON_DELIVERY' | 'MOMO_NOW' (online checkout choice)
+  paymentStatus: text("payment_status").notNull().default("UNPAID"), // 'PAID' | 'UNPAID' | 'PENDING_CONFIRMATION'
+  paymentMethod: text("payment_method"), // 'CASH' | 'MTN_MOMO' — set by the sale, or when staff confirm payment
+  paymentRef: text("payment_ref"), // MoMo reference (customer-entered or staff-entered) — staff-only
+  paymentMarkedBy: text("payment_marked_by"),
+  paymentMarkedAt: timestamp("payment_marked_at"),
+  customerNote: text("customer_note"), // checkout note typed by the customer
+  stockCommitted: boolean("stock_committed").notNull().default(false), // online order stock deducted at CONFIRM
   notes: text("notes"),
   createdByUserId: integer("created_by_user_id"),
   createdByName: text("created_by_name"),

@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
-import { Lock, Mail, ShieldCheck, Eye, EyeOff, AlertTriangle, PackageSearch } from "lucide-react";
+import { Lock, Mail, ShieldCheck, Eye, EyeOff, AlertTriangle, PackageSearch, ShoppingCart } from "lucide-react";
 
 /**
  * GoMina 360 secure sign-in gate. Every user logs in with their own email +
@@ -144,14 +144,25 @@ export default function LoginScreen({ onSuccess, notice }: { onSuccess: (user: a
             {" "}5 failed attempts. Forgot your password? Ask the OWNER to reset it.
           </p>
 
-          <a
-            href="/track"
-            className="flex items-center justify-center gap-1.5 py-2 rounded-lg border border-cyan-500/30 bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-300 text-xs font-bold transition"
-            data-testid="login-track-link"
-          >
-            <PackageSearch className="w-4 h-4" />
-            Customer? Track your order here — no sign-in needed
-          </a>
+          <div className="grid grid-cols-2 gap-1.5">
+            <a
+              href="/order"
+              className="flex items-center justify-center gap-1.5 py-2 rounded-lg border border-emerald-500/30 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-300 text-xs font-bold transition"
+              data-testid="login-order-link"
+            >
+              <ShoppingCart className="w-4 h-4" />
+              Order online
+            </a>
+            <a
+              href="/track"
+              className="flex items-center justify-center gap-1.5 py-2 rounded-lg border border-cyan-500/30 bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-300 text-xs font-bold transition"
+              data-testid="login-track-link"
+            >
+              <PackageSearch className="w-4 h-4" />
+              Track your order
+            </a>
+          </div>
+          <p className="text-[9px] text-slate-600 text-center -mt-1">Customers: no sign-in needed for ordering & tracking</p>
         </form>
       </div>
     </div>

@@ -17,6 +17,13 @@ import {
   TRACK_STATUS_LABELS,
   type TrackStatus,
 } from "@/lib/tracking";
+import {
+  uniqueTrackingCode,
+  deductOrderStock,
+  restoreOrderStock,
+  bookOrderPayment,
+  linkCrmCustomer,
+} from "@/lib/trackingServer";
 
 /**
  * Staff console API — Customer Order Tracking.
@@ -39,19 +46,6 @@ import {
  *   LOCATION   { id, lat, lng, driverName?, vehicleNote? }
  *              → live dispatch ping; only while status = DISPATCHED.
  */
-
-async function uniqueTrackingCode(bizCode: string | null | undefined): Promise<string> {
-  for (let i = 0; i < 8; i++) {
-    const code = buildTrackingCode(bizCode);
-    const clash = await db
-      .select({ id: customerTrackings.id })
-      .from(customerTrackings)
-      .where(eq(customerTrackings.trackingCode, code));
-    if (clash.length === 0) return code;
-  }
-  // Practically unreachable (26M+ combinations); still never collide.
-  return buildTrackingCode(bizCode) + String(Date.now()).slice(-2);
-}
 
 export async function GET(request: NextRequest) {
   try {
@@ -244,6 +238,30 @@ export async function POST(request: NextRequest) {
 
       const note = String(body.note || "").trim();
       const now = new Date();
+
+      // Online orders commit their reserved stock when staff CONFIRM them —
+      // and get it back automatically if the order is later cancelled.
+      let stockCommitted: boolean | undefined;
+      if (
+        target === "CONFIRMED" &&
+        row.orderSource === "ONLINE" &&
+        !row.stockCommitted &&
+        ((row.items as any[]) || []).some((li: any) => li?.inventoryId)
+      ) {
+        const stock = await deductOrderStock(row.items as any[]);
+        if (!stock.ok) {
+          return NextResponse.json(
+            { success: false, error: `Cannot confirm — stock problem: ${stock.problems.join(" ")}` },
+            { status: 409 },
+          );
+        }
+        stockCommitted = true;
+      }
+      if (target === "CANCELLED" && row.stockCommitted) {
+        await restoreOrderStock(row.items as any[]);
+        stockCommitted = false;
+      }
+
       const history = [
         ...(Array.isArray(row.statusHistory) ? (row.statusHistory as any[]) : []),
         {
@@ -251,12 +269,23 @@ export async function POST(request: NextRequest) {
           at: now.toISOString(),
           by: me.name || "Staff",
           byRole: me.role || "WORKER",
-          note: note || null,
+          note:
+            note ||
+            (target === "CONFIRMED" && stockCommitted
+              ? "Order confirmed — items reserved from branch stock."
+              : target === "CANCELLED" && stockCommitted === false
+              ? "Order cancelled — reserved stock returned to inventory."
+              : null),
         },
       ];
       const [updated] = await db
         .update(customerTrackings)
-        .set({ status: target, statusHistory: history, updatedAt: now })
+        .set({
+          status: target,
+          statusHistory: history,
+          updatedAt: now,
+          ...(stockCommitted !== undefined ? { stockCommitted } : {}),
+        })
         .where(eq(customerTrackings.id, id))
         .returning();
 
@@ -318,6 +347,69 @@ export async function POST(request: NextRequest) {
         })
         .where(eq(customerTrackings.id, id))
         .returning();
+      return NextResponse.json({ success: true, tracking: updated });
+    }
+
+    if (action === "MARK_PAID") {
+      const id = Number(body.id);
+      const method = body.method === "MTN_MOMO" ? "MTN_MOMO" : body.method === "CASH" ? "CASH" : null;
+      if (!id || !method) {
+        return NextResponse.json(
+          { success: false, error: "id and method (CASH or MTN_MOMO) are required." },
+          { status: 400 },
+        );
+      }
+      const [row] = await db.select().from(customerTrackings).where(eq(customerTrackings.id, id));
+      if (!row) {
+        return NextResponse.json({ success: false, error: "Tracking not found." }, { status: 404 });
+      }
+      if (!(await canAccessBusiness(me, row.businessId))) return FORBIDDEN();
+      if (row.status === "CANCELLED") {
+        return NextResponse.json({ success: false, error: "A cancelled order cannot be paid." }, { status: 409 });
+      }
+      if (row.paymentStatus === "PAID") {
+        return NextResponse.json({ success: false, error: "This order is already marked as paid." }, { status: 409 });
+      }
+
+      const [biz] = await db.select().from(businesses).where(eq(businesses.id, row.businessId));
+      const trxId = await bookOrderPayment({ tracking: row, method, staff: me, business: biz });
+      // Spend now counts toward the shared CRM record too.
+      await linkCrmCustomer({
+        name: row.customerName,
+        phone: row.customerPhone,
+        businessId: row.businessId,
+        spendGhs: row.totalGhs || 0,
+      });
+
+      const ref = String(body.ref || "").trim() || row.paymentRef || null;
+      const now = new Date();
+      const history = [
+        ...(Array.isArray(row.statusHistory) ? (row.statusHistory as any[]) : []),
+        {
+          status: "PAYMENT",
+          at: now.toISOString(),
+          by: me.name || "Staff",
+          byRole: me.role || "WORKER",
+          note: `Payment confirmed (${method === "MTN_MOMO" ? "MTN MoMo" : "Cash"}) — GH₵ ${Number(
+            row.totalGhs || 0,
+          ).toFixed(2)} booked to revenue.`,
+        },
+      ];
+      const [updated] = await db
+        .update(customerTrackings)
+        .set({
+          paymentStatus: "PAID",
+          paymentMethod: method,
+          paymentRef: ref,
+          paymentMarkedBy: me.name || "Staff",
+          paymentMarkedAt: now,
+          transactionId: row.transactionId || trxId,
+          statusHistory: history,
+          updatedAt: now,
+        })
+        .where(eq(customerTrackings.id, id))
+        .returning();
+
       return NextResponse.json({ success: true, tracking: updated });
     }
 

@@ -19,6 +19,7 @@ import {
   Store,
   RefreshCw,
   User as UserIcon,
+  Banknote,
 } from "lucide-react";
 
 const STEP_DEFS = [
@@ -139,10 +140,13 @@ function TrackInner() {
           <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center font-black text-white text-sm shadow-lg">
             360
           </div>
-          <div className="min-w-0">
+          <div className="min-w-0 flex-1">
             <div className="text-sm font-extrabold text-white leading-tight">GoMina 360 · Order Tracking</div>
             <div className="text-[10px] text-emerald-300/90 leading-tight">Official customer page — no sign-in needed</div>
           </div>
+          <a href="/order" className="text-[11px] font-bold text-cyan-300 hover:text-cyan-200 underline decoration-cyan-500/40" data-testid="track-order-link">
+            Order online →
+          </a>
         </div>
       </header>
 
@@ -367,6 +371,35 @@ function TrackInner() {
                 <Clock3 className="w-3 h-3" /> Placed {t.placedAt ? new Date(t.placedAt).toLocaleString() : "—"}
               </div>
             </div>
+
+            {/* Payment status & delivery progress for the customer */}
+            {t.payment && (
+              <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 sm:p-5 shadow-xl" data-testid="track-payment">
+                <h2 className="text-sm font-extrabold text-white flex items-center gap-2 mb-2">
+                  <Banknote className="w-4 h-4 text-emerald-300" /> Payment
+                </h2>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span
+                    className={`text-[11px] font-black px-2.5 py-1 rounded-full border ${
+                      t.payment.status === "PAID"
+                        ? "bg-emerald-500/15 border-emerald-500/40 text-emerald-300"
+                        : t.payment.status === "PENDING_CONFIRMATION"
+                        ? "bg-yellow-500/15 border-yellow-500/40 text-yellow-300"
+                        : "bg-amber-500/15 border-amber-500/40 text-amber-300"
+                    }`}
+                    data-testid="track-payment-status"
+                  >
+                    {t.payment.label}
+                  </span>
+                  <span className="text-[11px] text-slate-400">{t.payment.explainer}</span>
+                </div>
+                {t.status === "DISPATCHED" && t.fulfillmentType === "DELIVERY" && (
+                  <div className="mt-2 text-[11px] text-cyan-300 flex items-center gap-1.5" data-testid="track-delivery-progress">
+                    <Truck className="w-3.5 h-3.5" /> Delivery in progress — watch the live map above.
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* Timeline = the customer's status-update feed */}
             <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 sm:p-5 shadow-xl">

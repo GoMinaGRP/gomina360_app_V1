@@ -2446,10 +2446,30 @@ export const GUIDES: Record<string, Record<string, SectionGuide>> = {
   /* ═══════════════ CUSTOMER ORDER TRACKING ═══════════════ */
   TRACKING: {
     TRACKING: {
-      title: "Customer Order Tracking",
+      title: "Customer Online Ordering & Tracking",
       intro:
-        "Every customer order at {biz} gets a unique GM-* tracking code. Customers follow it themselves on the public /track page — no login — while your team moves the order through statuses, and dispatches with a live Google Maps location.",
+        "Customers order from {biz} themselves on the public /order storefront and follow every step on /track with their GM-* code — no login. Your team receives, confirms, processes, collects payment, dispatches (live Google Map) and completes each order here.",
       tasks: [
+        {
+          name: "Process a new online order",
+          steps: [
+            "A bell notification and the ONLINE chip tell you a storefront order arrived (they also appear here under Active Orders).",
+            "Tap the order — check the products, the customer's phone and any note they left.",
+            "Tap “Confirmed”: the items are instantly reserved from your branch stock. If stock is short, GoMina 360 blocks the confirm and tells you exactly what is missing — top up inventory first.",
+            "Move it through Processing → Ready for Pickup (pickup orders) or Dispatched (deliveries) → Completed / Delivered.",
+            "Cancelling a confirmed order automatically returns its reserved stock.",
+          ],
+          tip: "You are notified by bell the moment an online order lands — the faster you confirm, the sooner the customer sees movement on /track.",
+        },
+        {
+          name: "Collect & confirm payments",
+          steps: [
+            "Every online/staff order shows a payment state: UNPAID (customer pays on pickup/delivery) or “MoMo pending” (customer says they paid).",
+            "Check your MoMo line or cash in hand, pick the method (Cash / MTN MoMo) and tap “Confirm payment received”.",
+            "GoMina 360 books the revenue against today's figures, marks the order PAID, and tells the customer on their tracking page.",
+            "Till (counter) sales are already PAID — they never need this step.",
+          ],
+        },
         {
           name: "Give a customer a tracking code",
           steps: [
@@ -2491,9 +2511,24 @@ export const GUIDES: Record<string, Record<string, SectionGuide>> = {
       ],
       faqs: [
         {
+          q: "How do customers order online?",
+          match: ["online", "order", "storefront", "shop", "website", "buy"],
+          answer: "They open /order (linked from the sign-in screen and every tracking page), pick a business/branch, add products from live stock, choose Pickup or Delivery, pay Cash/MoMo on delivery or flag a MoMo payment — and instantly get a GM-* tracking code. No account is ever needed. Share your storefront link anywhere: /order.",
+        },
+        {
           q: "Where does the customer track their order?",
           match: ["customer", "track", "where", "link", "page", "login"],
-          answer: "On the public /track page (linked on the sign-in screen too). They type their GM-* code — no account is ever needed — and they only see information linked to that exact code: status journey, products, branch, and the live map while a delivery is on the road.",
+          answer: "On the public /track page (linked on the sign-in screen too). They type their GM-* code — no account is ever needed — and they only see information linked to that exact code: status journey, products, payment status, delivery progress, and the live map while a delivery is on the road.",
+        },
+        {
+          q: "How do payments work for online orders?",
+          match: ["payment", "paid", "momo", "cash", "money", "confirm payment"],
+          answer: "The customer either pays Cash/MoMo when the order arrives (UNPAID until then) or chooses MTN MoMo at checkout (shows as “MoMo pending”). When the money is in, open the order, pick the method and tap “Confirm payment received” — revenue is booked to the day's figures, the CRM spend updates, and the customer's page flips to Paid.",
+        },
+        {
+          q: "What happens to stock when an online order comes in?",
+          match: ["stock", "inventory", "reserve", "deduct", "quantity"],
+          answer: "Stock is reserved the moment you tap “Confirmed” (the order fails to confirm if stock is short, telling you what is missing). Cancelling a confirmed order returns the reserved items to inventory automatically.",
         },
         {
           q: "Who is allowed to update a tracking status?",

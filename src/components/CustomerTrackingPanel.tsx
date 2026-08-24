@@ -21,6 +21,9 @@ import {
   User as UserIcon,
   Building2,
   Ban,
+  Banknote,
+  Globe,
+  StickyNote,
 } from "lucide-react";
 import { formatMoney } from "@/lib/currency";
 import AiSectionGuide from "./AiSectionGuide";
@@ -44,6 +47,17 @@ const STATUS_LABELS: Record<string, string> = {
   DELIVERED: "Delivered",
   COMPLETED: "Completed",
   CANCELLED: "Cancelled",
+  PAYMENT: "Payment Confirmed",
+};
+const PAYMENT_STYLES: Record<string, string> = {
+  PAID: "bg-emerald-500/15 text-emerald-300 border-emerald-500/40",
+  UNPAID: "bg-amber-500/15 text-amber-300 border-amber-500/40",
+  PENDING_CONFIRMATION: "bg-yellow-500/15 text-yellow-300 border-yellow-500/40",
+};
+const PAYMENT_LABELS: Record<string, string> = {
+  PAID: "PAID",
+  UNPAID: "UNPAID",
+  PENDING_CONFIRMATION: "MoMo pending",
 };
 
 interface Props {
@@ -156,6 +170,21 @@ export default function CustomerTrackingPanel({
     }
   };
 
+  const [payMethod, setPayMethod] = useState<Record<number, string>>({});
+  const setPaid = async (t: any) => {
+    setBusyRow(t.id);
+    setError("");
+    try {
+      await postAction({ action: "MARK_PAID", id: t.id, method: payMethod[t.id] || t.paymentMethod || "CASH" });
+      setFlash(`${t.trackingCode} marked PAID — revenue booked`);
+      await load(true);
+    } catch (e: any) {
+      setError(e.message);
+    } finally {
+      setBusyRow(null);
+    }
+  };
+
   const startLive = async (t: any) => {
     if (typeof navigator === "undefined" || !navigator.geolocation) {
       setError("This device does not support location sharing.");
@@ -201,11 +230,15 @@ export default function CustomerTrackingPanel({
             <div className="min-w-0">
               <h2 className="text-base sm:text-lg font-extrabold text-white">Customer Tracking</h2>
               <p className="text-[11px] sm:text-xs text-slate-400 mt-0.5">
-                Every order gets a unique GM-* code · customers follow it on the public{" "}
+                Every order gets a unique GM-* code · customers order on the storefront{" "}
+                <a href="/order" target="_blank" className="text-cyan-300 underline decoration-cyan-500/50 hover:text-cyan-200" data-testid="ct-storefront-home">
+                  /order
+                </a>{" "}
+                and follow it on{" "}
                 <a href="/track" target="_blank" className="text-cyan-300 underline decoration-cyan-500/50 hover:text-cyan-200" data-testid="ct-public-home">
                   /track
                 </a>{" "}
-                page — no login needed.
+                — no login needed.
               </p>
             </div>
           </div>
@@ -328,6 +361,16 @@ export default function CustomerTrackingPanel({
                   <span className="font-mono text-[11px] font-black text-cyan-300 bg-cyan-500/10 border border-cyan-500/30 rounded px-1.5 py-1 shrink-0" data-testid={`ct-code-${t.id}`}>
                     {t.trackingCode}
                   </span>
+                  {t.orderSource === "ONLINE" && (
+                    <span className="flex items-center gap-0.5 text-[9px] font-black px-1.5 py-1 rounded bg-sky-500/15 text-sky-300 border border-sky-500/30 shrink-0" data-testid={`ct-online-${t.id}`}>
+                      <Globe className="w-2.5 h-2.5" /> ONLINE
+                    </span>
+                  )}
+                  {t.orderSource !== "SALE" && (
+                    <span className={`text-[9px] font-black px-1.5 py-1 rounded border shrink-0 ${PAYMENT_STYLES[t.paymentStatus] || PAYMENT_STYLES.UNPAID}`} data-testid={`ct-paychip-${t.id}`}>
+                      {PAYMENT_LABELS[t.paymentStatus] || "UNPAID"}
+                    </span>
+                  )}
                   <span className="min-w-0 flex-1">
                     <span className="block truncate text-xs font-bold text-white">{t.customerName}</span>
                     <span className="block truncate text-[10px] text-slate-400">
@@ -373,6 +416,22 @@ export default function CustomerTrackingPanel({
                           {t.fulfillmentType === "DELIVERY" ? "Delivery" : "Pickup"}{t.destinationAddress ? ` → ${t.destinationAddress}` : ""}
                         </div>
                         <div className="flex items-center gap-1.5"><Clock3 className="w-3 h-3" />Placed {new Date(t.createdAt).toLocaleString()}</div>
+                        {t.customerNote && (
+                          <div className="flex items-start gap-1.5" data-testid={`ct-custnote-${t.id}`}>
+                            <StickyNote className="w-3 h-3 mt-0.5 shrink-0" />
+                            <span className="text-amber-300/90">“{t.customerNote}”</span>
+                          </div>
+                        )}
+                        {t.orderSource !== "SALE" && (
+                          <div className="flex items-center gap-1.5">
+                            <Banknote className="w-3 h-3" />
+                            {t.paymentStatus === "PAID"
+                              ? `Paid ${t.paymentMethod === "MTN_MOMO" ? "(MTN MoMo)" : t.paymentMethod === "CASH" ? "(Cash)" : ""}`
+                              : t.paymentStatus === "PENDING_CONFIRMATION"
+                              ? "Payment pending confirmation (MoMo)"
+                              : "Payment not yet received"}
+                          </div>
+                        )}
                       </div>
                       <div className="mt-2.5 flex items-center gap-1.5">
                         <a
@@ -419,6 +478,57 @@ export default function CustomerTrackingPanel({
 
                     {/* Actions */}
                     <div className="bg-slate-900/60 border border-slate-700/60 rounded-xl p-3" data-testid={`ct-actions-${t.id}`}>
+                      {/* Payment confirmation (not needed for till sales) */}
+                      {t.orderSource !== "SALE" && t.status !== "CANCELLED" && (
+                        <div className="mb-2.5 pb-2.5 border-b border-slate-700/60">
+                          <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1.5 flex items-center gap-1">
+                            <Banknote className="w-3 h-3" /> Payment
+                          </div>
+                          {t.paymentStatus === "PAID" ? (
+                            <p className="text-[11px] font-bold text-emerald-300" data-testid={`ct-paid-line-${t.id}`}>
+                              Paid {(t.paymentMethod === "MTN_MOMO" ? "via MTN MoMo" : "in Cash")}
+                              {t.paymentMarkedBy ? ` · confirmed by ${t.paymentMarkedBy}` : ""}
+                            </p>
+                          ) : (
+                            <div>
+                              <div className="flex items-center justify-between gap-2 text-[11px] text-slate-400 mb-1.5">
+                                <span>
+                                  {t.paymentStatus === "PENDING_CONFIRMATION"
+                                    ? "Customer says they paid via MoMo — verify & confirm"
+                                    : t.paymentChoice === "ON_DELIVERY" || t.orderSource === "MANUAL"
+                                    ? "Collect payment on pickup / delivery"
+                                    : "Awaiting payment"}
+                                </span>
+                                <span className={`text-[9px] font-black px-1.5 py-0.5 rounded border ${PAYMENT_STYLES[t.paymentStatus] || PAYMENT_STYLES.UNPAID}`}>
+                                  {PAYMENT_LABELS[t.paymentStatus]}
+                                </span>
+                              </div>
+                              {t.paymentRef && (
+                                <p className="text-[10px] text-yellow-300/90 mb-1.5" data-testid={`ct-payref-${t.id}`}>MoMo ref: {t.paymentRef}</p>
+                              )}
+                              <div className="flex items-center gap-1.5">
+                                <select
+                                  value={payMethod[t.id] || t.paymentMethod || "CASH"}
+                                  onChange={(e) => setPayMethod((s) => ({ ...s, [t.id]: e.target.value }))}
+                                  className="bg-slate-800 border border-slate-700 rounded-lg px-2 py-1.5 text-[11px] text-slate-200"
+                                  data-testid={`ct-paymethod-${t.id}`}
+                                >
+                                  <option value="CASH">Cash</option>
+                                  <option value="MTN_MOMO">MTN MoMo</option>
+                                </select>
+                                <button
+                                  onClick={() => setPaid(t)}
+                                  disabled={busyRow === t.id}
+                                  className="flex-1 px-2.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-bold disabled:opacity-40"
+                                  data-testid={`ct-markpaid-${t.id}`}
+                                >
+                                  Confirm payment received
+                                </button>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      )}
                       <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-2">Update status</div>
                       {isTerminal ? (
                         <p className="text-[11px] text-slate-500">Order is closed{ t.status === "CANCELLED" ? " (cancelled)" : ""}. No further updates.</p>

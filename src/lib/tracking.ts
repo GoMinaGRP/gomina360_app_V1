@@ -34,6 +34,33 @@ export const TRACK_STATUS_LABELS: Record<TrackStatus, string> = {
 
 export const TERMINAL_STATUSES: TrackStatus[] = ["DELIVERED", "COMPLETED", "CANCELLED"];
 
+export const PAYMENT_STATUS_LABELS: Record<string, string> = {
+  PAID: "Paid",
+  UNPAID: "Not paid yet",
+  PENDING_CONFIRMATION: "Awaiting payment confirmation",
+};
+
+/** Customer-facing description of how/when payment happens. */
+export function paymentExplainer(row: any): string {
+  if (row.paymentStatus === "PAID") {
+    const m = row.paymentMethod === "MTN_MOMO" ? "MTN MoMo" : row.paymentMethod === "CASH" ? "Cash" : null;
+    return m ? `Payment received (${m}). Thank you!` : "Payment received. Thank you!";
+  }
+  if (row.paymentStatus === "PENDING_CONFIRMATION")
+    return "You chose MTN MoMo — the business is confirming your payment.";
+  if (row.paymentChoice === "ON_DELIVERY")
+    return row.fulfillmentType === "DELIVERY"
+      ? "Pay cash or MoMo when your order arrives."
+      : "Pay cash or MoMo when you pick up your order.";
+  return "Payment not completed yet.";
+}
+
+export const ORDER_SOURCE_LABELS: Record<string, string> = {
+  SALE: "Counter sale",
+  MANUAL: "Staff booking",
+  ONLINE: "Online order",
+};
+
 /**
  * Allowed next statuses. Delivery orders flow …→ PROCESSING → DISPATCHED →
  * DELIVERED; pickup orders flow …→ PROCESSING → READY → COMPLETED. READY →
@@ -158,11 +185,22 @@ export function publicTrackingPayload(row: any, businessName: string) {
     journeyStep: row.status === "CANCELLED" ? null : journeyStep(row.status),
     placedAt: row.createdAt ? new Date(row.createdAt).toISOString() : null,
     updatedAt: row.updatedAt ? new Date(row.updatedAt).toISOString() : null,
+    // Payment status for the customer — never the MoMo reference (staff-only).
+    payment: {
+      status: row.paymentStatus || "UNPAID",
+      label: PAYMENT_STATUS_LABELS[row.paymentStatus] || "Not paid yet",
+      explainer: paymentExplainer(row),
+    },
+    sourceLabel: ORDER_SOURCE_LABELS[row.orderSource] || "Online order",
+    customerNote: row.customerNote || null,
     history: (row.statusHistory || []).map((h: any) => ({
       status: h.status,
-      label: TRACK_STATUS_LABELS[h.status as TrackStatus] || h.status,
+      label:
+        h.status === "PAYMENT"
+          ? "Payment Confirmed"
+          : TRACK_STATUS_LABELS[h.status as TrackStatus] || h.status,
       at: h.at,
-      by: ROLE_LABELS[h.byRole] || "Staff",
+      by: h.byRole === "CUSTOMER" ? "You (customer)" : ROLE_LABELS[h.byRole] || "Staff",
       note: h.note || null,
     })),
     live,
