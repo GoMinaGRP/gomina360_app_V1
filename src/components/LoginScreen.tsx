@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
-import { Lock, Mail, ShieldCheck, Eye, EyeOff, AlertTriangle } from "lucide-react";
+import { Lock, Mail, ShieldCheck, Eye, EyeOff, AlertTriangle, PackageSearch } from "lucide-react";
 
 /**
  * GoMina 360 secure sign-in gate. Every user logs in with their own email +
@@ -143,6 +143,15 @@ export default function LoginScreen({ onSuccess, notice }: { onSuccess: (user: a
             Sessions expire after 7 days. Accounts lock for 15 minutes after
             {" "}5 failed attempts. Forgot your password? Ask the OWNER to reset it.
           </p>
+
+          <a
+            href="/track"
+            className="flex items-center justify-center gap-1.5 py-2 rounded-lg border border-cyan-500/30 bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-300 text-xs font-bold transition"
+            data-testid="login-track-link"
+          >
+            <PackageSearch className="w-4 h-4" />
+            Customer? Track your order here — no sign-in needed
+          </a>
         </form>
       </div>
     </div>

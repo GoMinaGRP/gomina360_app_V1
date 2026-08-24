@@ -16,9 +16,11 @@ import {
   Search,
   X,
   AlertTriangle,
+  Truck,
 } from "lucide-react";
 import { CurrencyCode, formatMoney } from "@/lib/currency";
 import { addToOfflineQueue } from "@/lib/offlineSync";
+import CustomerTrackingPanel from "./CustomerTrackingPanel";
 
 interface WorkerDashboardProps {
   currentUser: any;
@@ -45,7 +47,7 @@ export default function WorkerDashboard({
   isOnline,
   onRefreshData,
 }: WorkerDashboardProps) {
-  const [activeSubTab, setActiveSubTab] = useState<"SALES" | "CUSTOMERS" | "INVENTORY" | "MY_ACTIVITY">("SALES");
+  const [activeSubTab, setActiveSubTab] = useState<"SALES" | "CUSTOMERS" | "INVENTORY" | "MY_ACTIVITY" | "TRACKING">("SALES");
 
   // Inventory-linked sale (cart)
   interface CartItem {
@@ -71,6 +73,7 @@ export default function WorkerDashboard({
   const [inventoryCatFilter, setInventoryCatFilter] = useState("ALL");
   const [isSubmittingSale, setIsSubmittingSale] = useState(false);
   const [saleSuccess, setSaleSuccess] = useState(false);
+  const [saleTrackingCode, setSaleTrackingCode] = useState("");
   const [saleError, setSaleError] = useState("");
 
   // Customer form
@@ -182,12 +185,13 @@ export default function WorkerDashboard({
       const data = await res.json();
       if (data.success) {
         setSaleSuccess(true);
+        setSaleTrackingCode(data.trackingCode || "");
         setCart([]);
         setSaleCustomerName("Walk-in Customer");
         setSaleCustomerPhone("");
         setSaleDiscount(0);
         setSaleNotes("");
-        setTimeout(() => setSaleSuccess(false), 3000);
+        setTimeout(() => { setSaleSuccess(false); setSaleTrackingCode(""); }, 12000);
         onRefreshData();
       } else {
         setSaleError(data.error || "Sale failed.");
@@ -347,6 +351,7 @@ export default function WorkerDashboard({
           { key: "SALES" as const, label: "Record Sale", icon: ShoppingCart },
           { key: "CUSTOMERS" as const, label: "Customers", icon: UserPlus },
           { key: "INVENTORY" as const, label: "Inventory", icon: Package },
+          { key: "TRACKING" as const, label: "Order Tracking", icon: Truck },
           { key: "MY_ACTIVITY" as const, label: "My Activity", icon: ClipboardList },
         ].map((tab) => (
           <button
@@ -397,9 +402,18 @@ export default function WorkerDashboard({
           <div className="lg:col-span-2 space-y-4">
             {/* Banners */}
             {saleSuccess && (
-              <div className="px-4 py-3 rounded-xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 text-sm font-semibold flex items-center space-x-2">
-                <CheckCircle className="w-4 h-4" />
-                <span>Sale completed! Inventory updated automatically.</span>
+              <div className="px-4 py-3 rounded-xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 text-sm font-semibold flex items-center space-x-2" data-testid="sale-success-banner">
+                <CheckCircle className="w-4 h-4 shrink-0" />
+                <span>
+                  Sale completed! Inventory updated automatically.
+                  {saleTrackingCode && (
+                    <>
+                      {" "}Customer tracking code:{" "}
+                      <span className="font-mono font-black text-emerald-300" data-testid="sale-tracking-code">{saleTrackingCode}</span>
+                      {" "}— follow it at /track or share it with the customer.
+                    </>
+                  )}
+                </span>
               </div>
             )}
             {saleError && (
@@ -803,7 +817,20 @@ export default function WorkerDashboard({
           </div>
         )}
 
+        {/* Customer order tracking console — scoped to this branch by the server */}
+        {activeSubTab === "TRACKING" && (
+          <div className="lg:col-span-3" data-testid="worker-tracking-tab">
+            <CustomerTrackingPanel
+              currentUser={currentUser}
+              businesses={businessInfo ? [businessInfo] : []}
+              currentCurrency={currentCurrency}
+              lockedBusiness={businessInfo || null}
+            />
+          </div>
+        )}
+
         {/* Side panel: Recent transactions summary */}
+        {activeSubTab !== "TRACKING" && (
         <div className="space-y-4">
           <div className="bg-slate-800/90 border border-slate-700/80 rounded-2xl p-5 shadow-xl">
             <h4 className="text-xs font-bold uppercase text-slate-400 mb-3">Quick Stats</h4>
@@ -872,6 +899,7 @@ export default function WorkerDashboard({
             </div>
           </div>
         </div>
+        )}
       </div>
     </div>
   );

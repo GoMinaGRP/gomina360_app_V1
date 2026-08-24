@@ -240,6 +240,30 @@ export default function Sidebar({
       </div>
       )}
 
+      {/* Customer Tracking — Branch Managers (executives find it in Shared Modules) */}
+      {isBusinessManager && (
+        <div className="px-2 sm:px-3 py-2 border-b border-slate-800/70">
+          <div className="px-1 sm:px-3 py-1 text-[11px] font-bold uppercase tracking-wider text-slate-400">
+            Customer Tracking
+          </div>
+          <button
+            onClick={() => selectTab("TRACKING")}
+            data-testid="sidebar-tab-tracking"
+            className={`w-full flex items-center justify-between px-2 sm:px-3 py-2 rounded-lg text-xs font-medium transition mt-1 ${
+              activeTab === "TRACKING"
+                ? "bg-cyan-500/15 text-cyan-400 font-bold border-l-2 border-cyan-400"
+                : "hover:bg-slate-800/70 text-slate-300"
+            }`}
+          >
+            <div className="flex items-center space-x-1.5 sm:space-x-2.5">
+              <Truck className="w-4 h-4 text-cyan-400/90" />
+              <span>Order Tracking</span>
+            </div>
+            <span className="hidden sm:inline text-[9px] bg-cyan-500/20 text-cyan-300 px-1 py-0.5 rounded font-bold border border-cyan-500/30">LIVE</span>
+          </button>
+        </div>
+      )}
+
       {/* Shared Enterprise Management Modules — Owner / General Manager only */}
       {isExecutive && (
         <div className="px-2 sm:px-3 py-2 border-b border-slate-800/70">
@@ -288,6 +312,22 @@ export default function Sidebar({
             >
               <Users className="w-4 h-4 text-emerald-400/80" />
               <span>Customers & CRM</span>
+            </button>
+
+            <button
+              onClick={() => selectTab("TRACKING")}
+              data-testid="sidebar-tab-tracking"
+              className={`w-full flex items-center justify-between px-2 sm:px-3 py-2 rounded-lg text-xs font-medium transition ${
+                activeTab === "TRACKING"
+                  ? "bg-cyan-500/15 text-cyan-400 font-bold border-l-2 border-cyan-400"
+                  : "hover:bg-slate-800/70 text-slate-300"
+              }`}
+            >
+              <div className="flex items-center space-x-1.5 sm:space-x-2.5">
+                <Truck className="w-4 h-4 text-cyan-400/90" />
+                <span>Customer Tracking</span>
+              </div>
+              <span className="hidden sm:inline text-[9px] bg-cyan-500/20 text-cyan-300 px-1 py-0.5 rounded font-bold border border-cyan-500/30">LIVE</span>
             </button>
 
             <button

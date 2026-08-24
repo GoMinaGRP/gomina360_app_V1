@@ -489,6 +489,43 @@ export const salesDocuments = pgTable("sales_documents", {
   updatedAt: timestamp("updated_at").defaultNow(),
 });
 
+// 9c. Customer Order Tracking — every customer order/product gets a unique,
+// unguessable tracking code. Customers track WITHOUT logging in on the
+// public /track page; staff manage statuses & live dispatch location here.
+export const customerTrackings = pgTable("customer_trackings", {
+  id: serial("id").primaryKey(),
+  trackingCode: text("tracking_code").notNull().unique(), // e.g. GM-POULTRY-4K7XQ2
+  // Chain: Business → Branch → Customer → Order (sale doc/transaction) → Product items
+  businessId: integer("business_id").notNull(),
+  branchCode: text("branch_code"),
+  branchName: text("branch_name"),
+  customerId: integer("customer_id"),
+  customerName: text("customer_name").notNull(),
+  customerPhone: text("customer_phone"), // staff-only, never exposed publicly
+  saleDocumentId: integer("sale_document_id"), // linked sales_documents.id (order)
+  transactionId: integer("transaction_id"), // linked transactions.id
+  items: jsonb("items").notNull().default([]), // [{description, sku?, quantity, unit?, unitPrice, total}]
+  totalGhs: doublePrecision("total_ghs").default(0),
+  currency: text("currency").notNull().default("GHS"),
+  fulfillmentType: text("fulfillment_type").notNull().default("PICKUP"), // 'PICKUP' | 'DELIVERY'
+  destinationAddress: text("destination_address"), // delivery destination (customer's own)
+  // Flow: RECEIVED → CONFIRMED → PROCESSING → READY | DISPATCHED → COMPLETED | DELIVERED (+ CANCELLED)
+  status: text("status").notNull().default("RECEIVED"),
+  statusHistory: jsonb("status_history").notNull().default([]), // [{status, at, by, byRole, note}]
+  // Live dispatch location (only surfaced publicly while DISPATCHED)
+  driverName: text("driver_name"),
+  vehicleNote: text("vehicle_note"),
+  driverLat: doublePrecision("driver_lat"),
+  driverLng: doublePrecision("driver_lng"),
+  driverLocationAt: timestamp("driver_location_at"),
+  notes: text("notes"),
+  createdByUserId: integer("created_by_user_id"),
+  createdByName: text("created_by_name"),
+  createdByRole: text("created_by_role"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
 // --- SPECIALIZED MODULE LOGS FOR EACH OF THE 7 BUSINESSES ---
 
 // 10. Poultry Farm Log (Egg trays, feed kg, mortality, health)

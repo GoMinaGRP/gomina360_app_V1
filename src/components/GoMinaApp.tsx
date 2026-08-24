@@ -8,6 +8,7 @@ import ContextNavigator, { ContextBar } from "./ContextNavigator";
 import CommandCenterDashboard from "./CommandCenterDashboard";
 import LivestockModule from "./LivestockModule";
 import SharedEnterpriseModule from "./SharedEnterpriseModule";
+import CustomerTrackingPanel from "./CustomerTrackingPanel";
 import AiAdvisorView from "./AiAdvisorView";
 import ScenarioPlannerView from "./ScenarioPlannerView";
 import IntegrationsHubView from "./IntegrationsHubView";
@@ -900,6 +901,20 @@ export default function GoMinaApp() {
           isOnline={isOnline}
           onRefreshData={refreshAllData}
           currentUser={currentUser}
+        />
+      );
+    }
+
+    // Customer Tracking console — Owner/GM (all businesses) and Branch
+    // Managers (their branch) via the sidebar. Server enforces the same
+    // Business/Branch access scoping as the rest of the platform. Workers
+    // get the same console embedded as a tab inside their sales workspace.
+    if (activeTab === "TRACKING") {
+      return (
+        <CustomerTrackingPanel
+          currentUser={currentUser}
+          businesses={businesses}
+          currentCurrency={currentCurrency}
         />
       );
     }

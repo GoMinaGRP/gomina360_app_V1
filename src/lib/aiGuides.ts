@@ -2442,6 +2442,77 @@ export const GUIDES: Record<string, Record<string, SectionGuide>> = {
       ],
     },
   },
+
+  /* ═══════════════ CUSTOMER ORDER TRACKING ═══════════════ */
+  TRACKING: {
+    TRACKING: {
+      title: "Customer Order Tracking",
+      intro:
+        "Every customer order at {biz} gets a unique GM-* tracking code. Customers follow it themselves on the public /track page — no login — while your team moves the order through statuses, and dispatches with a live Google Maps location.",
+      tasks: [
+        {
+          name: "Give a customer a tracking code",
+          steps: [
+            "Automatic: every sale you record already mints a code — it shows in the green success banner (and on the order row here).",
+            "Manual (phone/WhatsApp orders, special jobs): tap “New Tracking”, pick the business, type the customer name, add the products, choose Pickup or Delivery, then “Create tracking code”.",
+            "Read the GM-* code to the customer, or tap “Copy link” and send them the ready-made /track?code=… link.",
+            "The customer opens /track on their phone — no account, no password — and only ever sees their own order.",
+          ],
+          tip: "Each code is unique and unguessable — it is the only key a customer needs, and it unlocks nothing but their own order.",
+        },
+        {
+          name: "Update an order status",
+          steps: [
+            "Find the order (search by code, customer or product) and tap its row to expand it.",
+            "Type an optional note for the customer timeline (e.g. “Ready by 2pm”).",
+            "Tap the green next-step button — the flow is Order Received → Confirmed → Processing → Ready for Pickup / Dispatched → Completed / Delivered.",
+            "Only valid next steps are offered; closed orders (Delivered / Completed / Cancelled) cannot change.",
+            "The customer's /track page refreshes automatically every 15 seconds and shows your note with the time.",
+          ],
+          tip: "You can only see and update orders for businesses you are assigned to — the Owner sees everything.",
+        },
+        {
+          name: "Dispatch a delivery with live map tracking",
+          steps: [
+            "Create the order as “Delivery (live map)” and type the destination.",
+            "Move it to Dispatched when the courier leaves.",
+            "Tap “Share my live location with the customer” on the dispatching device — the customer's /track page now shows a LIVE Google Map that follows the courier.",
+            "Tap Stop or mark the order Delivered on arrival — the map closes automatically.",
+          ],
+          tip: "Live location is only visible while the order is Dispatched; before and after, the customer sees statuses only.",
+        },
+        {
+          name: "Handle pickups and cancellations",
+          steps: [
+            "Pickup orders end at “Ready for Pickup” → “Completed” when the customer collects.",
+            "Any open order can be Cancelled — the customer sees the cancelled state immediately on /track.",
+          ],
+        },
+      ],
+      faqs: [
+        {
+          q: "Where does the customer track their order?",
+          match: ["customer", "track", "where", "link", "page", "login"],
+          answer: "On the public /track page (linked on the sign-in screen too). They type their GM-* code — no account is ever needed — and they only see information linked to that exact code: status journey, products, branch, and the live map while a delivery is on the road.",
+        },
+        {
+          q: "Who is allowed to update a tracking status?",
+          match: ["who", "permission", "allowed", "update", "staff", "manager"],
+          answer: "Any signed-in staff member can create trackings and move orders forward — but strictly inside the businesses they are assigned to (the same Business/Branch access rules enforced across GoMina 360). The Owner sees and manages every business.",
+        },
+        {
+          q: "How does the live map work?",
+          match: ["map", "google", "location", "live", "gps", "dispatch"],
+          answer: "When an order is Dispatched, a staff member (usually the courier) taps “Share my live location”. The device streams GPS to GoMina 360 and the customer's /track page draws it on a live Google Map until the order is Delivered or sharing stops.",
+        },
+        {
+          q: "Does the customer get notifications?",
+          match: ["notify", "notification", "alert", "updates"],
+          answer: "Yes — on the /track page the customer can turn on “Notify me”: their device alerts them whenever the status changes. The page also auto-refreshes every 15 seconds and keeps a full timestamped update feed.",
+        },
+      ],
+    },
+  },
 };
 
 /** Resolve the guide for a module+section with graceful fallbacks. */

@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
-import { transactions, inventoryItems, salesDocuments, businesses, customers } from "@/db/schema";
+import { transactions, inventoryItems, salesDocuments, businesses, customers, customerTrackings } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { getSessionInfo, UNAUTHENTICATED, FORBIDDEN } from "@/lib/auth";
+import { buildTrackingCode } from "@/lib/tracking";
 
 /**
  * POST /api/sales
@@ -275,6 +276,64 @@ export async function POST(request: NextRequest) {
       })
       .returning();
 
+    // ── 7. Auto-mint a customer tracking code for this order ─────────
+    // Every sale/order gets a unique GM-* code the customer can follow on
+    // the public /track page without logging in. Wrapped so a tracking
+    // hiccup can never break a sale.
+    let trackingCode: string | null = null;
+    try {
+      let code = buildTrackingCode(biz?.code);
+      for (let i = 0; i < 6; i++) {
+        const clash = await db
+          .select({ id: customerTrackings.id })
+          .from(customerTrackings)
+          .where(eq(customerTrackings.trackingCode, code));
+        if (clash.length === 0) break;
+        code = buildTrackingCode(biz?.code);
+      }
+      const now2 = new Date();
+      await db.insert(customerTrackings).values({
+        trackingCode: code,
+        businessId: Number(businessId),
+        branchCode: resolvedBranchCode,
+        branchName: resolvedBranchName,
+        customerId: linkedCustomerId,
+        customerName: customerName || "Walk-in Customer",
+        customerPhone: customerPhone || null,
+        saleDocumentId: newDoc.id,
+        transactionId: newTrx.id,
+        items: lineItems.map((li: any) => ({
+          description: li.description,
+          sku: li.sku || null,
+          quantity: li.quantity,
+          unit: li.unit || null,
+          unitPrice: li.unitPrice,
+          total: li.total,
+        })),
+        totalGhs: total,
+        currency: "GHS",
+        fulfillmentType: "PICKUP",
+        status: "RECEIVED",
+        statusHistory: [
+          {
+            status: "RECEIVED",
+            at: now2.toISOString(),
+            by: createdByName || "Sales Center",
+            byRole: createdByRole || "WORKER",
+            note: `Sale recorded (${docNum}). Order registered for customer tracking.`,
+          },
+        ],
+        createdByUserId: createdByUserId ? Number(createdByUserId) : null,
+        createdByName: createdByName || "Sales Center",
+        createdByRole: createdByRole || null,
+        createdAt: now2,
+        updatedAt: now2,
+      });
+      trackingCode = code;
+    } catch (trackErr) {
+      console.error("/api/sales tracking warning:", trackErr);
+    }
+
     return NextResponse.json({
       success: true,
       transaction: newTrx,
@@ -283,6 +342,8 @@ export async function POST(request: NextRequest) {
       cogsGhs: cogs,
       grossProfitGhs: grossProfit,
       customerId: linkedCustomerId,
+      trackingCode,
+      trackUrl: trackingCode ? `/track?code=${encodeURIComponent(trackingCode)}` : null,
       priceOverrides: priceAuditEntries,
       inventoryUpdates: inventoryUpdates.map((u) => ({
         inventoryId: u.id,
