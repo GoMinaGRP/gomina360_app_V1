@@ -19,6 +19,8 @@ import {
 } from "lucide-react";
 import LocationSelector, { LocationValue, LocationBadge } from "./LocationSelector";
 import { REGION_NAMES } from "@/lib/ghanaLocations";
+import SignedInStaffPanel from "./SignedInStaffPanel";
+import Avatar from "./Avatar";
 
 interface EnterpriseUserPanelProps {
   currentUser: any;
@@ -80,7 +82,7 @@ export default function EnterpriseUserPanel({
   const [resetSuccess, setResetSuccess] = useState(false);
 
   // Sub-tabs for user directory vs pending approvals
-  const [activeSubTab, setActiveSubTab] = useState<"ACCOUNTS" | "APPROVALS">("ACCOUNTS");
+  const [activeSubTab, setActiveSubTab] = useState<"ACCOUNTS" | "APPROVALS" | "PRESENCE">("ACCOUNTS");
   const [approvalsList, setApprovalsList] = useState<any[]>([
     {
       id: 101,
@@ -415,6 +417,18 @@ export default function EnterpriseUserPanel({
             {approvalsList.filter((a) => a.status === "PENDING").length}
           </span>
         </button>
+        <button
+          onClick={() => setActiveSubTab("PRESENCE")}
+          data-testid="usr-tab-presence"
+          className={`px-4 py-2 rounded-lg text-xs font-semibold transition flex items-center space-x-1.5 ${
+            activeSubTab === "PRESENCE"
+              ? "bg-emerald-600 text-white shadow"
+              : "text-slate-300 hover:bg-slate-700/50"
+          }`}
+        >
+          <UserCheck className="w-3.5 h-3.5" />
+          <span>Signed-In Staff</span>
+        </button>
       </div>
 
       {activeSubTab === "ACCOUNTS" ? (
@@ -476,9 +490,13 @@ export default function EnterpriseUserPanel({
                   >
                     <td className="px-4 py-3.5">
                       <div className="flex items-center space-x-3">
-                        <div className="w-9 h-9 rounded-full bg-slate-700 flex items-center justify-center font-bold text-xs text-cyan-300">
-                          {user.name.charAt(0)}
-                        </div>
+                        <Avatar
+                          name={user.name}
+                          url={user.avatarUrl}
+                          testid={`usr-photo-${user.id}`}
+                          imgClass="w-9 h-9 rounded-full object-cover border border-slate-600"
+                          fallbackClass="w-9 h-9 rounded-full bg-slate-700 flex items-center justify-center font-bold text-xs text-cyan-300"
+                        />
                         <div>
                           <div className="font-bold text-slate-100">
                             {user.name} {isSelf && <span className="text-[10px] bg-slate-700 px-1.5 py-0.5 rounded text-cyan-400">(You)</span>}
@@ -582,6 +600,10 @@ export default function EnterpriseUserPanel({
         </div>
       </div>
     </>
+  ) : activeSubTab === "PRESENCE" ? (
+    /* Signed-In Staff — live presence + enable/disable/revoke (OWNER and
+       OWNER-authorized user managers; server-enforced, branch-scoped). */
+    <SignedInStaffPanel currentUser={currentUser} />
   ) : (
     <div className="bg-slate-800/90 border border-slate-700/80 rounded-2xl p-5 shadow-xl space-y-4">
       <div className="flex items-center space-x-2 pb-3 border-b border-slate-700/70">

@@ -15,6 +15,7 @@ import NewBusinessModal from "./NewBusinessModal";
 import ManageBusinessesModal from "./ManageBusinessesModal";
 import UserAccessConsole from "./UserAccessConsole";
 import ChangePasswordModal from "./ChangePasswordModal";
+import ProfilePhotoModal from "./ProfilePhotoModal";
 import WorkerDashboard from "./WorkerDashboard";
 import BranchManagerWorkerPanel from "./BranchManagerWorkerPanel";
 import BranchManagerSalesView from "./BranchManagerSalesView";
@@ -92,6 +93,8 @@ export default function GoMinaApp() {
   const [isUserAccessOpen, setIsUserAccessOpen] = useState(false);
   // Self-service password change (account menu → Change Password).
   const [isChangePwOpen, setIsChangePwOpen] = useState(false);
+  // Self-service profile photo (account menu → My Profile Photo).
+  const [isProfilePhotoOpen, setIsProfilePhotoOpen] = useState(false);
   // Secure-session state (declared with the other UI state so the data
   // refresh callback below can safely bounce a dead session to sign-in).
   const [signedIn, setSignedIn] = useState(false);
@@ -181,6 +184,42 @@ export default function GoMinaApp() {
   // browsers block third-party cookie storage).
   useEffect(() => { installSessionBridge(); }, []);
 
+  // Presence heartbeat — powers the live ONLINE chip in Signed-In Staff.
+  // Beat "active" on sign-in/page-show/visibility-return; park the session
+  // (without ending it) when the page is hidden/unloaded — sendBeacon keeps
+  // the beat reliable even as the tab is closing. Any later real request
+  // automatically un-parks server-side, so presence can never get stuck.
+  useEffect(() => {
+    if (!currentUser?.id || !signedIn) return;
+    const beat = (active: boolean) => {
+      try {
+        const payload = JSON.stringify({ active });
+        if (!active && typeof navigator !== "undefined" && navigator.sendBeacon) {
+          navigator.sendBeacon("/api/session/heartbeat", new Blob([payload], { type: "application/json" }));
+        } else {
+          fetch("/api/session/heartbeat", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: payload,
+            keepalive: true,
+          }).catch(() => {});
+        }
+      } catch { /* presence is best-effort */ }
+    };
+    beat(true);
+    const onShow = () => beat(true);
+    const onHide = () => { if (document.visibilityState === "hidden") beat(false); };
+    const onPageHide = () => beat(false);
+    window.addEventListener("pageshow", onShow);
+    window.addEventListener("pagehide", onPageHide);
+    document.addEventListener("visibilitychange", onHide);
+    return () => {
+      window.removeEventListener("pageshow", onShow);
+      window.removeEventListener("pagehide", onPageHide);
+      document.removeEventListener("visibilitychange", onHide);
+    };
+  }, [currentUser?.id, signedIn]);
+
   // ── Secure login bootstrap ──────────────────────────────────────────────
   // Identity comes from the server session (httpOnly cookie). No session →
   // the app renders the sign-in screen and fetches NOTHING else.
@@ -226,6 +265,17 @@ export default function GoMinaApp() {
   };
 
   const handleLogout = async () => {
+    // Park the presence beat FIRST (session still valid), so the Signed-In
+    // Staff board flips offline deterministically; the logout POST then
+    // soft-ends the session row — that end time becomes "last logout".
+    try {
+      await fetch("/api/session/heartbeat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ active: false }),
+        keepalive: true,
+      });
+    } catch { /* best effort */ }
     try {
       await fetch("/api/auth/logout", { method: "POST" });
     } catch { /* best effort */ }
@@ -993,6 +1043,7 @@ export default function GoMinaApp() {
         onUserSelect={setCurrentUser}
         onLogout={handleLogout}
         onOpenChangePassword={() => setIsChangePwOpen(true)}
+        onOpenProfilePhoto={() => setIsProfilePhotoOpen(true)}
         bellSlot={
           <NotificationBell
             currentUser={currentUser}
@@ -1122,6 +1173,13 @@ export default function GoMinaApp() {
         isOpen={isChangePwOpen}
         onClose={() => setIsChangePwOpen(false)}
         currentUser={currentUser}
+      />
+
+      <ProfilePhotoModal
+        isOpen={isProfilePhotoOpen}
+        onClose={() => setIsProfilePhotoOpen(false)}
+        currentUser={currentUser}
+        onSaved={refreshAllData}
       />
 
       <ManageBusinessesModal

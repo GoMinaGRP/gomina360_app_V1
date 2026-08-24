@@ -1,5 +1,5 @@
 import crypto from "crypto";
-import { eq, and, inArray } from "drizzle-orm";
+import { eq, and, inArray, isNull } from "drizzle-orm";
 import { db } from "@/db";
 import { users, userSessions, userBusinessAccess } from "@/db/schema";
 
@@ -53,7 +53,20 @@ export async function createSession(userId: number) {
 
 export async function destroySession(token: string | null | undefined) {
   if (!token) return;
-  await db.delete(userSessions).where(eq(userSessions.tokenHash, sha256(token)));
+  // Soft end: keep the row so the access console can report the exact
+  // last-login/last-logout times; ended rows are never usable again.
+  await db
+    .update(userSessions)
+    .set({ endedAt: new Date(), endReason: "LOGOUT" })
+    .where(and(eq(userSessions.tokenHash, sha256(token)), isNull(userSessions.endedAt)));
+}
+
+/** Immediately end EVERY live session of a user (access cut, force sign-out). */
+export async function endAllSessionsForUser(userId: number, reason: string) {
+  await db
+    .update(userSessions)
+    .set({ endedAt: new Date(), endReason: reason })
+    .where(and(eq(userSessions.userId, userId), isNull(userSessions.endedAt)));
 }
 
 export function readSessionToken(request: Request): string | null {
@@ -85,21 +98,25 @@ export async function getSessionInfo(request: Request): Promise<SessionInfo | nu
     .select({ session: userSessions, user: users })
     .from(userSessions)
     .innerJoin(users, eq(users.id, userSessions.userId))
-    .where(eq(userSessions.tokenHash, tokenHash));
+    .where(and(eq(userSessions.tokenHash, tokenHash), isNull(userSessions.endedAt)));
   const row = rows[0];
   if (!row) return null;
   const now = new Date();
   if (row.session.expiresAt && new Date(row.session.expiresAt) < now) {
-    await db.delete(userSessions).where(eq(userSessions.id, row.session.id));
+    await db
+      .update(userSessions)
+      .set({ endedAt: new Date(), endReason: "EXPIRED" })
+      .where(eq(userSessions.id, row.session.id));
     return null;
   }
   if (row.user.isActive === false) return null;
-  // Sliding keepalive (throttled to ~1 write / 60s)
+  // Sliding keepalive (throttled to ~1 write / 60s). A real request also
+  // un-parks the session (revokedAt) — the user is demonstrably present.
   const lastSeen = row.session.lastSeenAt ? new Date(row.session.lastSeenAt).getTime() : 0;
-  if (Date.now() - lastSeen > 60_000) {
+  if (Date.now() - lastSeen > 60_000 || row.session.revokedAt) {
     await db
       .update(userSessions)
-      .set({ lastSeenAt: new Date() })
+      .set({ lastSeenAt: new Date(), revokedAt: null })
       .where(eq(userSessions.id, row.session.id));
   }
   return { sessionId: row.session.id, user: row.user };

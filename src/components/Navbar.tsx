@@ -13,10 +13,12 @@ import {
   Briefcase,
   CheckCircle2,
   KeyRound,
+  Camera,
 } from "lucide-react";
 import { CurrencyCode, CURRENCIES } from "@/lib/currency";
 import { synchronizeOfflineQueue, getOfflineQueue } from "@/lib/offlineSync";
 import AttendanceClock from "./AttendanceClock";
+import Avatar from "./Avatar";
 import { useClampedDropdown } from "./nav/useClampedDropdown";
 
 interface NavbarProps {
@@ -33,6 +35,8 @@ interface NavbarProps {
   onLogout?: () => void;
   /** Opens the self-service "Change Password" dialog (any signed-in role). */
   onOpenChangePassword?: () => void;
+  /** Opens the self-service "Profile Photo" manager (any signed-in role). */
+  onOpenProfilePhoto?: () => void;
   /** Notification bell element (rendered before the account menu). */
   bellSlot?: React.ReactNode;
 }
@@ -49,6 +53,7 @@ export default function Navbar({
   onUserSelect,
   onLogout,
   onOpenChangePassword,
+  onOpenProfilePhoto,
   bellSlot,
 }: NavbarProps) {
   const [isSyncing, setIsSyncing] = useState(false);
@@ -234,9 +239,14 @@ export default function Navbar({
               data-testid="user-menu-btn"
               className="flex items-center space-x-1.5 sm:space-x-2 px-1 sm:px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 transition"
             >
-              <div className="w-7 h-7 rounded-full bg-emerald-500/30 border border-emerald-400/50 flex items-center justify-center text-xs font-bold text-emerald-300">
-                {currentUser?.name ? currentUser.name.charAt(0) : "K"}
-              </div>
+              {/* Profile photo (stored with the user's profile) or initial fallback */}
+              <Avatar
+                name={currentUser?.name || "K"}
+                url={currentUser?.avatarUrl}
+                testid="user-menu-photo"
+                imgClass="w-7 h-7 rounded-full object-cover border border-emerald-400/50"
+                fallbackClass="w-7 h-7 rounded-full bg-emerald-500/30 border border-emerald-400/50 flex items-center justify-center text-xs font-bold text-emerald-300"
+              />
               <div className="text-left hidden sm:block">
                 <div className="text-xs font-semibold leading-none text-slate-100">
                   {currentUser?.name || "Kwame Mina"}
@@ -263,9 +273,13 @@ export default function Navbar({
                   </div>
                 </div>
                 <div className="px-3 py-2 flex items-center space-x-3 border-b border-slate-700/60 mb-1">
-                  <div className="w-10 h-10 rounded-full bg-emerald-500/25 border border-emerald-400/40 flex items-center justify-center font-black text-emerald-300">
-                    {currentUser?.name ? currentUser.name.charAt(0) : "?"}
-                  </div>
+                  <Avatar
+                    name={currentUser?.name || "?"}
+                    url={currentUser?.avatarUrl}
+                    testid="user-menu-photo-lg"
+                    imgClass="w-10 h-10 rounded-full object-cover border border-emerald-400/40"
+                    fallbackClass="w-10 h-10 rounded-full bg-emerald-500/25 border border-emerald-400/40 flex items-center justify-center font-black text-emerald-300"
+                  />
                   <div className="min-w-0">
                     <div className="text-sm font-bold text-white truncate">
                       {currentUser?.name}
@@ -279,6 +293,17 @@ export default function Navbar({
                   </div>
                 </div>
                 <div className="px-3 py-1 space-y-1">
+                  <button
+                    onClick={() => {
+                      setShowUserDropdown(false);
+                      onOpenProfilePhoto?.();
+                    }}
+                    data-testid="open-profile-photo"
+                    className="w-full text-left px-3 py-2 rounded-lg text-xs font-semibold hover:bg-emerald-500/15 text-slate-200 hover:text-emerald-300 transition flex items-center justify-between"
+                  >
+                    <span>My Profile Photo</span>
+                    <Camera className="w-3.5 h-3.5" />
+                  </button>
                   <button
                     onClick={() => {
                       setShowUserDropdown(false);

@@ -55,6 +55,7 @@ async function loginPersona(browser, creds, geo) {
     if (m.type() !== "error") return;
     const t = m.text();
     if (/Failed to load resource:.*status of (401|400|403|404|409)/.test(t)) return;
+    if (/Failed to load resource: net::/.test(t)) return; // transport noise (presence beacon on context close / unreachable legacy avatar URLs)
     pageErrors.push(t.slice(0, 250));
   });
   await page.setViewport({ width: 1440, height: 960 });

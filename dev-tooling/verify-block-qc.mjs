@@ -51,6 +51,7 @@ async function login(context) {
     if (m.type() !== "error") return;
     const t = m.text();
     if (/Failed to load resource: the server responded with a status of (401|404|400)/.test(t)) return; // expected: auth probe + negative API tests
+    if (/Failed to load resource: net::/.test(t)) return; // transport noise (presence beacon on context close / unreachable legacy avatar URLs)
     page.errors.push(t);
   });
   await page.setViewport({ width: 1440, height: 960 });

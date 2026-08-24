@@ -57,11 +57,23 @@ export const users = pgTable("users", {
   passwordChangedAt: timestamp("password_changed_at"),
   failedLoginAttempts: integer("failed_login_attempts").default(0),
   lockedUntil: timestamp("locked_until"),
+  // Access-control audit: set when the OWNER (or an owner-authorized user
+  // manager) REVOKES access entirely — sessions killed, password cleared,
+  // and re-admission requires an explicit owner re-enable + password reset.
+  // Null while access is ACTIVE or only temporarily DISABLED.
+  accessRevokedAt: timestamp("access_revoked_at"),
   createdAt: timestamp("created_at").defaultNow(),
 });
 
 // Server-side login sessions. Only the SHA-256 hash of the bearer token is
 // stored, so a database leak never exposes usable tokens.
+// ended_at/end_reason turn sign-out into a soft close so the Signed-In Staff
+// console can report every user's last LOGIN and last LOGOUT time:
+//   LOGOUT (user signed out) · DISABLED / REVOKED (access cut by management)
+//   · FORCE_LOGOUT (owner signed the user out) · EXPIRED (TTL purge).
+// revoked_at "parks" an otherwise-valid session: set by the client's
+// pagehide/hidden heartbeat when the browser session actually closes,
+// cleared again on the next active beat — drives the live Online/Idle chip.
 export const userSessions = pgTable("user_sessions", {
   id: serial("id").primaryKey(),
   userId: integer("user_id").notNull(),
@@ -69,6 +81,9 @@ export const userSessions = pgTable("user_sessions", {
   createdAt: timestamp("created_at").defaultNow(),
   expiresAt: timestamp("expires_at").notNull(),
   lastSeenAt: timestamp("last_seen_at").defaultNow(),
+  endedAt: timestamp("ended_at"),
+  endReason: text("end_reason"),
+  revokedAt: timestamp("revoked_at"),
 });
 
 // OWNER-granted business access (in addition to the user's primary
