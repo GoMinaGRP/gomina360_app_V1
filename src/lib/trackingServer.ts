@@ -8,10 +8,45 @@ import {
   notifications,
 } from "@/db/schema";
 import { eq } from "drizzle-orm";
-import { buildTrackingCode } from "@/lib/tracking";
+import { buildTrackingCode, googleMapsLink } from "@/lib/tracking";
 
 /** Server-side helpers for Customer Ordering & Tracking (used by the public
  *  /api/order and the staff /api/tracking routes). */
+
+/**
+ * Validate + normalize a Google-Maps delivery pin from a request body.
+ * Either BOTH deliveryLat & deliveryLng must be present, or neither.
+ * Returns null when absent, throws an error message when malformed.
+ */
+export function normalizeDeliveryPin(body: any): {
+  deliveryLat: number;
+  deliveryLng: number;
+  deliveryAccuracyM: number | null;
+  deliveryMapLink: string;
+  deliveryPinnedAt: Date;
+} | null {
+  const hasLat = body?.deliveryLat != null && body?.deliveryLat !== "";
+  const hasLng = body?.deliveryLng != null && body?.deliveryLng !== "";
+  if (!hasLat && !hasLng) return null;
+  if (!hasLat || !hasLng) throw new Error("The delivery pin needs both latitude and longitude.");
+  const lat = Number(body.deliveryLat);
+  const lng = Number(body.deliveryLng);
+  if (!Number.isFinite(lat) || !Number.isFinite(lng) || lat < -90 || lat > 90 || lng < -180 || lng > 180) {
+    throw new Error("The delivery pin coordinates are out of range.");
+  }
+  let accuracy: number | null = null;
+  if (body.deliveryAccuracyM != null && body.deliveryAccuracyM !== "") {
+    const a = Number(body.deliveryAccuracyM);
+    if (Number.isFinite(a) && a >= 0) accuracy = Math.min(a, 50000);
+  }
+  return {
+    deliveryLat: lat,
+    deliveryLng: lng,
+    deliveryAccuracyM: accuracy,
+    deliveryMapLink: googleMapsLink(lat, lng),
+    deliveryPinnedAt: new Date(),
+  };
+}
 
 export async function uniqueTrackingCode(bizCode: string | null | undefined): Promise<string> {
   for (let i = 0; i < 8; i++) {
@@ -199,7 +234,7 @@ export async function notifyOnlineOrder({
         userId: u.id,
         type: "ONLINE_ORDER_RECEIVED",
         title: `New online order ${code}`,
-        body: `${customerName} ordered ${itemsCount} item${itemsCount === 1 ? "" : "s"} (GH₵ ${Number(totalGhs || 0).toFixed(2)}) on the customer storefront. Open Customer Tracking to confirm it.`,
+        body: `${customerName} ordered ${itemsCount} item${itemsCount === 1 ? "" : "s"} (GH₵ ${Number(totalGhs || 0).toFixed(2)}) on the customer storefront. Open Customer Order & Tracking to confirm it.`,
         recordType: "customer_trackings",
         recordRef: code,
         businessId,

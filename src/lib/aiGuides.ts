@@ -2446,10 +2446,32 @@ export const GUIDES: Record<string, Record<string, SectionGuide>> = {
   /* ═══════════════ CUSTOMER ORDER TRACKING ═══════════════ */
   TRACKING: {
     TRACKING: {
-      title: "Customer Online Ordering & Tracking",
+      title: "Customer Order & Tracking — register, maps & delivery",
       intro:
-        "Customers order from {biz} themselves on the public /order storefront and follow every step on /track with their GM-* code — no login. Your team receives, confirms, processes, collects payment, dispatches (live Google Map) and completes each order here.",
+        "The Orders register lists every customer order with its tracking code, payment and fulfilment state — filterable by business, branch, customer, code, date and status, each one linked to Sales, Inventory, Finance and Delivery. Customers order from {biz} on the public /order storefront (pinning their exact delivery point on Google Maps) and follow everything on /track with their GM-* code — no login. Your team receives, confirms, processes, collects payment, dispatches (live Google Map) and completes each order here.",
       tasks: [
+        {
+          name: "Work the Orders register",
+          steps: [
+            "The Orders view is the default table: every customer order with its Order ID, GM-* tracking code, customer, business, branch, products, amount, payment status, order status and date.",
+            "Search by code, customer or product, and filter by Business, Branch, payment state, order status or a From/To date range — “Reset filters” clears everything.",
+            "Tap any row to open the order: the Linked-systems strip shows its Tracking code, Sales document, Finance transaction, Inventory reservation and Delivery state at a glance.",
+            "Confirm, Process, Ready-for-Pickup, Dispatch, Deliver and Complete run from that same panel (only valid next steps are offered); the customer sees every move on /track instantly.",
+            "The Live tracking view is the courier-focused list: dispatch sharing and per-order timelines.",
+          ],
+          tip: "The Owner sees and manages every business; managers and workers only the businesses they are assigned to — enforced server-side.",
+        },
+        {
+          name: "Deliver to a Google Maps pin",
+          steps: [
+            "Storefront delivery customers pin their exact doorstep: “Use my location” captures their GPS, the arrow pad adjusts the pin to the metre, and the live Google Map follows every move.",
+            "The pin is stored with the order as address + latitude + longitude and a ready-made Google Maps link.",
+            "Open the order here — the Delivery-location card shows the map, the coordinates, GPS accuracy and an “Open in Google Maps” button for the courier.",
+            "Once dispatched, “Courier route: live position → customer pin” opens turn-by-turn navigation from the courier's live GPS straight to the pin.",
+            "The customer's /track page shows their own pin (so they can spot a mistake immediately) plus the live courier map during dispatch.",
+          ],
+          tip: "The pin stays private: only the business team, the courier and the customer themself (with their tracking code) ever see it.",
+        },
         {
           name: "Process a new online order",
           steps: [
@@ -2495,6 +2517,7 @@ export const GUIDES: Record<string, Record<string, SectionGuide>> = {
           name: "Dispatch a delivery with live map tracking",
           steps: [
             "Create the order as “Delivery (live map)” and type the destination.",
+            "If the customer sent a Google Maps share link, paste it into “Google Maps pin” — their exact point is stored with the order.",
             "Move it to Dispatched when the courier leaves.",
             "Tap “Share my live location with the customer” on the dispatching device — the customer's /track page now shows a LIVE Google Map that follows the courier.",
             "Tap Stop or mark the order Delivered on arrival — the map closes automatically.",
@@ -2544,6 +2567,16 @@ export const GUIDES: Record<string, Record<string, SectionGuide>> = {
           q: "Does the customer get notifications?",
           match: ["notify", "notification", "alert", "updates"],
           answer: "Yes — on the /track page the customer can turn on “Notify me”: their device alerts them whenever the status changes. The page also auto-refreshes every 15 seconds and keeps a full timestamped update feed.",
+        },
+        {
+          q: "How do I filter or find a specific order?",
+          match: ["filter", "find", "search", "orders register", "date", "branch"],
+          answer: "In the Orders view: type a code/customer/product in search, then narrow by Business, Branch, payment state, order status and a From/To date range. Every filter stacks. The summary line shows how many orders match and the active-order value.",
+        },
+        {
+          q: "What is the delivery pin and who can see it?",
+          match: ["pin", "delivery location", "coordinates", "privacy", "maps pin", "drop off"],
+          answer: "Delivery customers pin their exact point on Google Maps at checkout (GPS + fine-tune arrows). It is stored with the order as address + coordinates and kept private: only scoped staff, the assigned courier and the customer themself (via their tracking code) can ever see it. Pickup customers instead see the branch's public pickup-point map.",
         },
       ],
     },

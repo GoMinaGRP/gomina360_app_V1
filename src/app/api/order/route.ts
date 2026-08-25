@@ -6,7 +6,9 @@ import {
   uniqueTrackingCode,
   linkCrmCustomer,
   notifyOnlineOrder,
+  normalizeDeliveryPin,
 } from "@/lib/trackingServer";
+import { googleMapsLink, haversineM } from "@/lib/tracking";
 
 /**
  * PUBLIC online checkout — customers order WITHOUT logging in.
@@ -30,6 +32,14 @@ export async function POST(request: NextRequest) {
     if (!biz || (biz.status || "").toUpperCase() === "INACTIVE") {
       return NextResponse.json({ success: false, error: "That business is not taking online orders." }, { status: 404 });
     }
+    // Switched off the customer storefront by the OWNER / authorized staff
+    // (Manage Businesses → Online).
+    if (biz.onlineOrderingEnabled === false) {
+      return NextResponse.json(
+        { success: false, error: "That business is not taking online orders right now." },
+        { status: 404 },
+      );
+    }
 
     const customerName = String(body.customerName || "").trim().slice(0, 80);
     if (customerName.length < 2) {
@@ -40,6 +50,19 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: "Please enter a phone number we can reach you on." }, { status: 400 });
     }
     const fulfillmentType = body.fulfillmentType === "DELIVERY" ? "DELIVERY" : "PICKUP";
+    // Fulfilment switches managed per branch (Manage Businesses → Online).
+    if (fulfillmentType === "PICKUP" && biz.pickupEnabled === false) {
+      return NextResponse.json(
+        { success: false, error: `${biz.name} is not offering pickup right now — please choose Delivery.` },
+        { status: 400 },
+      );
+    }
+    if (fulfillmentType === "DELIVERY" && biz.deliveryEnabled === false) {
+      return NextResponse.json(
+        { success: false, error: `${biz.name} is not offering delivery right now — please choose Pickup.` },
+        { status: 400 },
+      );
+    }
     const destinationAddress = String(body.destinationAddress || "").trim().slice(0, 200);
     if (fulfillmentType === "DELIVERY" && destinationAddress.length < 3) {
       return NextResponse.json(
@@ -50,6 +73,41 @@ export async function POST(request: NextRequest) {
     const paymentChoice = body.paymentChoice === "MOMO_NOW" ? "MOMO_NOW" : "ON_DELIVERY";
     const momoRef = String(body.momoRef || "").trim().slice(0, 40);
     const customerNote = String(body.note || "").trim().slice(0, 300);
+
+    // Google-Maps delivery pin (customer-picked on the storefront picker).
+    // Optional at the API level — a phone-fallback address alone still works —
+    // but the storefront strongly guides every delivery customer to pin.
+    let pin: ReturnType<typeof normalizeDeliveryPin> = null;
+    if (fulfillmentType === "DELIVERY") {
+      try {
+        pin = normalizeDeliveryPin(body);
+      } catch (e: any) {
+        return NextResponse.json({ success: false, error: e.message }, { status: 400 });
+      }
+    }
+
+    // Service-area enforcement: when the branch configured a delivery radius
+    // AND has a GPS anchor, an out-of-area delivery pin is refused up front —
+    // customers are only *shown* branches serving their location, and this is
+    // the server-side guarantee behind it. (Pickup remains available.)
+    if (
+      pin &&
+      biz.serviceRadiusKm != null &&
+      Number(biz.serviceRadiusKm) > 0 &&
+      biz.gpsLat != null &&
+      biz.gpsLng != null
+    ) {
+      const distM = haversineM(pin.deliveryLat, pin.deliveryLng, biz.gpsLat, biz.gpsLng);
+      if (distM > Number(biz.serviceRadiusKm) * 1000) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: `Your pinned point is ${(distM / 1000).toFixed(1)} km away — outside ${biz.name}'s delivery area (${Number(biz.serviceRadiusKm)} km around ${biz.branchLocation || biz.name}). Please choose Pickup or contact the branch.`,
+          },
+          { status: 400 },
+        );
+      }
+    }
 
     const cart: { inventoryId: number; quantity: number }[] = Array.isArray(body.items)
       ? body.items.slice(0, 50).map((li: any) => ({
@@ -117,6 +175,7 @@ export async function POST(request: NextRequest) {
         currency: "GHS",
         fulfillmentType,
         destinationAddress: fulfillmentType === "DELIVERY" ? destinationAddress : null,
+        ...(pin || {}), // deliveryLat/Lng/accuracyM + canonical mapLink + pinnedAt (DELIVERY only)
         status: "RECEIVED",
         statusHistory: [
           {
@@ -124,7 +183,9 @@ export async function POST(request: NextRequest) {
             at: now.toISOString(),
             by: customerName,
             byRole: "CUSTOMER",
-            note: "Online order placed on the GoMina 360 customer storefront.",
+            note: pin
+              ? "Online order placed on the GoMina 360 customer storefront — delivery point pinned on Google Maps."
+              : "Online order placed on the GoMina 360 customer storefront.",
           },
         ],
         orderSource: "ONLINE",
@@ -169,6 +230,13 @@ export async function POST(request: NextRequest) {
         currency: "GHS",
         fulfillmentType,
         destinationAddress: fulfillmentType === "DELIVERY" ? destinationAddress : null,
+        deliveryLocation: pin
+          ? { lat: pin.deliveryLat, lng: pin.deliveryLng, accuracyM: pin.deliveryAccuracyM, mapLink: googleMapsLink(pin.deliveryLat, pin.deliveryLng) }
+          : null,
+        pickupLocation:
+          fulfillmentType === "PICKUP" && biz.gpsLat != null && biz.gpsLng != null
+            ? { lat: biz.gpsLat, lng: biz.gpsLng, address: biz.branchLocation || null }
+            : null,
         status: "RECEIVED",
         payment: paymentChoice === "MOMO_NOW" ? "PENDING_CONFIRMATION" : "UNPAID",
       },

@@ -34,7 +34,7 @@ import { buildInventoryQr } from "@/lib/qrRegistry";
 import { generateAssetDownload, downloadFile, generateDownloadId, AssetDownloadFilters } from "@/lib/assetDownload";
 import { resolveLogo } from "@/lib/logos";
 import { generateInventoryDownload, generateInventoryDownloadId, InventoryDownloadFilters } from "@/lib/inventoryDownload";
-import { FileSpreadsheet, FileText, FileIcon, Download, SlidersHorizontal, X, QrCode } from "lucide-react";
+import { FileSpreadsheet, FileText, FileIcon, Download, SlidersHorizontal, X, QrCode, CheckCircle2 } from "lucide-react";
 
 interface SharedEnterpriseModuleProps {
   moduleType: "CUSTOMERS" | "SUPPLIERS" | "EMPLOYEES" | "ASSETS" | "INVENTORY" | "TRANSACTIONS";
@@ -119,6 +119,35 @@ export default function SharedEnterpriseModule({
   const [invQr, setInvQr] = useState("");
   const [qrScanOpen, setQrScanOpen] = useState(false);
   const [showPayroll, setShowPayroll] = useState(false);
+
+  // ─── Form completion UX: every successful save CLOSES the form, confirms
+  // with a flash, and the next open starts from a clean slate. ───
+  const [formFlash, setFormFlash] = useState("");
+  const flashSaved = (msg: string) => {
+    setFormFlash(msg);
+    setTimeout(() => setFormFlash((f) => (f === msg ? "" : f)), 4500);
+  };
+  const resetSharedForm = () => {
+    setName("");
+    setTypeOrCategory("GENERAL");
+    setPhone("+233 24 100 2000");
+    setEmail("contact@domain.gh");
+    setAmountGhs(5000);
+    setRoleOrType("Staff Member");
+    setPaymentMethod("MTN_MOMO");
+    setDescription("Transaction payment via MTN MoMo");
+    setTrxType("INCOME");
+    setInvQty(50);
+    setInvUnit("Units");
+    setInvCost(20);
+    setInvPrice(35);
+    setInvMin(10);
+    setInvPhotos([]);
+    setInvPhotoErr("");
+    setInvQr("");
+    setQrError("");
+    setLocation({ region: "", district: "", town: "" });
+  };
   const [qrScanTarget, setQrScanTarget] = useState<"lookup" | "inventory-form">("lookup");
   const [qrBusy, setQrBusy] = useState(false);
   const [qrError, setQrError] = useState("");
@@ -153,6 +182,7 @@ export default function SharedEnterpriseModule({
         setAssetQrPreset(code);
         setShowAssetModal(true);
       } else {
+        resetSharedForm();
         setInvQr(code);
         ensureInvBranch();
         setShowModal(true);
@@ -782,6 +812,8 @@ export default function SharedEnterpriseModule({
         addToOfflineQueue("TRANSACTION", payload);
         setIsSubmitting(false);
         setShowModal(false);
+        resetSharedForm();
+        flashSaved("Transaction queued offline — it posts automatically when you're back online.");
         onRefreshData();
         return;
       }
@@ -795,6 +827,10 @@ export default function SharedEnterpriseModule({
         if (res.ok) {
           onRefreshData();
           setShowModal(false);
+          resetSharedForm();
+          flashSaved("✓ Transaction saved — form closed. Add another anytime.");
+        } else {
+          setQrError("Save failed — please check the details and try again.");
         }
       } catch (err) {
         console.error("Error creating transaction:", err);
@@ -885,15 +921,22 @@ export default function SharedEnterpriseModule({
       if (res.ok) {
         onRefreshData();
         setShowModal(false);
-        setLocation({ region: "", district: "", town: "" });
-        setInvPhotos([]);
-        setInvPhotoErr("");
+        resetSharedForm();
         // Fresh registration → show the stored record with its printable QR label.
         if (entityType === "inventory" && body?.item) {
           setQrRecord({ kind: "inventory", record: body.item, justRegistered: true });
         }
-        setInvQr("");
-        setQrError("");
+        flashSaved(
+          entityType === "inventory"
+            ? "✓ Stock item saved — form closed. Scan its QR label to restock fast."
+            : entityType === "asset"
+            ? "✓ Asset saved — form closed."
+            : entityType === "supplier"
+            ? "✓ Supplier saved — form closed."
+            : entityType === "employee"
+            ? "✓ Employee saved — form closed."
+            : "✓ Customer saved — form closed."
+        );
       } else {
         // e.g. 409 duplicate QR — stay in the form and say why, plainly.
         setQrError(body?.error || "Save failed — please check the details and try again.");
@@ -1257,6 +1300,7 @@ export default function SharedEnterpriseModule({
                 setEmpEdit(null);
                 setShowEmpReg(true);
               } else {
+                resetSharedForm();
                 ensureInvBranch();
                 setShowModal(true);
               }
@@ -1269,6 +1313,19 @@ export default function SharedEnterpriseModule({
           </button>
         </div>
       </div>
+
+      {/* Save-confirmation flash — the form closed itself after a completed
+          save; this is the unmistakable receipt on the register page. */}
+      {formFlash && (
+        <div
+          className="px-4 py-2.5 rounded-xl bg-emerald-500/15 border border-emerald-500/40 text-emerald-300 text-xs font-bold flex items-center gap-2"
+          data-testid="sem-form-flash"
+          role="status"
+        >
+          <CheckCircle2 className="w-4 h-4 shrink-0" />
+          {formFlash}
+        </div>
+      )}
 
       {/* ── Asset & Inventory Download Filter Panel ── */}
       {(moduleType === "ASSETS" || moduleType === "INVENTORY") && showDownloadFilters && (currentUser?.role === "OWNER" || currentUser?.role === "GENERAL_MANAGER") && (

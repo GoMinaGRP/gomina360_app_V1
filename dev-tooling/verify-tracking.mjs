@@ -271,7 +271,7 @@ async function sectionE(pg) {
   await p1.setViewport({ width: 1440, height: 960 });
   await loginUi(p1, OWNER);
   await p1.waitForSelector('[data-testid="sidebar-tab-tracking"]', { timeout: 30000 });
-  ok("E1 owner sidebar shows Customer Tracking", true);
+  ok("E1 owner sidebar shows Customer Order & Tracking", true);
   await p1.click('[data-testid="sidebar-tab-tracking"]');
   await p1.waitForSelector('[data-testid="ct-root"]', { timeout: 30000 });
   const kpis = await p1.evaluate(() => ["ct-kpi-active", "ct-kpi-dispatched", "ct-kpi-ready", "ct-kpi-done"].every((id) => document.querySelector(`[data-testid="${id}"]`)));
@@ -326,7 +326,7 @@ async function sectionE(pg) {
   await p2.setViewport({ width: 1440, height: 960 });
   await loginUi(p2, WORKER);
   await p2.evaluate(() => {
-    const b = [...document.querySelectorAll("button")].find((x) => /Order Tracking/i.test(x.textContent || ""));
+    const b = [...document.querySelectorAll("button")].find((x) => /Order & Tracking/i.test(x.textContent || ""));
     b?.click();
   });
   await p2.waitForSelector('[data-testid="worker-tracking-tab"] [data-testid="ct-root"]', { timeout: 30000 });
@@ -345,7 +345,7 @@ async function sectionE(pg) {
   await p3.setViewport({ width: 1440, height: 960 });
   await loginUi(p3, BM);
   const bmHasEntry = await p3.evaluate(() => !!document.querySelector('[data-testid="sidebar-tab-tracking"]'));
-  ok("E5 branch manager sidebar shows Order Tracking", bmHasEntry);
+  ok("E5 branch manager sidebar shows Order & Tracking", bmHasEntry);
   await ctx3.close();
 
   /* E6 public customer page — dispatched order with live map */

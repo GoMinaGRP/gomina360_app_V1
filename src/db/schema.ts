@@ -141,6 +141,18 @@ export const businesses = pgTable("businesses", {
   gpsLat: doublePrecision("gps_lat"),
   gpsLng: doublePrecision("gps_lng"),
   gpsRadiusM: integer("gps_radius_m").default(300),
+  // Online ordering & service area — managed by the OWNER / authorized staff
+  // (Manage Businesses → Online); consumed by the public storefront
+  // (/api/menu picker, /api/order enforcement). onlineOrderingEnabled=false
+  // removes the unit from the customer storefront entirely. serviceRadiusKm
+  // NULL = no geographic limit; when set WITH a GPS anchor, out-of-area
+  // delivery pins are refused at checkout and the storefront's
+  // "serving my location" filter hides the unit beyond the radius.
+  onlineOrderingEnabled: boolean("online_ordering_enabled").default(true),
+  pickupEnabled: boolean("pickup_enabled").default(true),
+  deliveryEnabled: boolean("delivery_enabled").default(true),
+  serviceRadiusKm: doublePrecision("service_radius_km"),
+  serviceNote: text("service_note"), // customer-facing, e.g. "Free delivery in Spintex"
   createdAt: timestamp("created_at").defaultNow(),
 });
 
@@ -509,6 +521,18 @@ export const customerTrackings = pgTable("customer_trackings", {
   currency: text("currency").notNull().default("GHS"),
   fulfillmentType: text("fulfillment_type").notNull().default("PICKUP"), // 'PICKUP' | 'DELIVERY'
   destinationAddress: text("destination_address"), // delivery destination (customer's own)
+  // Google-Maps delivery pin — selected by the customer on the storefront at
+  // checkout (GPS capture + adjustable map pin) or attached by staff from a
+  // shared Google Maps link. Nullable: orders without a pin still work, staff
+  // confirm the address by phone. Privacy: surfaced ONLY to business-scoped
+  // staff / couriers and to the customer themself via their own tracking
+  // code — never listed anywhere else. Pickup orders point the customer at
+  // the branch pin instead (businesses.gps_lat / gps_lng).
+  deliveryLat: doublePrecision("delivery_lat"),
+  deliveryLng: doublePrecision("delivery_lng"),
+  deliveryAccuracyM: doublePrecision("delivery_accuracy_m"), // GPS accuracy when captured (metres)
+  deliveryMapLink: text("delivery_map_link"), // canonical https://maps.google.com/?q=lat,lng
+  deliveryPinnedAt: timestamp("delivery_pinned_at"),
   // Flow: RECEIVED → CONFIRMED → PROCESSING → READY | DISPATCHED → COMPLETED | DELIVERED (+ CANCELLED)
   status: text("status").notNull().default("RECEIVED"),
   statusHistory: jsonb("status_history").notNull().default([]), // [{status, at, by, byRole, note}]

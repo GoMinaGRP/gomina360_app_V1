@@ -25,6 +25,9 @@ export async function GET() {
     const result = [];
     for (const b of bizRows) {
       if ((b.status || "").toUpperCase() === "INACTIVE") continue;
+      // Units the OWNER / authorized staff switched OFF for online ordering
+      // never reach the customer storefront at all.
+      if (b.onlineOrderingEnabled === false) continue;
       const products = itemRows
         .filter((i) => i.businessId === b.id)
         .map((i) => ({
@@ -42,9 +45,24 @@ export async function GET() {
         businessId: b.id,
         businessName: b.name,
         businessCode: b.code,
+        // Branch identity — the storefront unit the order is linked to
+        // (Business → Branch → Products → Orders → Delivery → Tracking).
+        branchCode: b.code,
         category: b.category,
         branchName: b.branchLocation,
         contactPhone: b.contactPhone || null,
+        // Public shop coordinates — the customer's pickup point, and the
+        // storefront's starting centre for the delivery map. (Never any
+        // customer data.)
+        gpsLat: b.gpsLat ?? null,
+        gpsLng: b.gpsLng ?? null,
+        // Service area & fulfilment switches — drive the storefront's
+        // "serving my location" Google-Maps filter and the pickup/delivery
+        // options shown to the customer.
+        serviceRadiusKm: b.serviceRadiusKm ?? null,
+        serviceNote: b.serviceNote || null,
+        pickupEnabled: b.pickupEnabled !== false,
+        deliveryEnabled: b.deliveryEnabled !== false,
         products,
       });
     }

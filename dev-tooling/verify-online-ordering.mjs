@@ -242,12 +242,24 @@ async function sectionD(cookies) {
   await p1.click(`[data-testid="${firstAdd}"]`);
   await p1.waitForSelector('[data-testid="oo-cart"]', { timeout: 10000 });
   ok("D2 add-to-cart works (cart bar with total)", true);
-  await p1.click('[data-testid="oo-delivery"]');
+  // Fixed cart bar can overlap mid-page controls after scrollIntoView(nearest)
+  // on a phone viewport — centre them first, as a human would.
+  const centreClick = async (tid) => {
+    await p1.$eval(`[data-testid="${tid}"]`, (el) => el.scrollIntoView({ block: "center" }));
+    await new Promise((r) => setTimeout(r, 150));
+    await p1.click(`[data-testid="${tid}"]`);
+  };
+  await centreClick("oo-delivery");
   await p1.waitForSelector('[data-testid="oo-destination"]', { timeout: 5000 });
   await p1.type('[data-testid="oo-name"]', T + " UI");
   await p1.type('[data-testid="oo-phone"]', "0551444555");
   await p1.type('[data-testid="oo-destination"]', "TEST Kasoa toll booth");
-  await p1.click('[data-testid="oo-place"]');
+  // Delivery orders now pin their exact point on Google Maps (no geolocation
+  // permission here → drop the pin at the map centre, then confirm).
+  await p1.waitForSelector('[data-testid="oo-pin-root"]', { timeout: 10000 });
+  await centreClick("oo-pin-set");
+  await p1.waitForFunction(() => (document.querySelector('[data-testid="oo-pin-coords"]')?.textContent || "").includes(","), { timeout: 10000 });
+  await centreClick("oo-place");
   await p1.waitForSelector('[data-testid="oo-code"]', { timeout: 20000 });
   const uiCode = await p1.$eval('[data-testid="oo-code"]', (el) => el.textContent.trim());
   ok("D3 customer places the whole order on their phone → tracking code", /^GM-[A-Z0-9]+-[A-Z0-9]{6}$/.test(uiCode), uiCode);
@@ -336,8 +348,8 @@ async function cleanup() {
   const invNow = baseline.invTouched ? (await pg.query(`SELECT quantity FROM inventory_items WHERE id=$1`, [baseline.invTouched.id])).rows[0].quantity : null;
   ok("Z1 TEST orders/transactions/notifications/customers/sessions purged", leftovers === 0 && trxLeft === 0);
   ok("Z2 inventory restored to exact pre-test quantity", !baseline.invTouched || Math.abs(invNow - baseline.invTouched.qty) < 1e-9, `qty=${invNow} want ${baseline.invTouched?.qty}`);
-  const ntfLeft = (await pg.query(`SELECT count(*)::int c FROM notifications WHERE type='ONLINE_ORDER_RECEIVED'`)).rows[0].c;
-  ok("Z3 no online-order notifications left behind", ntfLeft === 0);
+  const ntfLeft = (await pg.query(`SELECT count(*)::int c FROM notifications WHERE type='ONLINE_ORDER_RECEIVED' AND id > $1`, [baseline.ntfMax])).rows[0].c;
+  ok("Z3 no TEST online-order notifications left behind (pre-existing user data untouched)", ntfLeft === 0);
   console.log(`   purged: trackings=${trk.rowCount} transactions=${trx.rowCount} notifications=${ntf.rowCount} customers=${cust.rowCount} sessions=${sess.rowCount}`);
 }
 

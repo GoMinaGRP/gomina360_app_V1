@@ -37,6 +37,9 @@ interface NavbarProps {
   onOpenChangePassword?: () => void;
   /** Opens the self-service "Profile Photo" manager (any signed-in role). */
   onOpenProfilePhoto?: () => void;
+  /** Opens Manage Units → Online Ordering & service areas (OWNER / GM / BM /
+   *  record managers only — the entry is hidden for everyone else). */
+  onOpenOnlineOrdering?: () => void;
   /** Notification bell element (rendered before the account menu). */
   bellSlot?: React.ReactNode;
 }
@@ -54,6 +57,7 @@ export default function Navbar({
   onLogout,
   onOpenChangePassword,
   onOpenProfilePhoto,
+  onOpenOnlineOrdering,
   bellSlot,
 }: NavbarProps) {
   const [isSyncing, setIsSyncing] = useState(false);
@@ -293,6 +297,19 @@ export default function Navbar({
                   </div>
                 </div>
                 <div className="px-3 py-1 space-y-1">
+                  {onOpenOnlineOrdering && (
+                    <button
+                      onClick={() => {
+                        setShowUserDropdown(false);
+                        onOpenOnlineOrdering();
+                      }}
+                      data-testid="open-online-ordering"
+                      className="w-full text-left px-3 py-2 rounded-lg text-xs font-semibold hover:bg-cyan-500/15 text-slate-200 hover:text-cyan-300 transition flex items-center justify-between"
+                    >
+                      <span>Online Storefront &amp; Delivery Areas</span>
+                      <Globe className="w-3.5 h-3.5" />
+                    </button>
+                  )}
                   <button
                     onClick={() => {
                       setShowUserDropdown(false);

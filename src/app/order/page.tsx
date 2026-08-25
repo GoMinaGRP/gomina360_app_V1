@@ -16,10 +16,15 @@ import {
   Banknote,
   Smartphone,
   MapPin,
+  Navigation,
+  Globe,
+  ZoomIn,
   User as UserIcon,
   Phone,
   ClipboardList,
 } from "lucide-react";
+import LocationPinPicker, { type PinValue } from "@/components/LocationPinPicker";
+import { googleMapsEmbed, businessServesLocation } from "@/lib/tracking";
 
 function fmtMoney(amount: number | null | undefined, currency = "GHS") {
   if (amount == null) return "—";
@@ -47,6 +52,7 @@ function OrderInner() {
   const [phone, setPhone] = useState("");
   const [fulfillment, setFulfillment] = useState<"PICKUP" | "DELIVERY">("PICKUP");
   const [destination, setDestination] = useState("");
+  const [deliveryPin, setDeliveryPin] = useState<PinValue | null>(null);
   const [payChoice, setPayChoice] = useState<"ON_DELIVERY" | "MOMO_NOW">("ON_DELIVERY");
   const [momoRef, setMomoRef] = useState("");
   const [note, setNote] = useState("");
@@ -54,6 +60,16 @@ function OrderInner() {
   const [orderError, setOrderError] = useState("");
   const [placed, setPlaced] = useState<any | null>(null);
   const [copied, setCopied] = useState(false);
+  // Google-Maps "serving my location" — the customer's fix (GPS or a dropped
+  // pin) used to show ONLY the businesses/branches whose delivery area
+  // covers them, plus the distance to each branch.
+  const [custLoc, setCustLoc] = useState<{ lat: number; lng: number; accuracyM?: number | null; source: "GPS" | "PIN" } | null>(null);
+  const [locBusy, setLocBusy] = useState(false);
+  const [locErr, setLocErr] = useState("");
+  const [locPinOpen, setLocPinOpen] = useState(false);
+  const [nearOnly, setNearOnly] = useState(true);
+  // Enlarged product image (customer tap-to-zoom lightbox).
+  const [lightbox, setLightbox] = useState<any | null>(null);
 
   useEffect(() => {
     (async () => {
@@ -94,6 +110,78 @@ function OrderInner() {
   const cartCount = cart.reduce((acc, l) => acc + l.qty, 0);
   const inCart = (id: number) => cart.find((l) => l.product.id === id)?.qty || 0;
 
+  // ── "Serving my location" (Google Maps) ─────────────────────────────
+  const useMyLocation = () => {
+    setLocErr("");
+    if (typeof navigator === "undefined" || !navigator.geolocation) {
+      setLocErr("This device has no GPS — drop a pin on the map instead.");
+      setLocPinOpen(true);
+      return;
+    }
+    setLocBusy(true);
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setCustLoc({ lat: pos.coords.latitude, lng: pos.coords.longitude, accuracyM: pos.coords.accuracy ?? null, source: "GPS" });
+        setNearOnly(true);
+        setLocBusy(false);
+        setLocPinOpen(false);
+      },
+      (err) => {
+        setLocBusy(false);
+        setLocErr(
+          err?.code === 1
+            ? "Location permission was denied — you can drop a pin on the map instead."
+            : "Could not get your location — you can drop a pin on the map instead.",
+        );
+        setLocPinOpen(true);
+      },
+      { enableHighAccuracy: true, timeout: 12000, maximumAge: 30000 },
+    );
+  };
+
+  const clearLoc = () => {
+    setCustLoc(null);
+    setLocErr("");
+    setLocPinOpen(false);
+    setNearOnly(true);
+  };
+
+  // Decorate each business with delivery-area evaluation for the fix.
+  const decorated = useMemo(
+    () =>
+      (menu || []).map((b: any) =>
+        custLoc ? { b, ...businessServesLocation(b, custLoc.lat, custLoc.lng) } : { b, serves: true, distanceM: null },
+      ),
+    [menu, custLoc],
+  );
+  const servingCount = decorated.filter((d) => d.serves).length;
+  // Near-me view: only serving branches. The currently-selected branch always
+  // stays visible (QR / shared links are honoured even outside the turf), and
+  // "Show all" is always one tap away.
+  const visibleBiz = useMemo(
+    () =>
+      custLoc && nearOnly
+        ? decorated.filter((d) => d.serves || d.b.businessId === bizId)
+        : decorated,
+    [decorated, custLoc, nearOnly, bizId],
+  );
+
+  // Keep the fulfilment choice valid for the selected branch's switches.
+  useEffect(() => {
+    if (!biz) return;
+    if (fulfillment === "DELIVERY" && biz.deliveryEnabled === false) setFulfillment("PICKUP");
+    if (fulfillment === "PICKUP" && biz.pickupEnabled === false && biz.deliveryEnabled !== false) setFulfillment("DELIVERY");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [bizId, biz?.deliveryEnabled, biz?.pickupEnabled]);
+
+  // Esc closes the product-image lightbox.
+  useEffect(() => {
+    if (!lightbox) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setLightbox(null); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [lightbox]);
+
   const add = (p: any, delta: number) => {
     setCart((c) => {
       const existing = c.find((l) => l.product.id === p.id);
@@ -113,6 +201,7 @@ function OrderInner() {
     setBizId(id);
     setCat("ALL");
     setSearch("");
+    setDeliveryPin(null); // different branch — re-pin the delivery point
   };
 
   const placeOrder = async () => {
@@ -123,6 +212,10 @@ function OrderInner() {
     if (phone.trim().length < 6) return setOrderError("Please enter a phone number we can reach you on.");
     if (fulfillment === "DELIVERY" && destination.trim().length < 3)
       return setOrderError("Tell us where to deliver (area / landmark).");
+    if (fulfillment === "DELIVERY" && !deliveryPin)
+      return setOrderError(
+        "Pin your exact delivery point on the Google Map below — tap “Use my location” (or drop the pin and fine-tune it with the arrows) so our courier finds you without calling.",
+      );
     setPlacing(true);
     try {
       const res = await fetch("/api/order", {
@@ -134,6 +227,13 @@ function OrderInner() {
           customerPhone: phone.trim(),
           fulfillmentType: fulfillment,
           destinationAddress: destination.trim(),
+          ...(fulfillment === "DELIVERY" && deliveryPin
+            ? {
+                deliveryLat: deliveryPin.lat,
+                deliveryLng: deliveryPin.lng,
+                deliveryAccuracyM: deliveryPin.accuracyM ?? undefined,
+              }
+            : {}),
           paymentChoice: payChoice,
           momoRef: momoRef.trim(),
           note: note.trim(),
@@ -193,26 +293,148 @@ function OrderInner() {
               </p>
             </section>
 
+            {/* Branches serving my location (Google Maps) */}
+            <section className="bg-slate-900 border border-slate-800 rounded-2xl p-3.5 space-y-2" data-testid="oo-serve-card">
+              <div className="flex flex-wrap items-center gap-2">
+                <h2 className="text-[12px] font-extrabold text-white flex items-center gap-1.5 flex-1 min-w-[140px]">
+                  <Globe className="w-4 h-4 text-emerald-300" /> Branches serving your location
+                </h2>
+                {!custLoc ? (
+                  <>
+                    <button
+                      onClick={useMyLocation}
+                      disabled={locBusy}
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 text-white text-[11px] font-bold"
+                      data-testid="oo-locate"
+                    >
+                      <Navigation className={`w-3.5 h-3.5 ${locBusy ? "animate-spin" : ""}`} />
+                      {locBusy ? "Locating…" : "Use my location"}
+                    </button>
+                    <button
+                      onClick={() => setLocPinOpen((o) => !o)}
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 text-[11px] font-bold"
+                      data-testid="oo-locate-pin"
+                    >
+                      <MapPin className="w-3.5 h-3.5 text-cyan-300" /> Drop a pin
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <button
+                      onClick={() => setNearOnly(true)}
+                      className={`px-2.5 py-1.5 rounded-lg text-[10px] font-bold border transition ${
+                        nearOnly
+                          ? "bg-emerald-500/20 border-emerald-500/50 text-emerald-300"
+                          : "bg-slate-800 border-slate-700 text-slate-400 hover:text-slate-200"
+                      }`}
+                      data-testid="oo-locate-nearonly"
+                    >
+                      Serving me ({servingCount})
+                    </button>
+                    <button
+                      onClick={() => setNearOnly(false)}
+                      className={`px-2.5 py-1.5 rounded-lg text-[10px] font-bold border transition ${
+                        !nearOnly
+                          ? "bg-cyan-500/20 border-cyan-500/50 text-cyan-300"
+                          : "bg-slate-800 border-slate-700 text-slate-400 hover:text-slate-200"
+                      }`}
+                      data-testid="oo-locate-showall"
+                    >
+                      All ({decorated.length})
+                    </button>
+                    <button
+                      onClick={clearLoc}
+                      className="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-400 text-[10px] font-bold"
+                      data-testid="oo-locate-clear"
+                    >
+                      Clear
+                    </button>
+                  </>
+                )}
+              </div>
+              {locErr && (
+                <p className="text-[10px] text-amber-300" data-testid="oo-locate-error">{locErr}</p>
+              )}
+              {custLoc && (
+                <p className="text-[10px] text-slate-400" data-testid="oo-locate-state">
+                  <span className="text-emerald-300 font-bold">{custLoc.source === "GPS" ? "GPS fix" : "Pinned"}</span>{" "}
+                  <span className="font-mono">{custLoc.lat.toFixed(5)}, {custLoc.lng.toFixed(5)}</span>
+                  {custLoc.accuracyM ? ` · ±${Math.round(custLoc.accuracyM)} m` : ""} — showing{" "}
+                  <span className="font-bold text-white">{servingCount}</span> of {decorated.length} branches whose
+                  delivery area covers you, with the distance to each.
+                </p>
+              )}
+              {locPinOpen && !custLoc && (
+                <LocationPinPicker
+                  value={null}
+                  onChange={(p) => {
+                    if (p && typeof p !== "function") {
+                      setCustLoc({ lat: p.lat, lng: p.lng, accuracyM: p.accuracyM ?? null, source: "PIN" });
+                      setNearOnly(true);
+                      setLocPinOpen(false);
+                      setLocErr("");
+                    }
+                  }}
+                  defaultCenter={null}
+                  prefix="oo-loc-pin"
+                  hint="Drop the pin where you are — we show only the branches that deliver to that point."
+                />
+              )}
+            </section>
+
             {/* Business picker */}
-            <div className="flex gap-2 overflow-x-auto pb-1">
-              {menu.map((b) => (
+            {visibleBiz.length === 0 ? (
+              <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 text-center space-y-2" data-testid="oo-no-biz">
+                <p className="text-sm text-slate-300 font-bold">No branch currently delivers to this location.</p>
+                <p className="text-[11px] text-slate-500">
+                  You can still browse every branch and choose pickup — or try a different spot.
+                </p>
                 <button
-                  key={b.businessId}
-                  onClick={() => pickBiz(b.businessId)}
-                  className={`shrink-0 px-3 py-2 rounded-xl border text-left transition ${
-                    bizId === b.businessId
-                      ? "bg-cyan-500/15 border-cyan-500/60 text-white"
-                      : "bg-slate-900 border-slate-800 text-slate-300 hover:border-slate-700"
-                  }`}
-                  data-testid={`oo-biz-${b.businessId}`}
+                  onClick={() => setNearOnly(false)}
+                  className="px-3 py-2 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white text-[11px] font-bold"
+                  data-testid="oo-no-biz-showall"
                 >
-                  <div className="text-[12px] font-extrabold whitespace-nowrap">{b.businessName}</div>
-                  <div className="text-[9px] text-slate-400 whitespace-nowrap">
-                    {b.branchName} · {b.products.length} product{b.products.length === 1 ? "" : "s"}
-                  </div>
+                  Show all branches
                 </button>
-              ))}
-            </div>
+              </div>
+            ) : (
+              <div className="flex gap-2 overflow-x-auto pb-1">
+                {visibleBiz.map(({ b, serves, distanceM }) => (
+                  <button
+                    key={b.businessId}
+                    onClick={() => pickBiz(b.businessId)}
+                    className={`shrink-0 px-3 py-2 rounded-xl border text-left transition ${
+                      bizId === b.businessId
+                        ? "bg-cyan-500/15 border-cyan-500/60 text-white"
+                        : "bg-slate-900 border-slate-800 text-slate-300 hover:border-slate-700"
+                    }`}
+                    data-testid={`oo-biz-${b.businessId}`}
+                  >
+                    <div className="text-[12px] font-extrabold whitespace-nowrap">{b.businessName}</div>
+                    <div className="text-[9px] text-slate-400 whitespace-nowrap">
+                      {b.branchName} · {b.products.length} product{b.products.length === 1 ? "" : "s"}
+                    </div>
+                    <div className="flex items-center gap-1 mt-0.5">
+                      {distanceM != null && (
+                        <span className="text-[9px] font-bold text-emerald-300" data-testid={`oo-biz-dist-${b.businessId}`}>
+                          {(distanceM / 1000).toFixed(1)} km
+                        </span>
+                      )}
+                      {!serves && (
+                        <span className="text-[9px] font-bold text-amber-400" data-testid={`oo-biz-out-${b.businessId}`}>
+                          pickup only here
+                        </span>
+                      )}
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )}
+            {biz?.serviceNote && (
+              <p className="text-[10px] text-cyan-300/90 px-1" data-testid="oo-biz-note">
+                {biz.serviceNote}
+              </p>
+            )}
 
             {biz && (
               <>
@@ -256,7 +478,18 @@ function OrderInner() {
                       return (
                         <div key={p.id} className="bg-slate-900 border border-slate-800 rounded-2xl p-3 flex flex-col" data-testid={`oo-prod-${p.id}`}>
                           {p.photo ? (
-                            <img src={p.photo} alt={p.name} className="w-full h-20 object-cover rounded-xl mb-2 border border-slate-800" />
+                            <button
+                              type="button"
+                              onClick={() => setLightbox(p)}
+                              className="relative w-full mb-2 group cursor-zoom-in"
+                              title="Tap to enlarge"
+                              data-testid={`oo-photo-${p.id}`}
+                            >
+                              <img src={p.photo} alt={p.name} className="w-full h-20 object-cover rounded-xl border border-slate-800 group-hover:border-cyan-500/50 transition" />
+                              <span className="absolute bottom-1 right-1 p-1 rounded-md bg-black/60 text-white opacity-80 group-hover:opacity-100">
+                                <ZoomIn className="w-3 h-3" />
+                              </span>
+                            </button>
                           ) : (
                             <div className="w-full h-20 rounded-xl mb-2 bg-slate-800/70 border border-slate-800 flex items-center justify-center">
                               <PackageCheck className="w-6 h-6 text-slate-600" />
@@ -324,34 +557,72 @@ function OrderInner() {
 
                   <div className="grid grid-cols-2 gap-2" data-testid="oo-fulfillment">
                     <button
-                      onClick={() => setFulfillment("PICKUP")}
-                      className={`px-3 py-2.5 rounded-xl border text-left transition ${fulfillment === "PICKUP" ? "bg-emerald-500/15 border-emerald-500/60" : "bg-slate-800 border-slate-700"}`}
+                      onClick={() => biz.pickupEnabled !== false && setFulfillment("PICKUP")}
+                      disabled={biz.pickupEnabled === false}
+                      className={`px-3 py-2.5 rounded-xl border text-left transition disabled:opacity-40 disabled:cursor-not-allowed ${fulfillment === "PICKUP" ? "bg-emerald-500/15 border-emerald-500/60" : "bg-slate-800 border-slate-700"}`}
                       data-testid="oo-pickup"
                     >
                       <PackageCheck className={`w-4 h-4 ${fulfillment === "PICKUP" ? "text-emerald-300" : "text-slate-400"}`} />
                       <div className="text-[12px] font-extrabold mt-1">Pickup</div>
-                      <div className="text-[9px] text-slate-400">Collect at {biz.branchName}</div>
+                      <div className="text-[9px] text-slate-400">
+                        {biz.pickupEnabled === false ? "Not offered by this branch" : `Collect at ${biz.branchName}`}
+                      </div>
                     </button>
                     <button
-                      onClick={() => setFulfillment("DELIVERY")}
-                      className={`px-3 py-2.5 rounded-xl border text-left transition ${fulfillment === "DELIVERY" ? "bg-emerald-500/15 border-emerald-500/60" : "bg-slate-800 border-slate-700"}`}
+                      onClick={() => biz.deliveryEnabled !== false && setFulfillment("DELIVERY")}
+                      disabled={biz.deliveryEnabled === false}
+                      className={`px-3 py-2.5 rounded-xl border text-left transition disabled:opacity-40 disabled:cursor-not-allowed ${fulfillment === "DELIVERY" ? "bg-emerald-500/15 border-emerald-500/60" : "bg-slate-800 border-slate-700"}`}
                       data-testid="oo-delivery"
                     >
                       <Truck className={`w-4 h-4 ${fulfillment === "DELIVERY" ? "text-emerald-300" : "text-slate-400"}`} />
                       <div className="text-[12px] font-extrabold mt-1">Delivery</div>
-                      <div className="text-[9px] text-slate-400">Track the courier live on the map</div>
+                      <div className="text-[9px] text-slate-400">
+                        {biz.deliveryEnabled === false
+                          ? "Not offered by this branch"
+                          : biz.serviceRadiusKm != null
+                          ? `Within ${biz.serviceRadiusKm} km · live courier map`
+                          : "Track the courier live on the map"}
+                      </div>
                     </button>
                   </div>
                   {fulfillment === "DELIVERY" && (
-                    <div className="relative">
-                      <MapPin className="w-3.5 h-3.5 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2" />
-                      <input
-                        value={destination}
-                        onChange={(e) => setDestination(e.target.value)}
-                        placeholder="Where should we deliver? (area / landmark)"
-                        className="w-full pl-8 pr-3 py-2.5 bg-slate-800 border border-slate-700 focus:border-cyan-500/60 rounded-xl text-sm text-white outline-none"
-                        data-testid="oo-destination"
+                    <div className="space-y-2" data-testid="oo-delivery-block">
+                      <div className="relative">
+                        <MapPin className="w-3.5 h-3.5 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2" />
+                        <input
+                          value={destination}
+                          onChange={(e) => setDestination(e.target.value)}
+                          placeholder="Delivery address (area / landmark / house no.)"
+                          className="w-full pl-8 pr-3 py-2.5 bg-slate-800 border border-slate-700 focus:border-cyan-500/60 rounded-xl text-sm text-white outline-none"
+                          data-testid="oo-destination"
+                        />
+                      </div>
+                      <LocationPinPicker
+                        value={deliveryPin}
+                        onChange={setDeliveryPin}
+                        defaultCenter={biz.gpsLat != null && biz.gpsLng != null ? { lat: biz.gpsLat, lng: biz.gpsLng } : null}
+                        prefix="oo-pin"
+                        hint="The courier navigates to this exact pin — only the branch team and the courier delivering your order can see it."
                       />
+                    </div>
+                  )}
+                  {fulfillment === "PICKUP" && biz.gpsLat != null && biz.gpsLng != null && (
+                    <div className="rounded-xl border border-slate-700 bg-slate-900/60 overflow-hidden" data-testid="oo-pickup-map">
+                      <p className="px-3 pt-2.5 pb-2 text-[10px] font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1">
+                        <MapPin className="w-3.5 h-3.5 text-emerald-300" /> Pickup point — {biz.branchName}
+                      </p>
+                      <iframe
+                        key={`${biz.gpsLat},${biz.gpsLng}`}
+                        title="Branch pickup point — Google Maps"
+                        src={googleMapsEmbed(biz.gpsLat, biz.gpsLng, 16)}
+                        className="w-full h-[200px] bg-slate-800"
+                        loading="lazy"
+                        referrerPolicy="no-referrer-when-downgrade"
+                        data-testid="oo-pickup-map-frame"
+                      />
+                      <p className="px-3 py-2 text-[10px] text-slate-500">
+                        Collect your order here once it shows “Ready for Pickup” on the tracking page.
+                      </p>
                     </div>
                   )}
 
@@ -417,6 +688,40 @@ function OrderInner() {
               {placed.fulfillmentType === "DELIVERY" ? "Delivery" : "Pickup"} ·{" "}
               {placed.payment === "PENDING_CONFIRMATION" ? "MoMo payment being confirmed" : "Pay on pickup/delivery"}
             </div>
+            {placed.deliveryLocation && (
+              <div className="rounded-xl border border-slate-700 overflow-hidden text-left" data-testid="oo-success-map">
+                <p className="px-3 pt-2 pb-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1">
+                  <MapPin className="w-3.5 h-3.5 text-cyan-300" /> Your pinned delivery point
+                </p>
+                <iframe
+                  key={`${placed.deliveryLocation.lat},${placed.deliveryLocation.lng}`}
+                  title="Your pinned delivery point — Google Maps"
+                  src={googleMapsEmbed(placed.deliveryLocation.lat, placed.deliveryLocation.lng, 17)}
+                  className="w-full h-[180px] bg-slate-800"
+                  loading="lazy"
+                  referrerPolicy="no-referrer-when-downgrade"
+                  data-testid="oo-success-map-frame"
+                />
+                <p className="px-3 py-1.5 text-[10px] text-slate-500 font-mono">
+                  {Number(placed.deliveryLocation.lat).toFixed(6)}, {Number(placed.deliveryLocation.lng).toFixed(6)}
+                </p>
+              </div>
+            )}
+            {placed.pickupLocation && (
+              <div className="rounded-xl border border-slate-700 overflow-hidden text-left" data-testid="oo-success-pickup">
+                <p className="px-3 pt-2 pb-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1">
+                  <MapPin className="w-3.5 h-3.5 text-emerald-300" /> Pickup point — {placed.branchName}
+                </p>
+                <iframe
+                  key={`${placed.pickupLocation.lat},${placed.pickupLocation.lng}`}
+                  title="Branch pickup point — Google Maps"
+                  src={googleMapsEmbed(placed.pickupLocation.lat, placed.pickupLocation.lng, 16)}
+                  className="w-full h-[180px] bg-slate-800"
+                  loading="lazy"
+                  referrerPolicy="no-referrer-when-downgrade"
+                />
+              </div>
+            )}
             <div className="flex justify-center gap-2 pt-1">
               <button
                 onClick={async () => {
@@ -448,6 +753,60 @@ function OrderInner() {
           </section>
         )}
       </main>
+
+      {/* Product image lightbox — tap a product photo to enlarge it. */}
+      {lightbox && (
+        <div
+          className="fixed inset-0 z-[70] bg-black/85 backdrop-blur-sm flex items-center justify-center p-4"
+          onClick={() => setLightbox(null)}
+          data-testid="oo-lightbox"
+          role="dialog"
+          aria-modal="true"
+          aria-label={`Enlarged photo of ${lightbox.name}`}
+        >
+          <div
+            className="w-full max-w-lg bg-slate-900 border border-slate-700 rounded-2xl overflow-hidden shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between px-4 py-2.5 border-b border-slate-800">
+              <div className="min-w-0">
+                <div className="text-sm font-extrabold text-white truncate">{lightbox.name}</div>
+                <div className="text-[10px] text-slate-400">
+                  {lightbox.category} · {fmtMoney(lightbox.price)} / {lightbox.unit} · {lightbox.available} {lightbox.unit} left
+                </div>
+              </div>
+              <button
+                onClick={() => setLightbox(null)}
+                className="p-1.5 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-white shrink-0"
+                data-testid="oo-lightbox-close"
+                aria-label="Close"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <img
+              src={lightbox.photo}
+              alt={lightbox.name}
+              className="w-full max-h-[55vh] object-contain bg-slate-950"
+              data-testid="oo-lightbox-img"
+            />
+            <div className="px-4 py-3 flex items-center justify-between gap-3">
+              <div className="text-lg font-black text-emerald-300">{fmtMoney(lightbox.price)}</div>
+              <button
+                onClick={() => {
+                  add(lightbox, 1);
+                  setLightbox(null);
+                }}
+                disabled={lightbox.available <= 0}
+                className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-cyan-600 hover:bg-cyan-500 disabled:opacity-40 text-white text-[12px] font-bold"
+                data-testid="oo-lightbox-add"
+              >
+                <Plus className="w-4 h-4" /> Add to cart
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Cart bar */}
       {!placed && cart.length > 0 && (

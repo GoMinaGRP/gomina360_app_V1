@@ -89,6 +89,9 @@ export default function GoMinaApp() {
   const [offlineQueueCount, setOfflineQueueCount] = useState<number>(0);
   const [isNewBusinessModalOpen, setIsNewBusinessModalOpen] = useState(false);
   const [isManageBizOpen, setIsManageBizOpen] = useState(false);
+  // Deep-link target when opened from the navbar "Online storefront & delivery
+  // areas" entry (branch managers land straight on their own unit's panel).
+  const [manageBizOnlineId, setManageBizOnlineId] = useState<number | null>(null);
   // Right-side navigation & "you are here" panel — drawer below xl.
   const [contextNavOpen, setContextNavOpen] = useState(false);
   const [isUserAccessOpen, setIsUserAccessOpen] = useState(false);
@@ -497,6 +500,7 @@ export default function GoMinaApp() {
         "BRANCH_SALES",
         "WORKERS_MANAGE",
         "BRANCH_ASSETS",
+        "TRACKING", // Customer Order & Tracking register (scoped server-side to own branch)
       ]);
       // Managers the OWNER trusted with CCTV may open the Integrations Hub,
       // where the CCTV Command Center stays scoped to their authorised branches.
@@ -651,9 +655,15 @@ export default function GoMinaApp() {
           currentCurrency={currentCurrency}
           onSelectTab={setActiveTab}
           onOpenNewBusinessModal={() => setIsNewBusinessModalOpen(true)}
-          onOpenManageBusinesses={() => setIsManageBizOpen(true)}
+          onOpenManageBusinesses={() => { setManageBizOnlineId(null); setIsManageBizOpen(true); }}
           onOpenUserAccess={() => setIsUserAccessOpen(true)}
           canManageBusinesses={currentUser?.role === "OWNER"}
+          canManageOnline={
+            currentUser?.role === "OWNER" ||
+            currentUser?.role === "GENERAL_MANAGER" ||
+            currentUser?.role === "BRANCH_MANAGER" ||
+            !!currentUser?.canManageRecords
+          }
           canManageUsersConsole={currentUser?.role === "OWNER" || !!currentUser?.canManageUsers}
           checklists={checklistData}
         />
@@ -905,7 +915,7 @@ export default function GoMinaApp() {
       );
     }
 
-    // Customer Tracking console — Owner/GM (all businesses) and Branch
+    // Customer Order & Tracking console — Owner/GM (all businesses) and Branch
     // Managers (their branch) via the sidebar. Server enforces the same
     // Business/Branch access scoping as the rest of the platform. Workers
     // get the same console embedded as a tab inside their sales workspace.
@@ -1059,6 +1069,25 @@ export default function GoMinaApp() {
         onLogout={handleLogout}
         onOpenChangePassword={() => setIsChangePwOpen(true)}
         onOpenProfilePhoto={() => setIsProfilePhotoOpen(true)}
+        onOpenOnlineOrdering={
+          currentUser?.role === "OWNER" ||
+          currentUser?.role === "GENERAL_MANAGER" ||
+          currentUser?.role === "BRANCH_MANAGER" ||
+          !!currentUser?.canManageRecords
+            ? () => {
+                // Branch managers land straight on their own unit's Online
+                // panel; everyone else picks a unit from the list first.
+                const preset =
+                  currentUser?.role === "BRANCH_MANAGER"
+                    ? currentUser?.assignedBusinessId ?? null
+                    : businesses.length === 1
+                    ? businesses[0].id
+                    : null;
+                setManageBizOnlineId(preset);
+                setIsManageBizOpen(true);
+              }
+            : undefined
+        }
         bellSlot={
           <NotificationBell
             currentUser={currentUser}
@@ -1202,6 +1231,7 @@ export default function GoMinaApp() {
         onClose={() => setIsManageBizOpen(false)}
         businesses={businesses}
         currentUser={currentUser}
+        initialOnlineBizId={manageBizOnlineId}
         onChanged={refreshAllData}
         onAddNew={() => setIsNewBusinessModalOpen(true)}
         onDeleted={(code) => {

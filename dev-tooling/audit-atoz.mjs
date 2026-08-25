@@ -223,7 +223,7 @@ async function phaseD(browser, errors) {
   console.log("\n— D · Shared module internals —");
   const { ctx, page } = await newContext(browser, "D-shared", errors);
   await loginUi(page, CREDS.owner);
-  const modules = ["Sales & Payments", "Finance & Reports", "Customers & CRM", "Customer Tracking", "Suppliers & Vendors", "Employees & Payroll", "Assets & Equipment", "Inventory & Stock", "Transactions & MoMo"];
+  const modules = ["Sales & Payments", "Finance & Reports", "Customers & CRM", "Customer Order & Tracking", "Suppliers & Vendors", "Employees & Payroll", "Assets & Equipment", "Inventory & Stock", "Transactions & MoMo"];
   const dead = [];
   let tabs = 0;
   for (const mod of modules) {
@@ -297,7 +297,7 @@ async function phaseE(browser, errors) {
   // Worker
   const { ctx: c3, page: pw } = await newContext(browser, "E-worker", errors);
   await loginUi(pw, CREDS.worker);
-  const tabs = ["Customers", "Inventory", "Order Tracking", "My Activity", "Record Sale"];
+  const tabs = ["Customers", "Inventory", "Order & Tracking", "My Activity", "Record Sale"];
   let wFail = [];
   for (const t of tabs) {
     const did = await pw.evaluate((label) => {
@@ -386,7 +386,7 @@ async function phaseF(browser, errors, cookies) {
     staffTxt.slice(0, 160));
   // its order-tracking console works and is empty-scoped
   const did = await pw.evaluate(() => {
-    const b = [...document.querySelectorAll("button")].find((x) => (x.textContent || "").trim() === "Order Tracking");
+    const b = [...document.querySelectorAll("button")].find((x) => (x.textContent || "").trim() === "Order & Tracking");
     if (b) { b.click(); return true; }
     return false;
   }, "");

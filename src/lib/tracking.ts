@@ -145,12 +145,93 @@ const ROLE_LABELS: Record<string, string> = {
   WORKER: "Branch staff",
 };
 
+/** Canonical Google Maps link for a pin (opens the place page / directions). */
+export function googleMapsLink(lat: number, lng: number): string {
+  return `https://maps.google.com/?q=${Number(lat).toFixed(6)},${Number(lng).toFixed(6)}`;
+}
+
+/** Google Maps LIVE follow URL (embeddable iframe src with the pin centred). */
+export function googleMapsEmbed(lat: number, lng: number, zoom = 17): string {
+  return `https://maps.google.com/maps?q=${Number(lat).toFixed(6)},${Number(lng).toFixed(6)}&z=${zoom}&hl=en&output=embed`;
+}
+
+/** Google Maps driving-route URL between two pins (staff/courier navigation). */
+export function googleMapsRouteLink(
+  fromLat: number, fromLng: number, toLat: number, toLng: number,
+): string {
+  return `https://www.google.com/maps/dir/?api=1&origin=${fromLat},${fromLng}&destination=${toLat},${toLng}&travelmode=driving`;
+}
+
+/**
+ * Extract a pin from anything a customer/staff member pastes from Google
+ * Maps — "…/@5.6037,-0.1870,17z", "…?q=5.6037,-0.1870", "…?query=…", or a
+ * bare "5.6037, -0.1870" coordinate pair. Returns null when nothing valid.
+ */
+export function parseGoogleMapsPin(text: string): { lat: number; lng: number } | null {
+  const s = String(text || "").trim();
+  if (!s) return null;
+  let m = s.match(/@(-?\d+(?:\.\d+)?),\s*(-?\d+(?:\.\d+)?)/) ||
+    s.match(/[?&](?:q|query|ll|destination|origin)=(-?\d+(?:\.\d+)?),\s*(-?\d+(?:\.\d+)?)/) ||
+    s.match(/^(?:\s*pin\s*:?)?\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*$/i);
+  if (!m) return null;
+  const lat = Number(m[1]);
+  const lng = Number(m[2]);
+  if (!Number.isFinite(lat) || !Number.isFinite(lng) || lat < -90 || lat > 90 || lng < -180 || lng > 180) return null;
+  return { lat, lng };
+}
+
+/** Small lat/lng nudge (metres) — the storefront "adjust the pin" arrows. */
+export function nudgeLatLng(lat: number, lng: number, dNorthM: number, dEastM: number) {
+  const newLat = Math.max(-90, Math.min(90, lat + dNorthM / 110540));
+  const lngMeters = 111320 * Math.cos((newLat * Math.PI) / 180) || 1;
+  const newLng = Math.max(-180, Math.min(180, lng + dEastM / lngMeters));
+  return { lat: newLat, lng: newLng };
+}
+
+/** Great-circle distance in metres between two GPS fixes (haversine). Pure &
+ *  isomorphic — used by the storefront's "serving my location" filter and by
+ *  the order API's service-area enforcement. */
+export function haversineM(lat1: number, lng1: number, lat2: number, lng2: number): number {
+  const R = 6371000;
+  const dLat = ((lat2 - lat1) * Math.PI) / 180;
+  const dLng = ((lng2 - lng1) * Math.PI) / 180;
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos((lat1 * Math.PI) / 180) * Math.cos((lat2 * Math.PI) / 180) * Math.sin(dLng / 2) ** 2;
+  return 2 * R * Math.asin(Math.min(1, Math.sqrt(a)));
+}
+
+/** A business/branch "serves" a customer location when no delivery-area
+ *  radius is configured, or the branch has no GPS anchor to measure from
+ *  (never hide a unit we cannot evaluate), or the customer is inside the
+ *  radius. Returns the distance in metres when computable. */
+export function businessServesLocation(
+  biz: { serviceRadiusKm?: number | null; gpsLat?: number | null; gpsLng?: number | null },
+  lat: number,
+  lng: number,
+): { serves: boolean; distanceM: number | null } {
+  const radiusKm = biz.serviceRadiusKm == null ? null : Number(biz.serviceRadiusKm);
+  if (biz.gpsLat == null || biz.gpsLng == null) {
+    return { serves: true, distanceM: null };
+  }
+  const distanceM = haversineM(lat, lng, biz.gpsLat, biz.gpsLng);
+  if (radiusKm == null || !(radiusKm > 0)) return { serves: true, distanceM };
+  return { serves: distanceM <= radiusKm * 1000, distanceM };
+}
+
 /**
  * Public payload — ONLY what is linked to this one tracking code.
  * Never leaks: customer phone, internal ids, staff account ids, other
- * orders, or any business data beyond the name of the selling unit.
+ * orders, or any business data beyond the name/address of the selling unit.
+ * The delivery pin IS included for delivery orders, but this payload is only
+ * ever returned to the holder of the unguessable tracking code (the customer
+ * themself) — staff/couriers see the same pin through the scoped staff API.
  */
-export function publicTrackingPayload(row: any, businessName: string) {
+export function publicTrackingPayload(row: any, biz: any) {
+  const businessName = typeof biz === "string" ? biz : biz?.name || "GoMina 360 business";
+  const gpsLat = typeof biz === "object" && biz ? biz.gpsLat : null;
+  const gpsLng = typeof biz === "object" && biz ? biz.gpsLng : null;
+  const branchAddress = typeof biz === "object" && biz ? biz.branchLocation : null;
   const live =
     row.status === "DISPATCHED" && row.driverLat != null && row.driverLng != null
       ? {
@@ -179,6 +260,22 @@ export function publicTrackingPayload(row: any, businessName: string) {
     fulfillmentType: row.fulfillmentType,
     destinationAddress:
       row.fulfillmentType === "DELIVERY" ? row.destinationAddress || null : null,
+    // The customer's own Google-Maps delivery pin (they set it, so they may
+    // see it back) — plus the branch pickup point (public shop coordinates)
+    // for pickup orders so customers know where to collect.
+    deliveryLocation:
+      row.fulfillmentType === "DELIVERY" && row.deliveryLat != null && row.deliveryLng != null
+        ? {
+            lat: row.deliveryLat,
+            lng: row.deliveryLng,
+            accuracyM: row.deliveryAccuracyM ?? null,
+            mapLink: row.deliveryMapLink || googleMapsLink(row.deliveryLat, row.deliveryLng),
+          }
+        : null,
+    pickupLocation:
+      row.fulfillmentType === "PICKUP" && gpsLat != null && gpsLng != null
+        ? { lat: gpsLat, lng: gpsLng, address: branchAddress || null }
+        : null,
     status: row.status,
     statusLabel: TRACK_STATUS_LABELS[row.status as TrackStatus] || row.status,
     isTerminal: TERMINAL_STATUSES.includes(row.status),

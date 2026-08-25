@@ -89,6 +89,15 @@ export default function WorkerDashboard({
   const [expenseDescription, setExpenseDescription] = useState("");
   const [isSubmittingExpense, setIsSubmittingExpense] = useState(false);
 
+  // Completion flash for the inline quick forms (customer / expense) — after
+  // a completed save the form is cleared AND the worker gets an unmistakable
+  // receipt instead of the form sitting there ambiguously.
+  const [formFlash, setFormFlash] = useState("");
+  const flashSaved = (msg: string) => {
+    setFormFlash(msg);
+    setTimeout(() => setFormFlash((f) => (f === msg ? "" : f)), 4500);
+  };
+
   const canRecordSales = currentUser?.canRecordSales !== false;
   const canRecordExpenses = currentUser?.canRecordExpenses === true;
   const canManageStock = currentUser?.canManageStock === true;
@@ -228,6 +237,7 @@ export default function WorkerDashboard({
         setNewCustPhone("+233 24 ");
         setNewCustEmail("");
         setNewCustType("RETAIL");
+        flashSaved("✓ Customer added — form cleared for the next one.");
         onRefreshData();
       }
     } catch (err) {
@@ -257,6 +267,7 @@ export default function WorkerDashboard({
       setIsSubmittingExpense(false);
       setExpenseAmount("");
       setExpenseDescription("");
+      flashSaved("✓ Expense queued offline — it posts automatically when you're back online.");
       onRefreshData();
       return;
     }
@@ -270,6 +281,7 @@ export default function WorkerDashboard({
       if (res.ok) {
         setExpenseAmount("");
         setExpenseDescription("");
+        flashSaved("✓ Expense recorded — form cleared for the next one.");
         onRefreshData();
       }
     } catch (err) {
@@ -351,7 +363,7 @@ export default function WorkerDashboard({
           { key: "SALES" as const, label: "Record Sale", icon: ShoppingCart },
           { key: "CUSTOMERS" as const, label: "Customers", icon: UserPlus },
           { key: "INVENTORY" as const, label: "Inventory", icon: Package },
-          { key: "TRACKING" as const, label: "Order Tracking", icon: Truck },
+          { key: "TRACKING" as const, label: "Order & Tracking", icon: Truck },
           { key: "MY_ACTIVITY" as const, label: "My Activity", icon: ClipboardList },
         ].map((tab) => (
           <button
@@ -368,6 +380,19 @@ export default function WorkerDashboard({
           </button>
         ))}
       </div>
+
+      {/* Completion flash — above every tab so customer/expense completions
+          confirm no matter which workspace the worker is in. */}
+      {formFlash && (
+        <div
+          className="px-4 py-3 rounded-xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 text-sm font-semibold flex items-center space-x-2"
+          data-testid="wk-form-flash"
+          role="status"
+        >
+          <CheckCircle className="w-4 h-4 shrink-0" />
+          <span>{formFlash}</span>
+        </div>
+      )}
 
       {/* Quick stats row */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">

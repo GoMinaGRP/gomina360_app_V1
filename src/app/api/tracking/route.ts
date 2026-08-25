@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
-import { customerTrackings, businesses, notifications } from "@/db/schema";
-import { desc, eq } from "drizzle-orm";
+import { customerTrackings, businesses, notifications, transactions, salesDocuments } from "@/db/schema";
+import { desc, eq, inArray } from "drizzle-orm";
 import {
   getSessionInfo,
   accessibleBusinessIds,
@@ -23,6 +23,7 @@ import {
   restoreOrderStock,
   bookOrderPayment,
   linkCrmCustomer,
+  normalizeDeliveryPin,
 } from "@/lib/trackingServer";
 
 /**
@@ -82,6 +83,23 @@ export async function GET(request: NextRequest) {
       (a, b) => new Date(b.updatedAt as any).getTime() - new Date(a.updatedAt as any).getTime(),
     );
 
+    // Linked-system lookups for the Orders register: Sales documents and
+    // Finance transactions referenced by the scoped orders.
+    const trxIds = [...new Set(rows.map((r) => r.transactionId).filter(Boolean))] as number[];
+    const docIds = [...new Set(rows.map((r) => r.saleDocumentId).filter(Boolean))] as number[];
+    const [trxRows, docRows] = await Promise.all([
+      trxIds.length
+        ? db.select({ id: transactions.id, transactionNumber: transactions.transactionNumber, type: transactions.type, category: transactions.category })
+            .from(transactions).where(inArray(transactions.id, trxIds))
+        : [],
+      docIds.length
+        ? db.select({ id: salesDocuments.id, documentNumber: salesDocuments.documentNumber, documentType: salesDocuments.documentType })
+            .from(salesDocuments).where(inArray(salesDocuments.id, docIds))
+        : [],
+    ]);
+    const trxById = new Map(trxRows.map((t) => [t.id, t]));
+    const docById = new Map(docRows.map((d) => [d.id, d]));
+
     const now = Date.now();
     const sevenDaysAgo = now - 7 * 24 * 60 * 60 * 1000;
     const counts = {
@@ -101,16 +119,30 @@ export async function GET(request: NextRequest) {
         counts,
         statuses: Object.keys(TRACK_STATUS_LABELS),
       },
-      trackings: rows.slice(0, 300).map((r) => ({
-        ...r,
-        businessName: bizName(r.businessId)?.name || `Business #${r.businessId}`,
-        businessCode: bizName(r.businessId)?.code || r.branchCode || "",
-        allowedNext: nextStatuses(r.status, r.fulfillmentType).map((s) => ({
-          status: s,
-          label: TRACK_STATUS_LABELS[s as TrackStatus],
-        })),
-        trackUrl: `/track?code=${encodeURIComponent(r.trackingCode)}`,
-      })),
+      trackings: rows.slice(0, 300).map((r) => {
+        const biz = bizName(r.businessId);
+        const trx = r.transactionId ? trxById.get(r.transactionId) : null;
+        const doc = r.saleDocumentId ? docById.get(r.saleDocumentId) : null;
+        return {
+          ...r,
+          // Human Order ID for the Orders register (stable, per-order).
+          orderRef: `ORD-${String(r.id).padStart(5, "0")}`,
+          businessName: biz?.name || `Business #${r.businessId}`,
+          businessCode: biz?.code || r.branchCode || "",
+          businessGps: biz && biz.gpsLat != null && biz.gpsLng != null ? { lat: biz.gpsLat, lng: biz.gpsLng } : null,
+          linkedTransaction: trx
+            ? { id: trx.id, number: trx.transactionNumber, type: trx.type, category: trx.category }
+            : null,
+          linkedDocument: doc
+            ? { id: doc.id, number: doc.documentNumber, type: doc.documentType }
+            : null,
+          allowedNext: nextStatuses(r.status, r.fulfillmentType).map((s) => ({
+            status: s,
+            label: TRACK_STATUS_LABELS[s as TrackStatus],
+          })),
+          trackUrl: `/track?code=${encodeURIComponent(r.trackingCode)}`,
+        };
+      }),
     });
   } catch (error: any) {
     console.error("GET /api/tracking error:", error);
@@ -158,6 +190,17 @@ export async function POST(request: NextRequest) {
           : items.reduce((acc: number, li: any) => acc + li.total, 0);
       const customerName = String(body.customerName || "").trim() || "Walk-in Customer";
 
+      // Optional Google-Maps delivery pin (staff may paste a shared map link
+      // or exact coordinates when booking a delivery for a customer).
+      let pin: ReturnType<typeof normalizeDeliveryPin> = null;
+      if (fulfillmentType === "DELIVERY") {
+        try {
+          pin = normalizeDeliveryPin(body);
+        } catch (e: any) {
+          return NextResponse.json({ success: false, error: e.message }, { status: 400 });
+        }
+      }
+
       const code = await uniqueTrackingCode(biz.code);
       const now = new Date();
       const note = String(body.note || "").trim();
@@ -191,6 +234,7 @@ export async function POST(request: NextRequest) {
             fulfillmentType === "DELIVERY"
               ? String(body.destinationAddress || "").trim() || null
               : null,
+          ...(pin || {}), // deliveryLat/Lng/accuracyM + mapLink + pinnedAt
           status: "RECEIVED",
           statusHistory: history,
           notes: note || null,

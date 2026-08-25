@@ -5,17 +5,24 @@ import {
   AlertTriangle,
   ArrowLeft,
   Building2,
+  Copy,
+  Crosshair,
+  Download,
+  Globe,
   Image as ImageIcon,
   MapPin,
   Pencil,
   Plus,
   Power,
+  QrCode,
   RotateCcw,
   ShieldCheck,
   Trash2,
   X,
 } from "lucide-react";
 import LocationSelector, { LocationValue } from "./LocationSelector";
+import { qrDataUrl } from "@/lib/qrRegistry";
+import { googleMapsEmbed } from "@/lib/tracking";
 
 /** Resize an uploaded image to a compact base64 data-URL (≤512px JPEG) —
  *  the same convention used for employee photos and document uploads. */
@@ -72,9 +79,11 @@ interface ManageBusinessesModalProps {
   onChanged: () => void | Promise<unknown>;
   onAddNew: () => void;
   onDeleted?: (code: string) => void;
+  /** Deep-link straight into a unit's Online Ordering panel (navbar entry). */
+  initialOnlineBizId?: number | null;
 }
 
-type Mode = "list" | "edit" | "delete" | "reset" | "logos";
+type Mode = "list" | "edit" | "delete" | "reset" | "logos" | "online";
 
 export default function ManageBusinessesModal({
   isOpen,
@@ -84,8 +93,18 @@ export default function ManageBusinessesModal({
   onChanged,
   onAddNew,
   onDeleted,
+  initialOnlineBizId = null,
 }: ManageBusinessesModalProps) {
   const isOwner = currentUser?.role === "OWNER";
+  // Authorized staff: manager roles (and owner-delegated record managers) may
+  // run Online Ordering & the service area for businesses they can access —
+  // the businesses list itself is already access-scoped by the server, and
+  // the PATCH API re-checks every save.
+  const canManageOnline =
+    isOwner ||
+    currentUser?.role === "GENERAL_MANAGER" ||
+    currentUser?.role === "BRANCH_MANAGER" ||
+    !!currentUser?.canManageRecords;
 
   const [mode, setMode] = useState<Mode>("list");
   const [selected, setSelected] = useState<any | null>(null);
@@ -143,6 +162,135 @@ export default function ManageBusinessesModal({
       setResetStaffUsers(false);
     }
   }, [isOpen]);
+
+  // ── Online ordering & service area (mode === "online") ──────────────────
+  const [onlEnabled, setOnlEnabled] = useState(true);
+  const [onlPickup, setOnlPickup] = useState(true);
+  const [onlDelivery, setOnlDelivery] = useState(true);
+  const [onlRadius, setOnlRadius] = useState(""); // "" = no geographic limit
+  const [onlNote, setOnlNote] = useState("");
+  const [onlDirty, setOnlDirty] = useState(false);
+  const [onlQrOrder, setOnlQrOrder] = useState("");
+  const [onlQrTrack, setOnlQrTrack] = useState("");
+  const [onlCopied, setOnlCopied] = useState("");
+  const [onlGpsBusy, setOnlGpsBusy] = useState(false);
+
+  const originOf = () =>
+    typeof window !== "undefined" ? window.location.origin : "https://gomina360.app";
+
+  const openOnline = (biz: any) => {
+    setSelected(biz);
+    setOnlEnabled(biz.onlineOrderingEnabled !== false);
+    setOnlPickup(biz.pickupEnabled !== false);
+    setOnlDelivery(biz.deliveryEnabled !== false);
+    setOnlRadius(biz.serviceRadiusKm != null ? String(biz.serviceRadiusKm) : "");
+    setOnlNote(biz.serviceNote || "");
+    setOnlDirty(false);
+    setError("");
+    setNotice("");
+    setOnlCopied("");
+    setMode("online");
+    qrDataUrl(`${originOf()}/order?biz=${biz.id}`, 320).then(setOnlQrOrder).catch(() => setOnlQrOrder(""));
+    qrDataUrl(`${originOf()}/track`, 320).then(setOnlQrTrack).catch(() => setOnlQrTrack(""));
+  };
+
+  // Deep-link (navbar "Online storefront & delivery areas"): open straight
+  // into the requested unit's Online panel. Runs after the reset effect.
+  useEffect(() => {
+    if (isOpen && initialOnlineBizId) {
+      const biz = businesses.find((b: any) => b.id === initialOnlineBizId);
+      if (biz) openOnline(biz);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen, initialOnlineBizId]);
+
+  const saveOnline = async () => {
+    if (!selected) return;
+    let radius: number | null = null;
+    if (onlRadius.trim() !== "") {
+      const v = Number(onlRadius);
+      if (!Number.isFinite(v) || v <= 0 || v > 1000) {
+        setError("Service radius must be a number of kilometres between 0 and 1000 (leave empty for no limit).");
+        return;
+      }
+      radius = Math.round(v * 100) / 100;
+    }
+    setBusy(true);
+    setError("");
+    try {
+      const res = await fetch(`/api/businesses/${selected.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          actorUserId: currentUser?.id ?? null,
+          onlineOrderingEnabled: onlEnabled,
+          pickupEnabled: onlPickup,
+          deliveryEnabled: onlDelivery,
+          serviceRadiusKm: radius,
+          serviceNote: onlNote.trim() || null,
+        }),
+      });
+      const d = await res.json().catch(() => null);
+      if (res.ok && d?.success) {
+        await onChanged();
+        setSelected(d.business);
+        setOnlDirty(false);
+        setNotice(
+          d.business.onlineOrderingEnabled === false
+            ? `"${d.business.name}" switched OFF the customer storefront — hidden from /order and blocked at checkout until you switch it back on.`
+            : `"${d.business.name}" online-ordering settings saved — the customer storefront reflects them immediately.`,
+        );
+      } else {
+        setError(d?.error || "Failed to save online-ordering settings.");
+      }
+    } catch (err: any) {
+      setError(err?.message || "Network error while saving settings.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  // Anchor the branch's public Google-Maps pin from where the manager stands —
+  // the same pin used for pickup maps and the service-area radius ring. Only
+  // ever an explicit button press (silent capture would leak the manager's
+  // location).
+  const setBranchGpsFromHere = async () => {
+    if (!selected || typeof navigator === "undefined" || !navigator.geolocation) return;
+    setOnlGpsBusy(true);
+    setError("");
+    navigator.geolocation.getCurrentPosition(
+      async (pos) => {
+        try {
+          const res = await fetch(`/api/businesses/${selected.id}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              actorUserId: currentUser?.id ?? null,
+              gpsLat: Number(pos.coords.latitude.toFixed(7)),
+              gpsLng: Number(pos.coords.longitude.toFixed(7)),
+            }),
+          });
+          const d = await res.json().catch(() => null);
+          if (res.ok && d?.success) {
+            await onChanged();
+            setSelected(d.business);
+            setNotice(`"${d.business.name}" branch pin anchored at ${d.business.gpsLat.toFixed(6)}, ${d.business.gpsLng.toFixed(6)} — pickup map & service-area ring now centre here.`);
+          } else {
+            setError(d?.error || "Could not save the branch pin.");
+          }
+        } catch (err: any) {
+          setError(err?.message || "Network error while saving the branch pin.");
+        } finally {
+          setOnlGpsBusy(false);
+        }
+      },
+      (err) => {
+        setOnlGpsBusy(false);
+        setError(err?.code === 1 ? "Location permission denied — allow it to anchor the branch pin." : "Could not get a GPS fix — move outside and try again.");
+      },
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 },
+    );
+  };
 
   if (!isOpen) return null;
 
@@ -447,11 +595,15 @@ export default function ManageBusinessesModal({
               </h3>
               <p className="text-xs text-slate-400">
                 {mode === "list" &&
-                  "Owner console — add, edit, rename, relocate, change type, deactivate or permanently delete any unit"}
+                  (isOwner
+                    ? "Owner console — add, edit, relocate, change type, online ordering & service areas, deactivate or permanently delete any unit"
+                    : "Manage online ordering, service areas & share links for your businesses")}
                 {mode === "edit" && `Editing ${selected?.name} (${selected?.code})`}
                 {mode === "delete" && `Confirm permanent deletion of ${selected?.name}`}
                 {mode === "reset" && `Reset ${selected?.name} to a new business state`}
                 {mode === "logos" && `Company & business logos — ${selected?.name} (${selected?.code})`}
+                {mode === "online" &&
+                  `Online ordering, service area & share links — ${selected?.name} (${selected?.code})`}
               </p>
             </div>
           </div>
@@ -580,6 +732,18 @@ export default function ManageBusinessesModal({
                         {isOwner && (
                           <div className="flex items-center gap-1.5 shrink-0">
                             <button
+                              onClick={() => openOnline(biz)}
+                              data-testid={`manage-biz-online-${biz.code}`}
+                              title="Online ordering, service area & share QR/links"
+                              className={`p-2 rounded-lg transition ${
+                                biz.onlineOrderingEnabled === false
+                                  ? "bg-rose-500/20 text-rose-300 hover:bg-rose-500/30"
+                                  : "bg-slate-700/70 hover:bg-emerald-500/30 text-slate-200 hover:text-emerald-300"
+                              }`}
+                            >
+                              <Globe className="w-4 h-4" />
+                            </button>
+                            <button
                               onClick={() => openEdit(biz)}
                               data-testid={`manage-biz-edit-${biz.code}`}
                               title="Edit / rename / relocate / change type"
@@ -635,6 +799,26 @@ export default function ManageBusinessesModal({
                             </button>
                           </div>
                         )}
+                        {/* Authorized staff (GM / BM / record managers): ONLY the
+                            online-ordering & service-area panel — every save is
+                            re-checked server-side against their business access. */}
+                        {!isOwner && canManageOnline && (
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            <button
+                              onClick={() => openOnline(biz)}
+                              data-testid={`manage-biz-online-${biz.code}`}
+                              title="Online ordering, service area & share QR/links"
+                              className={`flex items-center gap-1 px-2.5 py-2 rounded-lg text-[10px] font-black transition ${
+                                biz.onlineOrderingEnabled === false
+                                  ? "bg-rose-500/20 text-rose-300 hover:bg-rose-500/30"
+                                  : "bg-slate-700/70 hover:bg-emerald-500/30 text-slate-200 hover:text-emerald-300"
+                              }`}
+                            >
+                              <Globe className="w-4 h-4" />
+                              <span className="hidden sm:inline">Online</span>
+                            </button>
+                          </div>
+                        )}
                       </div>
                     </div>
                   );
@@ -642,6 +826,289 @@ export default function ManageBusinessesModal({
               </div>
             </>
           )}
+
+          {/* ============ ONLINE ORDERING & SERVICE AREA MODE ============ */}
+          {mode === "online" && selected && (() => {
+            const bizRow = sorted.find((b) => b.id === selected.id) || selected;
+            const orderUrl = `${originOf()}/order?biz=${bizRow.id}`;
+            const trackUrl = `${originOf()}/track`;
+            const storefrontOff = bizRow.onlineOrderingEnabled === false;
+
+            const SwitchRow = ({ label, desc, on, onFlip, tid }: any) => (
+              <button
+                type="button"
+                onClick={() => { onFlip(!on); setOnlDirty(true); }}
+                className={`w-full flex items-center justify-between gap-3 px-3.5 py-3 rounded-xl border text-left transition ${
+                  on ? "bg-emerald-500/10 border-emerald-500/40" : "bg-slate-800/80 border-slate-700"
+                }`}
+                data-testid={tid}
+              >
+                <span>
+                  <span className="block text-[12px] font-extrabold text-white">{label}</span>
+                  <span className="block text-[10px] text-slate-400 mt-0.5">{desc}</span>
+                </span>
+                <span
+                  className={`relative inline-flex h-5.5 w-10 shrink-0 items-center rounded-full transition ${
+                    on ? "bg-emerald-500" : "bg-slate-600"
+                  }`}
+                  style={{ height: 22 }}
+                >
+                  <span
+                    className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition ${
+                      on ? "translate-x-5" : "translate-x-1"
+                    }`}
+                  />
+                </span>
+              </button>
+            );
+
+            const copy = async (key: string, text: string) => {
+              try {
+                await navigator.clipboard.writeText(text);
+              } catch { /* clipboard can be unavailable — the URL field is selectable */ }
+              setOnlCopied(key);
+              setTimeout(() => setOnlCopied((c) => (c === key ? "" : c)), 1500);
+            };
+
+            return (
+              <div className="space-y-4" data-testid="mb-onl-root">
+                {storefrontOff && (
+                  <div className="rounded-xl bg-rose-500/10 border border-rose-500/30 px-3.5 py-2.5 text-[11px] text-rose-200" data-testid="mb-onl-offbanner">
+                    This unit is <b>OFF</b> the customer storefront: it does not appear on /order and checkout is
+                    refused until you switch online ordering back on. In-store sales are unaffected.
+                  </div>
+                )}
+
+                {/* Storefront switches */}
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                  <SwitchRow
+                    label="Online ordering"
+                    desc="Show on the public customer storefront"
+                    on={onlEnabled}
+                    onFlip={setOnlEnabled}
+                    tid="mb-onl-toggle-enabled"
+                  />
+                  <SwitchRow
+                    label="Pickup"
+                    desc="Customers collect at this branch"
+                    on={onlPickup}
+                    onFlip={setOnlPickup}
+                    tid="mb-onl-toggle-pickup"
+                  />
+                  <SwitchRow
+                    label="Delivery"
+                    desc="Courier to a customer-pinned point"
+                    on={onlDelivery}
+                    onFlip={setOnlDelivery}
+                    tid="mb-onl-toggle-delivery"
+                  />
+                </div>
+
+                {/* Service area */}
+                <section className="rounded-xl border border-slate-700 bg-slate-800/50 p-3.5 space-y-3">
+                  <h4 className="text-[11px] font-black uppercase tracking-wider text-slate-300 flex items-center gap-1.5">
+                    <MapPin className="w-3.5 h-3.5 text-emerald-300" /> Service area (Google Maps)
+                  </h4>
+                  <p className="text-[10px] text-slate-400 leading-relaxed">
+                    Customers sharing their location on the storefront only see branches that deliver to them.
+                    Set how far you deliver from the branch pin — leave empty to deliver everywhere. Orders pinned
+                    beyond the radius are refused automatically; pickup always works.
+                  </p>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                    <label className="block">
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                        Delivery radius (km) — empty = no limit
+                      </span>
+                      <input
+                        value={onlRadius}
+                        onChange={(e) => { setOnlRadius(e.target.value); setOnlDirty(true); }}
+                        inputMode="decimal"
+                        placeholder="e.g. 15"
+                        className="mt-1 w-full px-3 py-2.5 bg-slate-900 border border-slate-700 focus:border-emerald-500/60 rounded-xl text-sm text-white outline-none"
+                        data-testid="mb-onl-radius"
+                      />
+                    </label>
+                    <label className="block">
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                        Customer-visible service note
+                      </span>
+                      <input
+                        value={onlNote}
+                        onChange={(e) => { setOnlNote(e.target.value); setOnlDirty(true); }}
+                        maxLength={160}
+                        placeholder='e.g. "Free delivery within Spintex"'
+                        className="mt-1 w-full px-3 py-2.5 bg-slate-900 border border-slate-700 focus:border-emerald-500/60 rounded-xl text-sm text-white outline-none"
+                        data-testid="mb-onl-note"
+                      />
+                    </label>
+                  </div>
+
+                  {/* Branch pin */}
+                  <div className="rounded-xl bg-slate-900/70 border border-slate-700/80 p-3 flex flex-col sm:flex-row sm:items-center gap-3">
+                    <div className="flex-1 min-w-0">
+                      <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Branch map pin</div>
+                      {bizRow.gpsLat != null && bizRow.gpsLng != null ? (
+                        <div className="text-[11px] text-emerald-300 font-mono mt-0.5" data-testid="mb-onl-gps-state">
+                          {Number(bizRow.gpsLat).toFixed(6)}, {Number(bizRow.gpsLng).toFixed(6)} — pickup map &
+                          radius ring centre here
+                        </div>
+                      ) : (
+                        <div className="text-[11px] text-amber-300 mt-0.5" data-testid="mb-onl-gps-state">
+                          Not set — the radius filter and customer pickup map need this pin. Stand at the branch
+                          and anchor it now.
+                        </div>
+                      )}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={setBranchGpsFromHere}
+                      disabled={onlGpsBusy}
+                      className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-cyan-600 hover:bg-cyan-500 disabled:opacity-40 text-white text-[11px] font-bold shrink-0"
+                      data-testid="mb-onl-gps-set"
+                    >
+                      <Crosshair className={`w-3.5 h-3.5 ${onlGpsBusy ? "animate-spin" : ""}`} />
+                      {onlGpsBusy ? "Anchoring…" : "Anchor at my location"}
+                    </button>
+                  </div>
+                  {bizRow.gpsLat != null && bizRow.gpsLng != null && (
+                    <iframe
+                      key={`${bizRow.gpsLat},${bizRow.gpsLng}`}
+                      title="Branch pin — Google Maps"
+                      src={googleMapsEmbed(bizRow.gpsLat, bizRow.gpsLng, 14)}
+                      className="w-full h-[160px] rounded-xl bg-slate-800 border border-slate-700"
+                      loading="lazy"
+                      referrerPolicy="no-referrer-when-downgrade"
+                      data-testid="mb-onl-map"
+                    />
+                  )}
+                </section>
+
+                <div className="flex items-center gap-2.5">
+                  <button
+                    type="button"
+                    onClick={saveOnline}
+                    disabled={busy}
+                    className="px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 text-white text-xs font-black shadow-lg transition"
+                    data-testid="mb-onl-save"
+                  >
+                    {busy ? "Saving…" : "Save online-ordering settings"}
+                  </button>
+                  {onlDirty && (
+                    <span className="text-[10px] font-bold text-amber-300" data-testid="mb-onl-dirty">
+                      Unsaved changes
+                    </span>
+                  )}
+                </div>
+
+                {/* Shareable links + QR codes */}
+                <section className="rounded-xl border border-slate-700 bg-slate-800/50 p-3.5 space-y-3">
+                  <h4 className="text-[11px] font-black uppercase tracking-wider text-slate-300 flex items-center gap-1.5">
+                    <QrCode className="w-3.5 h-3.5 text-fuchsia-300" /> Customer order & tracking links
+                  </h4>
+                  <p className="text-[10px] text-slate-400 leading-relaxed">
+                    Print the QR at the counter, on flyers or WhatsApp status — scanning opens this unit's ordering
+                    page (or the tracking page) with no sign-in. The order link pre-selects this business.
+                  </p>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    {/* Order */}
+                    <div className="rounded-xl bg-slate-900/70 border border-slate-700/80 p-3 space-y-2">
+                      <div className="text-[11px] font-extrabold text-emerald-300">Order from {bizRow.name}</div>
+                      <input
+                        readOnly
+                        value={orderUrl}
+                        onFocus={(e) => e.target.select()}
+                        className="w-full px-2.5 py-2 bg-slate-800 border border-slate-700 rounded-lg text-[10px] font-mono text-slate-300 outline-none"
+                        data-testid="mb-onl-order-url"
+                      />
+                      <div className="flex items-center gap-2">
+                        {onlQrOrder ? (
+                          <img
+                            src={onlQrOrder}
+                            alt="QR code — order page"
+                            width={104}
+                            height={104}
+                            className="rounded-lg border border-slate-600 bg-white p-1.5"
+                            data-testid="mb-onl-qr-order"
+                          />
+                        ) : (
+                          <div className="w-[104px] h-[104px] rounded-lg border border-dashed border-slate-600 flex items-center justify-center text-[9px] text-slate-500" data-testid="mb-onl-qr-order-loading">
+                            Building QR…
+                          </div>
+                        )}
+                        <div className="flex flex-col gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => copy("order", orderUrl)}
+                            className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 text-[10px] font-bold"
+                            data-testid="mb-onl-copy-order"
+                          >
+                            <Copy className="w-3 h-3" /> {onlCopied === "order" ? "Copied!" : "Copy link"}
+                          </button>
+                          {onlQrOrder && (
+                            <a
+                              href={onlQrOrder}
+                              download={`gomina-order-${bizRow.code}.png`}
+                              className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 text-[10px] font-bold"
+                              data-testid="mb-onl-qr-order-dl"
+                            >
+                              <Download className="w-3 h-3" /> Download QR
+                            </a>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                    {/* Track */}
+                    <div className="rounded-xl bg-slate-900/70 border border-slate-700/80 p-3 space-y-2">
+                      <div className="text-[11px] font-extrabold text-cyan-300">Track any order</div>
+                      <input
+                        readOnly
+                        value={trackUrl}
+                        onFocus={(e) => e.target.select()}
+                        className="w-full px-2.5 py-2 bg-slate-800 border border-slate-700 rounded-lg text-[10px] font-mono text-slate-300 outline-none"
+                        data-testid="mb-onl-track-url"
+                      />
+                      <div className="flex items-center gap-2">
+                        {onlQrTrack ? (
+                          <img
+                            src={onlQrTrack}
+                            alt="QR code — tracking page"
+                            width={104}
+                            height={104}
+                            className="rounded-lg border border-slate-600 bg-white p-1.5"
+                            data-testid="mb-onl-qr-track"
+                          />
+                        ) : (
+                          <div className="w-[104px] h-[104px] rounded-lg border border-dashed border-slate-600 flex items-center justify-center text-[9px] text-slate-500" data-testid="mb-onl-qr-track-loading">
+                            Building QR…
+                          </div>
+                        )}
+                        <div className="flex flex-col gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => copy("track", trackUrl)}
+                            className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 text-[10px] font-bold"
+                            data-testid="mb-onl-copy-track"
+                          >
+                            <Copy className="w-3 h-3" /> {onlCopied === "track" ? "Copied!" : "Copy link"}
+                          </button>
+                          {onlQrTrack && (
+                            <a
+                              href={onlQrTrack}
+                              download={`gomina-track.png`}
+                              className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 text-[10px] font-bold"
+                              data-testid="mb-onl-qr-track-dl"
+                            >
+                              <Download className="w-3 h-3" /> Download QR
+                            </a>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </section>
+              </div>
+            );
+          })()}
 
           {/* ============ LOGOS MODE ============ */}
           {mode === "logos" && selected && (() => {

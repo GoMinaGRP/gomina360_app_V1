@@ -69,7 +69,21 @@ import {
   reprovisionForTypeChange,
   provisionBusiness,
 } from "@/lib/businessProvisioning";
-import { requireOwner, FORBIDDEN } from "@/lib/auth";
+import { requireOwner, getSessionInfo, canAccessBusiness, FORBIDDEN } from "@/lib/auth";
+
+/** Online-ordering & service-area fields. These are the ONLY business fields
+ *  a non-OWNER may change — and only the manager roles (GENERAL_MANAGER /
+ *  BRANCH_MANAGER, plus anyone the owner trusted with canManageRecords) on a
+ *  business they actually have access to. Everything else stays OWNER-only. */
+const ONLINE_ORDERING_FIELDS = [
+  "onlineOrderingEnabled",
+  "pickupEnabled",
+  "deliveryEnabled",
+  "serviceRadiusKm",
+  "serviceNote",
+  "gpsLat",
+  "gpsLng",
+] as const;
 
 const VALID_CATEGORIES = [
   "Poultry Farm",
@@ -208,9 +222,32 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
 
     const body = await request.json();
 
-    // Session-verified OWNER gate (secure login cookie — no spoofing).
+    // Session-verified gate (secure login cookie — no spoofing). The OWNER
+    // may update everything. Authorized staff (GENERAL_MANAGER /
+    // BRANCH_MANAGER / canManageRecords) may update ONLY the online-ordering
+    // & service-area fields, and only on a business they can access.
     const actor = await requireOwner(request);
-    if (!actor) return FORBIDDEN("Only the OWNER can update businesses.");
+    if (!actor) {
+      const session = await getSessionInfo(request);
+      const user = session?.user;
+      const managerRole =
+        !!user &&
+        (user.role === "GENERAL_MANAGER" ||
+          user.role === "BRANCH_MANAGER" ||
+          !!user.canManageRecords);
+      if (!managerRole) return FORBIDDEN("Only the OWNER can update businesses.");
+      const allowed = await canAccessBusiness(user, businessId);
+      if (!allowed) return FORBIDDEN("You do not have access to this business.");
+      const touched = Object.keys(body || {}).filter((k) => !["actorUserId", "id"].includes(k));
+      const outsideScope = touched.filter(
+        (k) => !(ONLINE_ORDERING_FIELDS as readonly string[]).includes(k),
+      );
+      if (outsideScope.length > 0) {
+        return FORBIDDEN(
+          `Only the OWNER can change: ${outsideScope.join(", ")}. Staff may manage online ordering & service area only.`,
+        );
+      }
+    }
 
     const updates: Record<string, any> = {};
 
@@ -288,6 +325,52 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
         return NextResponse.json({ success: false, error: "Monthly target must be a positive number." }, { status: 400 });
       }
       updates.monthlyTargetRevenueGhs = v;
+    }
+
+    // ── Online ordering & service area (OWNER + authorized manager roles) ──
+    if (body.onlineOrderingEnabled !== undefined) {
+      updates.onlineOrderingEnabled = !!body.onlineOrderingEnabled;
+    }
+    if (body.pickupEnabled !== undefined) {
+      updates.pickupEnabled = !!body.pickupEnabled;
+    }
+    if (body.deliveryEnabled !== undefined) {
+      updates.deliveryEnabled = !!body.deliveryEnabled;
+    }
+    if (body.serviceRadiusKm !== undefined) {
+      if (body.serviceRadiusKm === null || body.serviceRadiusKm === "") {
+        updates.serviceRadiusKm = null; // no geographic limit
+      } else {
+        const v = Number(body.serviceRadiusKm);
+        if (!Number.isFinite(v) || v <= 0 || v > 1000) {
+          return NextResponse.json(
+            { success: false, error: "Service radius must be greater than 0 and at most 1000 km." },
+            { status: 400 },
+          );
+        }
+        updates.serviceRadiusKm = Math.round(v * 100) / 100;
+      }
+    }
+    if (body.serviceNote !== undefined) {
+      const s = typeof body.serviceNote === "string" ? body.serviceNote.trim().slice(0, 160) : "";
+      updates.serviceNote = s || null;
+    }
+    if (body.gpsLat !== undefined || body.gpsLng !== undefined) {
+      if (body.gpsLat === null && body.gpsLng === null) {
+        updates.gpsLat = null;
+        updates.gpsLng = null; // clear the branch pin (never asymmetric)
+      } else {
+        const lat = Number(body.gpsLat);
+        const lng = Number(body.gpsLng);
+        if (!Number.isFinite(lat) || !Number.isFinite(lng) || Math.abs(lat) > 90 || Math.abs(lng) > 180) {
+          return NextResponse.json(
+            { success: false, error: "GPS coordinates look wrong — expected valid latitude/longitude." },
+            { status: 400 },
+          );
+        }
+        updates.gpsLat = lat;
+        updates.gpsLng = lng;
+      }
     }
 
     if (Object.keys(updates).length === 0) {

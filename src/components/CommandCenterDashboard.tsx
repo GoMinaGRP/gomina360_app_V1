@@ -53,6 +53,9 @@ interface CommandCenterDashboardProps {
   onOpenManageBusinesses?: () => void;
   onOpenUserAccess?: () => void;
   canManageBusinesses?: boolean;
+  /** OWNER/GM/BM/record-manager — may open Manage Units for the online-ordering
+   *  & service-area panel (destructive actions stay OWNER-only inside). */
+  canManageOnline?: boolean;
   // OWNER or an OWNER-delegated manager (Users & Access console access).
   canManageUsersConsole?: boolean;
   checklists?: { templates: any[]; entries: any[] };
@@ -69,6 +72,7 @@ export default function CommandCenterDashboard({
   onOpenManageBusinesses,
   onOpenUserAccess,
   canManageBusinesses = false,
+  canManageOnline = false,
   canManageUsersConsole = false,
   checklists,
 }: CommandCenterDashboardProps) {
@@ -303,7 +307,7 @@ export default function CommandCenterDashboard({
           </button>
 
           <AiSectionGuide moduleKey="COMMAND_CENTER" section="COMMAND_CENTER" variant="header" />
-          {canManageBusinesses && onOpenManageBusinesses && (
+          {(canManageBusinesses || canManageOnline) && onOpenManageBusinesses && (
             <button
               onClick={onOpenManageBusinesses}
               data-testid="open-manage-businesses"

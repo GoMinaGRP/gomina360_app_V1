@@ -48,7 +48,7 @@ export async function GET(request: NextRequest) {
     const [biz] = await db.select().from(businesses).where(eq(businesses.id, row.businessId));
 
     return NextResponse.json(
-      { success: true, tracking: publicTrackingPayload(row, biz?.name || "GoMina 360 business") },
+      { success: true, tracking: publicTrackingPayload(row, biz || null) },
       { headers: { "Cache-Control": "no-store" } },
     );
   } catch (error: any) {
