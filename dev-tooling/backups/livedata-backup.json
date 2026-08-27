@@ -1,5 +1,5 @@
 {
- "capturedAt": "2026-08-27T04:45:11.142Z",
+ "capturedAt": "2026-08-27T05:39:44.283Z",
  "app": "gomina360",
  "tables": {
   "businesses": [
@@ -30,10 +30,10 @@
     "delivery_enabled": true,
     "service_radius_km": null,
     "service_note": null,
-    "created_at": "2026-08-27T02:17:32.038Z",
     "customer_help_phone": null,
     "momo_number": null,
-    "momo_name": null
+    "momo_name": null,
+    "created_at": "2026-08-27T05:23:14.352Z"
    },
    {
     "id": 2,
@@ -60,10 +60,10 @@
     "delivery_enabled": true,
     "service_radius_km": null,
     "service_note": null,
-    "created_at": "2026-08-27T02:17:32.038Z",
     "customer_help_phone": null,
     "momo_number": null,
-    "momo_name": null
+    "momo_name": null,
+    "created_at": "2026-08-27T05:23:14.352Z"
    },
    {
     "id": 3,
@@ -90,10 +90,10 @@
     "delivery_enabled": true,
     "service_radius_km": null,
     "service_note": null,
-    "created_at": "2026-08-27T02:17:32.038Z",
     "customer_help_phone": null,
     "momo_number": null,
-    "momo_name": null
+    "momo_name": null,
+    "created_at": "2026-08-27T05:23:14.352Z"
    },
    {
     "id": 4,
@@ -120,10 +120,10 @@
     "delivery_enabled": true,
     "service_radius_km": null,
     "service_note": null,
-    "created_at": "2026-08-27T02:17:32.038Z",
     "customer_help_phone": null,
     "momo_number": null,
-    "momo_name": null
+    "momo_name": null,
+    "created_at": "2026-08-27T05:23:14.352Z"
    },
    {
     "id": 5,
@@ -150,10 +150,10 @@
     "delivery_enabled": true,
     "service_radius_km": null,
     "service_note": null,
-    "created_at": "2026-08-27T02:17:32.038Z",
     "customer_help_phone": null,
     "momo_number": null,
-    "momo_name": null
+    "momo_name": null,
+    "created_at": "2026-08-27T05:23:14.352Z"
    },
    {
     "id": 6,
@@ -180,10 +180,10 @@
     "delivery_enabled": true,
     "service_radius_km": null,
     "service_note": null,
-    "created_at": "2026-08-27T02:17:32.038Z",
     "customer_help_phone": null,
     "momo_number": null,
-    "momo_name": null
+    "momo_name": null,
+    "created_at": "2026-08-27T05:23:14.352Z"
    },
    {
     "id": 7,
@@ -210,10 +210,10 @@
     "delivery_enabled": true,
     "service_radius_km": null,
     "service_note": null,
-    "created_at": "2026-08-27T02:17:32.038Z",
     "customer_help_phone": null,
     "momo_number": null,
-    "momo_name": null
+    "momo_name": null,
+    "created_at": "2026-08-27T05:23:14.352Z"
    },
    {
     "id": 8,
@@ -240,10 +240,10 @@
     "delivery_enabled": true,
     "service_radius_km": null,
     "service_note": null,
-    "created_at": "2026-08-27T02:17:32.865Z",
     "customer_help_phone": null,
     "momo_number": null,
-    "momo_name": null
+    "momo_name": null,
+    "created_at": "2026-08-27T05:23:15.149Z"
    }
   ],
   "customers": [
@@ -260,7 +260,7 @@
     "total_spent_ghs": 145000,
     "loyalty_points": 1450,
     "business_id": null,
-    "created_at": "2026-08-27T02:17:32.809Z"
+    "created_at": "2026-08-27T05:23:15.087Z"
    },
    {
     "id": 2,
@@ -275,7 +275,7 @@
     "total_spent_ghs": 210000,
     "loyalty_points": 2100,
     "business_id": 2,
-    "created_at": "2026-08-27T02:17:32.809Z"
+    "created_at": "2026-08-27T05:23:15.087Z"
    },
    {
     "id": 3,
@@ -290,7 +290,7 @@
     "total_spent_ghs": 96000,
     "loyalty_points": 960,
     "business_id": null,
-    "created_at": "2026-08-27T02:17:32.809Z"
+    "created_at": "2026-08-27T05:23:15.087Z"
    },
    {
     "id": 4,
@@ -305,7 +305,7 @@
     "total_spent_ghs": 28500,
     "loyalty_points": 285,
     "business_id": 6,
-    "created_at": "2026-08-27T02:17:32.809Z"
+    "created_at": "2026-08-27T05:23:15.087Z"
    },
    {
     "id": 18,
@@ -376,6 +376,8 @@
       "inventoryId": 1
      }
     ],
+    "discount_percent": 0,
+    "discount_ghs": 0,
     "total_ghs": 55,
     "currency": "GHS",
     "fulfillment_type": "PICKUP",
@@ -385,6 +387,11 @@
     "delivery_accuracy_m": null,
     "delivery_map_link": null,
     "delivery_pinned_at": null,
+    "pickup_location_id": null,
+    "pickup_location_name": null,
+    "pickup_location_address": null,
+    "pickup_lat": null,
+    "pickup_lng": null,
     "status": "RECEIVED",
     "status_history": [
      {
@@ -414,14 +421,7 @@
     "created_by_name": "fdgjgh",
     "created_by_role": "CUSTOMER",
     "created_at": "2026-08-27T03:32:27.753Z",
-    "updated_at": "2026-08-27T03:32:27.753Z",
-    "discount_percent": 0,
-    "discount_ghs": 0,
-    "pickup_location_id": null,
-    "pickup_location_name": null,
-    "pickup_location_address": null,
-    "pickup_lat": null,
-    "pickup_lng": null
+    "updated_at": "2026-08-27T03:32:27.753Z"
    },
    {
     "id": 33,
@@ -445,6 +445,8 @@
       "inventoryId": 1
      }
     ],
+    "discount_percent": 0,
+    "discount_ghs": 0,
     "total_ghs": 55,
     "currency": "GHS",
     "fulfillment_type": "PICKUP",
@@ -454,6 +456,11 @@
     "delivery_accuracy_m": null,
     "delivery_map_link": null,
     "delivery_pinned_at": null,
+    "pickup_location_id": null,
+    "pickup_location_name": null,
+    "pickup_location_address": null,
+    "pickup_lat": null,
+    "pickup_lng": null,
     "status": "RECEIVED",
     "status_history": [
      {
@@ -483,14 +490,7 @@
     "created_by_name": "fd",
     "created_by_role": "CUSTOMER",
     "created_at": "2026-08-27T03:41:46.834Z",
-    "updated_at": "2026-08-27T03:41:46.834Z",
-    "discount_percent": 0,
-    "discount_ghs": 0,
-    "pickup_location_id": null,
-    "pickup_location_name": null,
-    "pickup_location_address": null,
-    "pickup_lat": null,
-    "pickup_lng": null
+    "updated_at": "2026-08-27T03:41:46.834Z"
    },
    {
     "id": 91,
@@ -514,6 +514,8 @@
       "inventoryId": 1
      }
     ],
+    "discount_percent": 0,
+    "discount_ghs": 0,
     "total_ghs": 55,
     "currency": "GHS",
     "fulfillment_type": "PICKUP",
@@ -523,6 +525,11 @@
     "delivery_accuracy_m": null,
     "delivery_map_link": null,
     "delivery_pinned_at": null,
+    "pickup_location_id": null,
+    "pickup_location_name": null,
+    "pickup_location_address": null,
+    "pickup_lat": null,
+    "pickup_lng": null,
     "status": "RECEIVED",
     "status_history": [
      {
@@ -552,14 +559,7 @@
     "created_by_name": "uui",
     "created_by_role": "CUSTOMER",
     "created_at": "2026-08-27T04:27:32.062Z",
-    "updated_at": "2026-08-27T04:27:32.062Z",
-    "discount_percent": 0,
-    "discount_ghs": 0,
-    "pickup_location_id": null,
-    "pickup_location_name": null,
-    "pickup_location_address": null,
-    "pickup_lat": null,
-    "pickup_lng": null
+    "updated_at": "2026-08-27T04:27:32.062Z"
    }
   ],
   "sales_documents": [],
@@ -578,7 +578,7 @@
     "supplier_id": null,
     "description": "Wholesale delivery of 300 trays of Grade A Eggs to Shoprite & Melcom",
     "date": "2026-03-29",
-    "created_at": "2026-08-27T02:17:32.820Z",
+    "created_at": "2026-08-27T05:23:15.100Z",
     "status": "COMPLETED",
     "recorded_by": "Emmanuel Osei",
     "recorded_by_role": null,
@@ -600,7 +600,7 @@
     "supplier_id": null,
     "description": "Supply of 2,000 units of 6-inch solid blocks for Spintex construction site",
     "date": "2026-03-28",
-    "created_at": "2026-08-27T02:17:32.820Z",
+    "created_at": "2026-08-27T05:23:15.100Z",
     "status": "COMPLETED",
     "recorded_by": "Kofi Boahen",
     "recorded_by_role": null,
@@ -622,7 +622,7 @@
     "supplier_id": 1,
     "description": "Monthly purchase of layer feed concentrate & multivitamins",
     "date": "2026-03-26",
-    "created_at": "2026-08-27T02:17:32.820Z",
+    "created_at": "2026-08-27T05:23:15.100Z",
     "status": "COMPLETED",
     "recorded_by": "Abena Serwaa",
     "recorded_by_role": null,
@@ -644,7 +644,7 @@
     "supplier_id": null,
     "description": "Combined weekend dining receipts (MTN MoMo & Telecel Cash)",
     "date": "2026-03-29",
-    "created_at": "2026-08-27T02:17:32.820Z",
+    "created_at": "2026-08-27T05:23:15.100Z",
     "status": "COMPLETED",
     "recorded_by": "Chef Esi Mensah",
     "recorded_by_role": null,
@@ -666,7 +666,7 @@
     "supplier_id": null,
     "description": "Supply & installation of 10kVA Solar Hybrid System for residential villa",
     "date": "2026-03-30",
-    "created_at": "2026-08-27T02:17:32.820Z",
+    "created_at": "2026-08-27T05:23:15.100Z",
     "status": "COMPLETED",
     "recorded_by": "Richmond Addo",
     "recorded_by_role": null,
@@ -688,7 +688,7 @@
     "supplier_id": null,
     "description": "Daily washing bay receipts (46 sedans & SUVs serviced)",
     "date": "2026-03-30",
-    "created_at": "2026-08-27T02:17:32.820Z",
+    "created_at": "2026-08-27T05:23:15.100Z",
     "status": "COMPLETED",
     "recorded_by": "Yaw Tetteh",
     "recorded_by_role": null,
@@ -698,7 +698,7 @@
    },
    {
     "id": 7,
-    "transaction_number": "TRX-2026-388360",
+    "transaction_number": "TRX-2026-535326",
     "business_id": 1,
     "branch_code": "POULTRY-01",
     "branch_name": "Mina Akuafo Poultry Farm",
@@ -710,7 +710,7 @@
     "supplier_id": null,
     "description": "Payroll 2026-08 — Doris Ansah (Senior Farm Veterinarian) · base 4500 + allow 250 + OT 97.36 − ded 150",
     "date": "2026-08-27",
-    "created_at": "2026-08-27T02:17:33.154Z",
+    "created_at": "2026-08-27T05:23:15.444Z",
     "status": "COMPLETED",
     "recorded_by": "Kwame Mina",
     "recorded_by_role": "OWNER",
@@ -720,7 +720,7 @@
    },
    {
     "id": 8,
-    "transaction_number": "TRX-2026-161967",
+    "transaction_number": "TRX-2026-219696",
     "business_id": 1,
     "branch_code": "POULTRY-01",
     "branch_name": "Mina Akuafo Poultry Farm",
@@ -732,7 +732,7 @@
     "supplier_id": null,
     "description": "Payroll 2026-06 — Doris Ansah (Senior Farm Veterinarian) · base 4500 + allow 0 + OT 0 − ded 0",
     "date": "2026-08-27",
-    "created_at": "2026-08-27T02:17:33.215Z",
+    "created_at": "2026-08-27T05:23:15.507Z",
     "status": "COMPLETED",
     "recorded_by": "Kwame Mina",
     "recorded_by_role": "OWNER",
@@ -742,7 +742,7 @@
    },
    {
     "id": 9,
-    "transaction_number": "TRX-2026-180839",
+    "transaction_number": "TRX-2026-193057",
     "business_id": 1,
     "branch_code": "POULTRY-01",
     "branch_name": "Mina Akuafo Poultry Farm",
@@ -754,7 +754,7 @@
     "supplier_id": null,
     "description": "Payroll 2026-07 — Doris Ansah (Senior Farm Veterinarian) · base 4500 + allow 0 + OT 0 − ded 0",
     "date": "2026-08-27",
-    "created_at": "2026-08-27T02:17:33.265Z",
+    "created_at": "2026-08-27T05:23:15.563Z",
     "status": "COMPLETED",
     "recorded_by": "Kwame Mina",
     "recorded_by_role": "OWNER",
@@ -764,7 +764,7 @@
    },
    {
     "id": 10,
-    "transaction_number": "TRX-2026-755716",
+    "transaction_number": "TRX-2026-208932",
     "business_id": 6,
     "branch_code": "TECH-01",
     "branch_name": "Mina Tech & Electronics Hub",
@@ -776,7 +776,7 @@
     "supplier_id": null,
     "description": "Payroll 2026-08 — Michael Quaye (Solar Systems Engineer) · base 5200 + allow 0 + OT 187.5 − ded 0",
     "date": "2026-08-27",
-    "created_at": "2026-08-27T02:17:33.306Z",
+    "created_at": "2026-08-27T05:23:15.618Z",
     "status": "COMPLETED",
     "recorded_by": "Kwame Mina",
     "recorded_by_role": "OWNER",
