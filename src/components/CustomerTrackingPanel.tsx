@@ -500,6 +500,11 @@ export default function CustomerTrackingPanel({
                         {PAYCHIP_FOR[t.paymentStatus]}
                       </span>
                     </div>
+                    {t.businessHelpPhone && (
+                      <p className="text-[10px] text-emerald-300/90 mb-1.5" data-testid={`ct-bizphone-${t.id}`}>
+                        Customer can call <span className="font-black">{t.businessHelpPhone}</span> for payment assistance / delivery support
+                      </p>
+                    )}
                     {t.paymentRef && (
                       <p className="text-[10px] text-yellow-300/90 mb-1.5" data-testid={`ct-payref-${t.id}`}>MoMo ref: {t.paymentRef}</p>
                     )}

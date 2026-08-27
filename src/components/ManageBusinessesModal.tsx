@@ -1192,12 +1192,14 @@ export default function ManageBusinessesModal({
                     <Building2 className="w-3.5 h-3.5 text-amber-300" /> Customer help & MoMo payment
                   </h4>
                   <p className="text-[10px] text-slate-400 leading-relaxed">
-                    Shown to customers straight after they place an order and on their tracking page: who to
-                    call/WhatsApp for help, and the MoMo number to pay. Saved together with the settings above.
+                    Shown to customers straight after they place an order and on their tracking page — the
+                    business telephone appears right under <em>Payment — “Awaiting payment confirmation”</em> as
+                    the number to call for payment assistance or delivery support; the MoMo number is where to pay.
+                    Saved together with the settings above.
                   </p>
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
                     <label className="block">
-                      <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Help line (call / WhatsApp)</span>
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Business telephone — payment assistance &amp; delivery support (call / WhatsApp)</span>
                       <input
                         value={onlHelp}
                         onChange={(e) => { setOnlHelp(e.target.value); setOnlDirty(true); }}

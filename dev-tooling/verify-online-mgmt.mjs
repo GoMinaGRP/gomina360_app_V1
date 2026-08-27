@@ -629,7 +629,7 @@ async function sectionE(cookies) {
 }
 
 /* ═══ F · customer surfaces ═══ */
-async function sectionF() {
+async function sectionF(cookies) {
   console.log("\n— F · customer surfaces: chooser, confirmation, tracking, chips —");
   const { ctx, page } = await newPage("F:storefront", { width: 1440, height: 1000 });
   await page.goto(`${BASE}/order?biz=1`, { waitUntil: "networkidle0", timeout: 60000 });
@@ -685,6 +685,16 @@ async function sectionF() {
     !!tMomo && /059 411 2233/.test(tMomo) && /Mina Akuafo/.test(tMomo), `${tMomo}`);
   ok("F6b /track shows the help line", !!tHelp && /100 2000/.test(tHelp), `${tHelp}`);
   ok("F6c /track names the chosen pickup point", !!tPick && /Spintex Depot/.test(tPick), `${tPick}`);
+  const payCall = await page.$('[data-testid="track-payment-call"]');
+  const payCallText = payCall ? await page.$eval('[data-testid="track-payment-call"]', (el) => el.textContent || "") .catch(() => null) : null;
+  const payCallHref = payCall ? await page.$eval('[data-testid="track-payment-call"]', (el) => el.getAttribute("href") || "").catch(() => null) : null;
+  ok("F6d Payment card shows tap-to-call for payment assistance / delivery support",
+    !!payCall && /payment assistance or delivery support/i.test(payCallText || "") && /\+233 24 100 2000/.test(payCallText || "") &&
+    !!payCallHref && payCallHref.startsWith("tel:+233241002000"),
+    `${payCallHref} · ${(payCallText || "").slice(0, 70)}`);
+  const staffRow = ((await api(cookies.owner, "/api/tracking")).json?.trackings || []).find((r) => r.trackingCode === baseline.uiOrderCode);
+  ok("F7 staff tracking register carries the unit's business telephone (for payment support)",
+    staffRow?.businessHelpPhone === "+233 24 100 2000", `${staffRow?.businessHelpPhone}`);
   await shot(page, "mgmt-5-track-contacts");
   await ctx.close();
 }
@@ -828,7 +838,7 @@ async function main() {
       defaultViewport: { width: 1440, height: 960 },
     });
     await sectionE(cookies);
-    await sectionF();
+    await sectionF(cookies);
   } finally {
     await cleanup(cookies);
     if (browser) await browser.close().catch(() => {});

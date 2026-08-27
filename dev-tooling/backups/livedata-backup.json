@@ -1,5 +1,5 @@
 {
- "capturedAt": "2026-08-27T03:48:45.050Z",
+ "capturedAt": "2026-08-27T04:45:11.142Z",
  "app": "gomina360",
  "tables": {
   "businesses": [
@@ -336,6 +336,21 @@
     "loyalty_points": 0,
     "business_id": null,
     "created_at": "2026-08-27T03:41:46.836Z"
+   },
+   {
+    "id": 74,
+    "name": "uui",
+    "type": "RETAIL",
+    "phone": "0246232344",
+    "email": null,
+    "address": null,
+    "region": null,
+    "district": null,
+    "town": null,
+    "total_spent_ghs": 0,
+    "loyalty_points": 0,
+    "business_id": 1,
+    "created_at": "2026-08-27T04:27:32.063Z"
    }
   ],
   "customer_trackings": [
@@ -469,6 +484,75 @@
     "created_by_role": "CUSTOMER",
     "created_at": "2026-08-27T03:41:46.834Z",
     "updated_at": "2026-08-27T03:41:46.834Z",
+    "discount_percent": 0,
+    "discount_ghs": 0,
+    "pickup_location_id": null,
+    "pickup_location_name": null,
+    "pickup_location_address": null,
+    "pickup_lat": null,
+    "pickup_lng": null
+   },
+   {
+    "id": 91,
+    "tracking_code": "GM-POULTRY-QSPQYH",
+    "business_id": 1,
+    "branch_code": "POULTRY-01",
+    "branch_name": "Nsawam & Kasoa Highway",
+    "customer_id": 74,
+    "customer_name": "uui",
+    "customer_phone": "0246232344",
+    "sale_document_id": null,
+    "transaction_id": null,
+    "items": [
+     {
+      "sku": "POUL-EGG-L01",
+      "unit": "Trays",
+      "total": 55,
+      "quantity": 1,
+      "unitPrice": 55,
+      "description": "Grade A Large Egg Trays (30 Eggs/Tray) (POUL-EGG-L01)",
+      "inventoryId": 1
+     }
+    ],
+    "total_ghs": 55,
+    "currency": "GHS",
+    "fulfillment_type": "PICKUP",
+    "destination_address": null,
+    "delivery_lat": null,
+    "delivery_lng": null,
+    "delivery_accuracy_m": null,
+    "delivery_map_link": null,
+    "delivery_pinned_at": null,
+    "status": "RECEIVED",
+    "status_history": [
+     {
+      "at": "2026-08-27T04:27:32.062Z",
+      "by": "uui",
+      "note": "Online order placed on the GoMina 360 customer storefront.",
+      "byRole": "CUSTOMER",
+      "status": "RECEIVED"
+     }
+    ],
+    "driver_name": null,
+    "vehicle_note": null,
+    "driver_lat": null,
+    "driver_lng": null,
+    "driver_location_at": null,
+    "order_source": "ONLINE",
+    "payment_choice": "MOMO_NOW",
+    "payment_status": "PENDING_CONFIRMATION",
+    "payment_method": "MTN_MOMO",
+    "payment_ref": null,
+    "payment_marked_by": null,
+    "payment_marked_at": null,
+    "customer_note": null,
+    "stock_committed": false,
+    "notes": null,
+    "created_by_user_id": null,
+    "created_by_name": "uui",
+    "created_by_role": "CUSTOMER",
+    "created_at": "2026-08-27T04:27:32.062Z",
+    "updated_at": "2026-08-27T04:27:32.062Z",
     "discount_percent": 0,
     "discount_ghs": 0,
     "pickup_location_id": null,

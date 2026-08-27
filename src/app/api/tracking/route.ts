@@ -130,6 +130,9 @@ export async function GET(request: NextRequest) {
           businessName: biz?.name || `Business #${r.businessId}`,
           businessCode: biz?.code || r.branchCode || "",
           businessGps: biz && biz.gpsLat != null && biz.gpsLng != null ? { lat: biz.gpsLat, lng: biz.gpsLng } : null,
+          // Business telephone customers call for payment assistance /
+          // delivery support — set per unit by the OWNER/authorized staff.
+          businessHelpPhone: biz?.customerHelpPhone || null,
           linkedTransaction: trx
             ? { id: trx.id, number: trx.transactionNumber, type: trx.type, category: trx.category }
             : null,

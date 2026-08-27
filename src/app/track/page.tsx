@@ -21,6 +21,7 @@ import {
   User as UserIcon,
   Banknote,
   Navigation,
+  Phone,
   Smartphone,
 } from "lucide-react";
 import { googleMapsEmbed, googleMapsLink, googleMapsRouteLink } from "@/lib/tracking";
@@ -526,6 +527,22 @@ function TrackInner() {
                   <div className="mt-2 text-[11px] text-cyan-300 flex items-center gap-1.5" data-testid="track-delivery-progress">
                     <Truck className="w-3.5 h-3.5" /> Delivery in progress — watch the live map above.
                   </div>
+                )}
+                {/* Business telephone for payment assistance / delivery
+                    support — set per unit by the OWNER / authorized staff and
+                    shown right under the Payment status block. */}
+                {t.help?.phone && (
+                  <a
+                    href={`tel:${String(t.help.phone).replace(/[^+\d]/g, "")}`}
+                    className="mt-2.5 inline-flex items-center gap-1.5 rounded-lg bg-emerald-500/10 border border-emerald-500/30 px-2.5 py-1.5 text-[12px] font-bold text-emerald-300 hover:text-emerald-200 hover:bg-emerald-500/15 transition"
+                    data-testid="track-payment-call"
+                  >
+                    <Phone className="w-3.5 h-3.5 shrink-0" />
+                    <span>
+                      Payment assistance or delivery support — call{" "}
+                      <span className="font-black">{t.help.phone}</span>
+                    </span>
+                  </a>
                 )}
               </div>
             )}
