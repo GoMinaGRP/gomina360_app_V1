@@ -130,12 +130,25 @@ try {
   const prov = created.body?.provisioned || {};
   const lines0 = await q(`SELECT * FROM telecom_lines WHERE business_id=${BIZ.id} ORDER BY id`);
   const pkgs0 = await q(`SELECT * FROM telecom_wifi_packages WHERE business_id=${BIZ.id} ORDER BY id`);
-  ok("A3 4 default agent lines provisioned", lines0.length === 4 && prov.telecomLines === 4, lines0.map((l) => `${l.network}/${l.kind}`).join(", "));
-  ok("A4 4 default Wi-Fi packages provisioned", pkgs0.length === 4 && prov.telecomWifiPackages === 4, pkgs0.map((p) => p.name).join(" | "));
+  // Clean-start world (owner requirement "every new Business starts completely
+  // clean; no sample/test data"): new units no longer receive the sample
+  // agent lines / Wi-Fi packages / starter SKUs. The suite builds its own
+  // fixtures below, through the same API the real UI uses.
+  ok("A3 new unit starts CLEAN — zero sample agent lines", lines0.length === 0, `${lines0.length} lines`);
+  ok("A4 zero sample Wi-Fi packages", pkgs0.length === 0, `${pkgs0.length} packages`);
   const inv0 = await q(`SELECT count(*) c FROM inventory_items WHERE business_id=${BIZ.id}`);
   const tpl0 = await q(`SELECT count(*) c FROM checklist_templates WHERE business_id=${BIZ.id}`);
-  ok("A5 telecom starter stock kit (6 SKUs)", Number(inv0[0].c) === 6 && prov.starterItems === 6, `${inv0[0].c} items`);
+  ok("A5 zero starter stock SKUs (clean provisioning)", Number(inv0[0].c) === 0 && (prov.starterItems ?? 0) === 0, `${inv0[0].c} items`);
   ok("A6 telecom daily-checklist templates (8 tasks)", Number(tpl0[0].c) === 8, `${tpl0[0].c} templates`);
+  // A7 the unit then builds its OWN network setup (this is what real owners
+  // do now): one MoMo agent till + one airtime wallet, via the module's API.
+  const mkMtn = await tel("LINE", { label: "MTN MoMo Agent Till", network: "MTN", kind: "MOMO_AGENT" });
+  const mkWallet = await tel("LINE", { label: "MTN Airtime & Data Wallet", network: "MTN", kind: "AIRTIME_WALLET" });
+  LINE_MTN = mkMtn.body?.item;
+  LINE_WALLET = mkWallet.body?.item;
+  ok("A7 owner adds the unit's own MoMo till + airtime wallet",
+    mkMtn.status === 200 && mkWallet.status === 200 && LINE_MTN?.id > 0 && LINE_WALLET?.id > 0,
+    `${mkMtn.status}/${mkWallet.status} ${(mkMtn.body?.error || mkWallet.body?.error || "").slice(0, 80)}`);
 
   // ══ B. Module renders in the real UI ═══════════════════════════════════
   console.log("── B. Dedicated module UI ──");
@@ -148,13 +161,12 @@ try {
   ok("B1 telecom module mounts for the new unit", true);
   ok("B2 header brands Telecom & Digital Services", await innerHas('[data-testid="telecom-module"]', "TELECOM & DIGITAL SERVICES"));
   ok("B3 all 8 required tabs present", (await Promise.all(["MOMO", "AIRDATA", "WIFI", "SALES", "FINANCE", "CUSTOMERS", "REPORTS", "CHECKLIST"].map((t) => exists(`[data-testid="tel-tab-${t}"]`)))).every(Boolean));
-  ok("B4 dashboard lists the 4 default lines", (await textOf('[data-testid="tel-dash-lines-list"]'))?.includes("MTN MoMo Agent Till"));
+  ok("B4 dashboard lists the unit's own lines (added via the API)", (await textOf('[data-testid="tel-dash-lines-list"]'))?.includes("MTN MoMo Agent Till"));
   await page.screenshot({ path: SHOT("1-dashboard") });
 
   // ══ C. Float & cash top-up via UI ══════════════════════════════════════
   console.log("── C. Float/cash top-up ──");
-  LINE_MTN = lines0.find((l) => l.kind === "MOMO_AGENT" && l.network === "MTN");
-  LINE_WALLET = lines0.find((l) => l.kind === "AIRTIME_WALLET");
+  // LINE_MTN / LINE_WALLET were created in A7 — the module serves them now.
   await clickTid(`tel-line-topup-${LINE_MTN.id}`);
   await waitSel('[data-testid="telf-form"]');
   ok("C1 top-up form opens for the line", await innerHas('[data-testid="telf-form"]', LINE_MTN.label));
