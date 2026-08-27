@@ -358,6 +358,8 @@ export default function CustomerTrackingPanel({
               {t.fulfillmentType === "DELIVERY" ? <Truck className="w-3 h-3" /> : <Store className="w-3 h-3" />}
               {t.fulfillmentType === "DELIVERY"
                 ? `Delivery${t.deliveryLat != null ? " · Google-Maps pin set" : " · address only"}`
+                : t.pickupLocationName
+                ? `Pickup · ${t.pickupLocationName}`
                 : "Pickup at branch"}
             </span>
           </div>
@@ -381,6 +383,18 @@ export default function CustomerTrackingPanel({
                 ))}
               </ul>
             )}
+            {Number(t.discountGhs) > 0 && (
+              <div className="mt-2 pt-2 border-t border-slate-700/60 space-y-0.5 text-[11px]">
+                <div className="flex items-center justify-between text-slate-500">
+                  <span>Subtotal</span>
+                  <span>{fmt((Number(t.totalGhs) || 0) + (Number(t.discountGhs) || 0))}</span>
+                </div>
+                <div className="flex items-center justify-between text-amber-300" data-testid={`ct-discount-${t.id}`}>
+                  <span>Discount{Number(t.discountPercent) > 0 ? ` (${Number(t.discountPercent)}%)` : ""}</span>
+                  <span>− {fmt(t.discountGhs)}</span>
+                </div>
+              </div>
+            )}
             <div className="mt-2 pt-2 border-t border-slate-700/60 flex items-center justify-between text-[11px] font-bold">
               <span className="text-slate-400">Total</span>
               <span className="text-emerald-300">{fmt(t.totalGhs)}</span>
@@ -392,6 +406,11 @@ export default function CustomerTrackingPanel({
                 {t.fulfillmentType === "DELIVERY" ? <Truck className="w-3 h-3" /> : <PackageCheck className="w-3 h-3" />}
                 {t.fulfillmentType === "DELIVERY" ? "Delivery" : "Pickup"}{t.destinationAddress ? ` → ${t.destinationAddress}` : ""}
               </div>
+              {t.pickupLocationName && (
+                <div className="flex items-center gap-1.5 text-emerald-300/90" data-testid={`ct-pickpoint-${t.id}`}>
+                  <PackageCheck className="w-3 h-3" />Pickup point: {t.pickupLocationName}{t.pickupLocationAddress ? ` — ${t.pickupLocationAddress}` : ""}
+                </div>
+              )}
               <div className="flex items-center gap-1.5"><Clock3 className="w-3 h-3" />Placed {new Date(t.createdAt).toLocaleString()}</div>
               <div className="flex items-center gap-1.5 font-mono text-slate-600"><Hash className="w-3 h-3" />{t.orderRef || `#${t.id}`}</div>
               {t.customerNote && (
@@ -1079,10 +1098,14 @@ function NewTrackingModal({
   const parsedPin = useMemo(() => parseGoogleMapsPin(mapLinkText), [mapLinkText]);
   const pinTried = mapLinkText.trim().length > 0;
 
-  const total = items.reduce(
+  const [discountPct, setDiscountPct] = useState(""); // % discount — amount auto-calculated
+  const subtotal = items.reduce(
     (acc, li) => acc + (Number(li.quantity) || 0) * (Number(li.unitPrice) || 0),
     0,
   );
+  const discountPctNum = Math.max(0, Math.min(100, Number(discountPct) || 0));
+  const discountAmount = Math.round(((subtotal * discountPctNum) / 100) * 100) / 100;
+  const total = Math.round((subtotal - discountAmount) * 100) / 100;
 
   const submit = async () => {
     setError("");
@@ -1107,6 +1130,7 @@ function NewTrackingModal({
           customerName: customerName.trim() || "Walk-in Customer",
           customerPhone: customerPhone.trim(),
           items: cleanItems,
+          ...(discountPctNum > 0 ? { discountPercent: discountPctNum } : {}),
           fulfillmentType: fulfillment,
           destinationAddress: destination.trim(),
           ...(fulfillment === "DELIVERY" && parsedPin
@@ -1335,6 +1359,25 @@ function NewTrackingModal({
               </div>
               <div className="mt-1.5 text-right text-[11px] font-bold text-emerald-300" data-testid="ct-new-total">
                 Total: {fmt(total)}
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Discount % (optional — amount auto-calculates)</label>
+              <div className="flex items-center gap-2">
+                <input
+                  value={discountPct}
+                  onChange={(e) => setDiscountPct(e.target.value)}
+                  inputMode="decimal"
+                  placeholder="e.g. 5"
+                  className="w-24 bg-slate-800 border border-slate-700 rounded-lg px-2.5 py-2 text-xs text-slate-200 outline-none focus:border-cyan-500/60"
+                  data-testid="ct-new-discount"
+                />
+                {discountAmount > 0 && (
+                  <span className="text-[11px] text-amber-300" data-testid="ct-new-discount-amount">
+                    − {fmt(discountAmount)} · customer pays {fmt(total)}
+                  </span>
+                )}
               </div>
             </div>
 

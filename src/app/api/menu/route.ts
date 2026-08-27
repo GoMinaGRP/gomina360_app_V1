@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { db } from "@/db";
-import { businesses, inventoryItems } from "@/db/schema";
+import { businesses, inventoryItems, serviceAreas, pickupLocations } from "@/db/schema";
 import { asc, eq, gt, ne, and } from "drizzle-orm";
 
 /**
@@ -13,18 +13,22 @@ import { asc, eq, gt, ne, and } from "drizzle-orm";
  */
 export async function GET() {
   try {
-    const [bizRows, itemRows] = await Promise.all([
+    const [bizRows, itemRows, areaRows, pickupRows] = await Promise.all([
       db.select().from(businesses).orderBy(asc(businesses.id)),
       db
         .select()
         .from(inventoryItems)
         .where(and(gt(inventoryItems.quantity, 0), ne(inventoryItems.status, "OUT_OF_STOCK")))
         .orderBy(asc(inventoryItems.name)),
+      db.select().from(serviceAreas).where(eq(serviceAreas.active, true)),
+      db.select().from(pickupLocations).where(eq(pickupLocations.active, true)),
     ]);
 
     const result = [];
     for (const b of bizRows) {
-      if ((b.status || "").toUpperCase() === "INACTIVE") continue;
+      // Only ACTIVE / EXPANDING units trade publicly — MAINTENANCE and
+      // INACTIVE are hidden from the storefront (and refused at checkout).
+      if (!["ACTIVE", "EXPANDING"].includes((b.status || "").toUpperCase())) continue;
       // Units the OWNER / authorized staff switched OFF for online ordering
       // never reach the customer storefront at all.
       if (b.onlineOrderingEnabled === false) continue;
@@ -63,6 +67,33 @@ export async function GET() {
         serviceNote: b.serviceNote || null,
         pickupEnabled: b.pickupEnabled !== false,
         deliveryEnabled: b.deliveryEnabled !== false,
+        // This unit's own service areas / localities (each branch defines its
+        // own list) and its pickup points — drive the storefront's "serving
+        // my location" filter and the PICKUP checkout chooser.
+        serviceAreas: areaRows
+          .filter((a) => a.businessId === b.id)
+          .map((a) => ({
+            id: a.id,
+            name: a.name,
+            centerLat: a.centerLat ?? null,
+            centerLng: a.centerLng ?? null,
+            radiusKm: a.radiusKm ?? null,
+            note: a.note || null,
+          })),
+        pickupLocations: pickupRows
+          .filter((p) => p.businessId === b.id)
+          .map((p) => ({
+            id: p.id,
+            name: p.name,
+            address: p.address || null,
+            lat: p.lat ?? null,
+            lng: p.lng ?? null,
+            instructions: p.instructions || null,
+          })),
+        // Customer-facing help & payment contacts (post-order + /track).
+        customerHelpPhone: b.customerHelpPhone || null,
+        momoNumber: b.momoNumber || null,
+        momoName: b.momoName || null,
         products,
       });
     }

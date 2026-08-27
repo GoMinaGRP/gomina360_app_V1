@@ -205,18 +205,66 @@ export function haversineM(lat1: number, lng1: number, lat2: number, lng2: numbe
  *  radius is configured, or the branch has no GPS anchor to measure from
  *  (never hide a unit we cannot evaluate), or the customer is inside the
  *  radius. Returns the distance in metres when computable. */
+export interface ServiceAreaInput {
+  name?: string | null;
+  centerLat?: number | null;
+  centerLng?: number | null;
+  radiusKm?: number | null;
+}
+
+/**
+ * Does this Business/Branch serve the customer's Google-Maps location?
+ * A unit can define its own list of named service areas/localities; each may
+ * carry a map centre + coverage radius. A location is served when it falls
+ * inside ANY geocoded area, otherwise we fall back to the legacy branch-pin
+ * radius. Units with no geocoded area AND no branch anchor can never be
+ * evaluated — they stay visible (never hide a unit we cannot judge) and any
+ * name-only areas are shown to customers as advisory.
+ */
 export function businessServesLocation(
   biz: { serviceRadiusKm?: number | null; gpsLat?: number | null; gpsLng?: number | null },
   lat: number,
   lng: number,
-): { serves: boolean; distanceM: number | null } {
+  areas?: ServiceAreaInput[] | null,
+): { serves: boolean; distanceM: number | null; areaName: string | null } {
+  // 1. Named, geocoded service areas (closest containing area wins).
+  const geoAreas = (areas || []).filter(
+    (a) => a && a.centerLat != null && a.centerLng != null && Number(a.radiusKm) > 0,
+  );
+  if (geoAreas.length > 0) {
+    let best: { distanceM: number; areaName: string | null } | null = null;
+    for (const a of geoAreas) {
+      const distanceM = haversineM(lat, lng, Number(a.centerLat), Number(a.centerLng));
+      if (distanceM <= Number(a.radiusKm) * 1000 && (!best || distanceM < best.distanceM)) {
+        best = { distanceM, areaName: a.name || null };
+      }
+    }
+    if (best) return { serves: true, distanceM: best.distanceM, areaName: best.areaName };
+    // Outside every named area — but if the unit ALSO has no branch radius
+    // rule there is nothing more to evaluate; report the closest area's gap.
+    const closest = Math.min(
+      ...geoAreas.map((a) =>
+        haversineM(lat, lng, Number(a.centerLat), Number(a.centerLng)) - Number(a.radiusKm) * 1000,
+      ),
+    );
+    const radiusKm = biz.serviceRadiusKm == null ? null : Number(biz.serviceRadiusKm);
+    const hasLegacyRule = biz.gpsLat != null && biz.gpsLng != null && radiusKm != null && radiusKm > 0;
+    if (!hasLegacyRule) return { serves: false, distanceM: closest > 0 ? closest : null, areaName: null };
+    // else fall through to the legacy rule as a second chance
+  }
+
+  // 2. Legacy branch-pin radius.
   const radiusKm = biz.serviceRadiusKm == null ? null : Number(biz.serviceRadiusKm);
   if (biz.gpsLat == null || biz.gpsLng == null) {
-    return { serves: true, distanceM: null };
+    if (geoAreas.length > 0) return { serves: false, distanceM: null, areaName: null };
+    return { serves: true, distanceM: null, areaName: null };
   }
   const distanceM = haversineM(lat, lng, biz.gpsLat, biz.gpsLng);
-  if (radiusKm == null || !(radiusKm > 0)) return { serves: true, distanceM };
-  return { serves: distanceM <= radiusKm * 1000, distanceM };
+  if (radiusKm == null || !(radiusKm > 0)) {
+    if (geoAreas.length > 0) return { serves: false, distanceM, areaName: null };
+    return { serves: true, distanceM, areaName: null };
+  }
+  return { serves: distanceM <= radiusKm * 1000, distanceM, areaName: null };
 }
 
 /**
@@ -232,6 +280,9 @@ export function publicTrackingPayload(row: any, biz: any) {
   const gpsLat = typeof biz === "object" && biz ? biz.gpsLat : null;
   const gpsLng = typeof biz === "object" && biz ? biz.gpsLng : null;
   const branchAddress = typeof biz === "object" && biz ? biz.branchLocation : null;
+  const helpPhone = typeof biz === "object" && biz ? biz.customerHelpPhone || null : null;
+  const momoNumber = typeof biz === "object" && biz ? biz.momoNumber || null : null;
+  const momoName = typeof biz === "object" && biz ? biz.momoName || null : null;
   const live =
     row.status === "DISPATCHED" && row.driverLat != null && row.driverLng != null
       ? {
@@ -255,6 +306,14 @@ export function publicTrackingPayload(row: any, biz: any) {
       unitPrice: li.unitPrice ?? null,
       total: li.total ?? null,
     })),
+    // Percentage discount (if any) plus the pre-discount subtotal, so the
+    // tracking page can show "Discount 5% −GH₵x" like any other receipt.
+    discountPercent: Number(row.discountPercent) || 0,
+    discountGhs: Number(row.discountGhs) || 0,
+    subtotalGhs:
+      row.totalGhs != null
+        ? Math.round((Number(row.totalGhs) + (Number(row.discountGhs) || 0)) * 100) / 100
+        : null,
     totalGhs: row.totalGhs ?? null,
     currency: row.currency || "GHS",
     fulfillmentType: row.fulfillmentType,
@@ -273,9 +332,27 @@ export function publicTrackingPayload(row: any, biz: any) {
           }
         : null,
     pickupLocation:
-      row.fulfillmentType === "PICKUP" && gpsLat != null && gpsLng != null
-        ? { lat: gpsLat, lng: gpsLng, address: branchAddress || null }
+      row.fulfillmentType === "PICKUP"
+        ? row.pickupLocationName
+          ? {
+              // Chosen named pickup point (snapshot from the order).
+              name: row.pickupLocationName,
+              address: row.pickupLocationAddress || null,
+              lat: row.pickupLat ?? null,
+              lng: row.pickupLng ?? null,
+              mapLink:
+                row.pickupLat != null && row.pickupLng != null
+                  ? googleMapsLink(row.pickupLat, row.pickupLng)
+                  : null,
+            }
+          : gpsLat != null && gpsLng != null
+            ? { lat: gpsLat, lng: gpsLng, address: branchAddress || null, name: null, mapLink: googleMapsLink(gpsLat, gpsLng) }
+            : null
         : null,
+    // Customer help & MoMo payment numbers (set per unit in Manage
+    // Businesses → Online) — shown after checkout and here on /track.
+    help: helpPhone ? { phone: helpPhone } : null,
+    momo: momoNumber ? { number: momoNumber, name: momoName } : null,
     status: row.status,
     statusLabel: TRACK_STATUS_LABELS[row.status as TrackStatus] || row.status,
     isTerminal: TERMINAL_STATUSES.includes(row.status),

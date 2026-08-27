@@ -82,15 +82,19 @@ async function ensureHardwareFlagship() {
       iconName: "HardHat",
     })
     .returning();
-  // Same auto-provisioning every other unit gets: zero-based metrics, the
-  // Hardware starter inventory kit, and the full daily-checklist template set.
-  await provisionBusiness({
-    id: biz.id,
-    code: biz.code,
-    name: biz.name,
-    category: biz.category,
-    initialCapitalGhs: biz.initialCapitalGhs,
-  });
+  // Recovery/demo seed: zero-based metrics, the full daily-checklist template
+  // set AND the Hardware starter inventory kit (starterKit is seed-only —
+  // units created from the live app start completely clean per owner policy).
+  await provisionBusiness(
+    {
+      id: biz.id,
+      code: biz.code,
+      name: biz.name,
+      category: biz.category,
+      initialCapitalGhs: biz.initialCapitalGhs,
+    },
+    { starterKit: true },
+  );
   // General Manager visibility sweep — mirrors the core-branch grants, so the
   // GM can open the new unit from day one (revocable in Users & Access).
   await db.execute(sql`

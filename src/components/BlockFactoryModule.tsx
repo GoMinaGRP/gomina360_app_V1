@@ -251,6 +251,7 @@ export default function BlockFactoryModule({
             paymentMethod: data.paymentMethod,
             notes: data.notes,
             discount: Number(data.discount) || 0,
+            discountPercent: data.discountPct ? Number(data.discountPct) : undefined,
             cartItems: [
               {
                 inventoryId: Number(data.inventoryId),
@@ -728,6 +729,8 @@ function BlockFactoryForm({ type, busy, onClose, onSubmit, orders, inventory, bl
   const saleQty = Number(f.quantity) || 0;
   const salePrice = f.sellingPrice ? Number(f.sellingPrice) : selectedItem?.sellingPriceGhs || 0;
   const saleTotal = saleQty * salePrice;
+  const salePct = Math.max(0, Math.min(100, Number(f.discountPct) || 0));
+  const saleNet = Math.round(saleTotal * (1 - salePct / 100) * 100) / 100;
   const restockCost = Number(f.unitCostGhs) || 0;
   const restockTotal = (Number(f.quantity) || 0) * restockCost;
 
@@ -825,9 +828,10 @@ function BlockFactoryForm({ type, busy, onClose, onSubmit, orders, inventory, bl
         <I label="Customer Name" k="customerName" placeholder="Walk-in Customer" />
         <I label="Customer Phone" k="customerPhone" />
         <S label="Payment" k="paymentMethod" opts={["CASH", "MTN_MOMO", "TELECEL_CASH", "BANK_TRANSFER", "POS_CARD"]} />
+        <I label="Discount %" k="discountPct" t="number" step="0.5" min={0} max={100} placeholder="auto-calculates" />
         <I label="Price Override Reason" k="customPriceReason" placeholder="only if price changed" />
       </div>
-      {selectedItem && <div className="p-3 rounded-lg bg-amber-500/10 border border-amber-500/30 text-xs text-amber-200">Total due: <span className="font-black">GH₵ {saleTotal.toLocaleString(undefined, { maximumFractionDigits: 2 })}</span> — sells {saleQty} {selectedItem.unit} of “{selectedItem.name}”. Stock after sale: {Math.max(0, (selectedItem.quantity || 0) - saleQty).toLocaleString()}.</div>}
+      {selectedItem && <div className="p-3 rounded-lg bg-amber-500/10 border border-amber-500/30 text-xs text-amber-200">Total due: <span className="font-black">GH₵ {saleNet.toLocaleString(undefined, { maximumFractionDigits: 2 })}</span>{salePct > 0 && <span> ({salePct}% discount)</span>} — sells {saleQty} {selectedItem.unit} of “{selectedItem.name}”. Stock after sale: {Math.max(0, (selectedItem.quantity || 0) - saleQty).toLocaleString()}.</div>}
       <I label="Notes" k="notes" />
     </>}
     {type === "RESTOCK" && <>

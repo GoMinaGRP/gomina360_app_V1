@@ -123,6 +123,7 @@ export default function BranchManagerSalesView({
   const [saleCustomerName, setSaleCustomerName] = useState("Walk-in Customer");
   const [saleCustomerPhone, setSaleCustomerPhone] = useState("");
   const [saleDiscount, setSaleDiscount] = useState<number>(0);
+  const [saleDiscountPct, setSaleDiscountPct] = useState<number>(0); // % auto-calculates the amount
   const [saleNotes, setSaleNotes] = useState("");
   const [inventorySearch, setInventorySearch] = useState("");
   const [inventoryCatFilter, setInventoryCatFilter] = useState("ALL");
@@ -150,8 +151,9 @@ export default function BranchManagerSalesView({
   const branchInventory = inventory.filter(
     (inv) => inv.businessId === activeBiz?.id
   );
+  // Business-isolated CRM — the branch only ever sells to its OWN customers.
   const branchCustomers = customers.filter(
-    (c) => c.businessId === activeBiz?.id || c.businessId === null
+    (c) => c.businessId === activeBiz?.id
   );
   const branchTransactions = transactions.filter(
     (t) => t.businessId === activeBiz?.id
@@ -393,7 +395,9 @@ export default function BranchManagerSalesView({
     (sum, c) => sum + c.sellingPrice * c.quantity,
     0
   );
-  const cartTotal = cartSubtotal - saleDiscount;
+  const cartDiscountAmount =
+    saleDiscountPct > 0 ? Math.round(((cartSubtotal * saleDiscountPct) / 100) * 100) / 100 : saleDiscount;
+  const cartTotal = cartSubtotal - cartDiscountAmount;
   const cartHasCustomPrices = cart.some((c) => c.isCustomPrice);
   const canOverridePrice =
     currentUser?.role === "OWNER" || currentUser?.role === "GENERAL_MANAGER";
@@ -437,7 +441,8 @@ export default function BranchManagerSalesView({
             customPriceReason: c.isCustomPrice ? c.customPriceReason : undefined,
           })),
           notes: saleNotes,
-          discount: saleDiscount,
+          discount: saleDiscountPct > 0 ? undefined : saleDiscount,
+          discountPercent: saleDiscountPct > 0 ? saleDiscountPct : undefined,
           createdByUserId: currentUser?.id,
           createdByName: currentUser?.name,
           createdByRole: currentUser?.role,
@@ -459,6 +464,7 @@ export default function BranchManagerSalesView({
         setSaleCustomerName("Walk-in Customer");
         setSaleCustomerPhone("");
         setSaleDiscount(0);
+        setSaleDiscountPct(0);
         setSaleNotes("");
         setTimeout(() => setSaleSuccess(false), 4000);
         onRefreshData();
@@ -967,8 +973,20 @@ export default function BranchManagerSalesView({
                       </select>
                     </div>
                     <div>
+                      <label className="block text-[10px] font-semibold text-slate-400 mb-1">Discount %</label>
+                      <input type="number" min={0} max={100} step="0.5" value={saleDiscountPct} data-testid="bm-sale-discount-pct" onChange={(e) => {
+                        const pct = Math.max(0, Math.min(100, Number(e.target.value) || 0));
+                        setSaleDiscountPct(pct);
+                        if (pct > 0) setSaleDiscount(Math.round(((cartSubtotal * pct) / 100) * 100) / 100);
+                      }} className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-white text-xs" />
+                    </div>
+                    <div>
                       <label className="block text-[10px] font-semibold text-slate-400 mb-1">Discount (GH₵)</label>
-                      <input type="number" min={0} step="0.01" value={saleDiscount} onChange={(e) => setSaleDiscount(Number(e.target.value))} className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-white text-xs" />
+                      <input type="number" min={0} step="0.01" value={cartDiscountAmount} data-testid="bm-sale-discount-amt" onChange={(e) => {
+                        const amt = Math.max(0, Number(e.target.value) || 0);
+                        setSaleDiscount(amt);
+                        setSaleDiscountPct(cartSubtotal > 0 ? Math.round((amt / cartSubtotal) * 10000) / 100 : 0);
+                      }} className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-white text-xs" />
                     </div>
                   </div>
                   <div>
@@ -982,10 +1000,10 @@ export default function BranchManagerSalesView({
                       <span>Subtotal ({cart.length} items):</span>
                       <span>{formatMoney(cartSubtotal, currentCurrency)}</span>
                     </div>
-                    {saleDiscount > 0 && (
-                      <div className="flex justify-between text-rose-300">
-                        <span>Discount:</span>
-                        <span>- {formatMoney(saleDiscount, currentCurrency)}</span>
+                    {cartDiscountAmount > 0 && (
+                      <div className="flex justify-between text-rose-300" data-testid="bm-sale-discount-line">
+                        <span>Discount{saleDiscountPct > 0 ? ` (${saleDiscountPct}%)` : ""}:</span>
+                        <span>- {formatMoney(cartDiscountAmount, currentCurrency)}</span>
                       </div>
                     )}
                     <div className="flex justify-between text-lg font-bold text-emerald-400 pt-2 border-t border-slate-700">
@@ -2146,8 +2164,8 @@ export default function BranchManagerSalesView({
                     <span>{formatMoney(viewDoc.subtotalGhs, currentCurrency)}</span>
                   </div>
                   {viewDoc.discountGhs > 0 && (
-                    <div className="flex justify-between text-rose-300">
-                      <span>Discount:</span>
+                    <div className="flex justify-between text-rose-300" data-testid="bm-doc-discount-line">
+                      <span>Discount{Number(viewDoc.discountPercent) > 0 ? ` (${Number(viewDoc.discountPercent)}%)` : ""}:</span>
                       <span>- {formatMoney(viewDoc.discountGhs, currentCurrency)}</span>
                     </div>
                   )}

@@ -84,6 +84,7 @@ export async function POST(request: Request) {
       canManageUsers,
       canManageCctv,
       canManageAuditors,
+      canManageOnline,
       password,
       extraAccessIds,
     } = body;
@@ -151,8 +152,11 @@ export async function POST(request: Request) {
     if (!!canManageAuditors && !isOwner) {
       return FORBIDDEN("Only the OWNER can delegate auditor-access management.");
     }
+    if (!!canManageOnline && !isOwner) {
+      return FORBIDDEN("Only the OWNER can grant Online Storefront & Delivery Areas management.");
+    }
     // Non-OWNER can never create other elevated roles.
-    if (!isOwner && (!!canManageRecords || !!canManageCctv || !!canManageAuditors || ["OWNER", "GENERAL_MANAGER"].includes(role))) {
+    if (!isOwner && (!!canManageRecords || !!canManageCctv || !!canManageAuditors || !!canManageOnline || ["OWNER", "GENERAL_MANAGER"].includes(role))) {
       return FORBIDDEN("Insufficient privilege.");
     }
 
@@ -196,6 +200,8 @@ export async function POST(request: Request) {
         canManageCctv: isOwner ? Boolean(canManageCctv ?? false) : false,
         // Auditor-access delegation is equally OWNER-granted only.
         canManageAuditors: isOwner ? Boolean(canManageAuditors ?? false) : false,
+        // Online Storefront & Delivery Areas management — OWNER-granted only.
+        canManageOnline: isOwner ? Boolean(canManageOnline ?? false) : false,
         // Delegation flag is OWNER-granted and only meaningful on managers.
         canManageUsers:
           isOwner && ["GENERAL_MANAGER", "BRANCH_MANAGER"].includes(role)
@@ -264,6 +270,7 @@ export async function PATCH(request: Request) {
       canManageUsers,
       canManageCctv,
       canManageAuditors,
+      canManageOnline,
       newPassword,
       extraAccessIds,
     } = body;
@@ -308,9 +315,10 @@ export async function PATCH(request: Request) {
           (canManageRecords !== undefined && Boolean(canManageRecords) !== !!targetUser.canManageRecords) ||
           (canManageUsers !== undefined && Boolean(canManageUsers) !== !!targetUser.canManageUsers) ||
           (canManageCctv !== undefined && Boolean(canManageCctv) !== !!targetUser.canManageCctv) ||
-          (canManageAuditors !== undefined && Boolean(canManageAuditors) !== !!targetUser.canManageAuditors)
+          (canManageAuditors !== undefined && Boolean(canManageAuditors) !== !!targetUser.canManageAuditors) ||
+          (canManageOnline !== undefined && Boolean(canManageOnline) !== !!targetUser.canManageOnline)
         ) {
-          return FORBIDDEN("Only the OWNER can grant record-management, user-management, CCTV or auditor-delegation powers.");
+          return FORBIDDEN("Only the OWNER can grant record-management, user-management, CCTV, auditor-delegation or online-storefront powers.");
         }
         if (newPassword !== undefined) {
           return FORBIDDEN("Only the OWNER can reset passwords.");
@@ -333,6 +341,9 @@ export async function PATCH(request: Request) {
         }
         if (canManageAuditors !== undefined) {
           return FORBIDDEN("Only the OWNER can delegate auditor-access management.");
+        }
+        if (canManageOnline !== undefined) {
+          return FORBIDDEN("Only the OWNER can grant or remove Online Storefront & Delivery Areas management.");
         }
         if (role !== undefined && !["BRANCH_MANAGER", "SUPERVISOR", "ACCOUNTANT", "WORKER"].includes(role)) {
           return FORBIDDEN("GENERAL_MANAGER cannot assign elevated roles.");
@@ -410,6 +421,11 @@ export async function PATCH(request: Request) {
           isOwner && canManageAuditors !== undefined
             ? Boolean(canManageAuditors)
             : targetUser.canManageAuditors,
+        // Online Storefront & Delivery Areas management likewise.
+        canManageOnline:
+          isOwner && canManageOnline !== undefined
+            ? Boolean(canManageOnline)
+            : targetUser.canManageOnline,
       })
       .where(eq(users.id, Number(userId)))
       .returning();

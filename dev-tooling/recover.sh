@@ -45,6 +45,9 @@ echo "app up on :3000"
 echo "── 7/7 seed + owner data"
 curl -s -o /dev/null http://localhost:3000/api/init || true   # seeds when empty
 if [ "${RESTORE:-1}" = "1" ]; then node dev-tooling/restore-userdata.mjs; fi
+# Replay the live-data safety net (UI-created units/orders/customers — the
+# data no fixture knows about). Idempotent ON CONFLICT (id) DO NOTHING.
+node dev-tooling/restore-livedata.mjs || true
 # Heal the owner's REAL GoMina crest (business/branch/company logos) if the
 # rebuild rolled the DB back to a snapshot taken before his upload.
 node dev-tooling/restore-branding.mjs

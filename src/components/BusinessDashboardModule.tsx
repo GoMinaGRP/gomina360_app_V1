@@ -250,6 +250,7 @@ export default function BusinessDashboardModule({
           paymentMethod: f.paymentMethod,
           notes: f.notes,
           discount: Number(f.discount) || 0,
+          discountPercent: f.discountPct ? Number(f.discountPct) : undefined,
           cartItems: [{
             inventoryId: Number(f.inventoryId),
             quantity: Number(f.quantity),
@@ -724,6 +725,8 @@ function UnitForm({ type, busy, cfg, inventory, preselectItemId, onClose, onSubm
   const qty = Number(f.quantity) || 0;
   const price = f.sellingPrice ? Number(f.sellingPrice) : selectedItem?.sellingPriceGhs || 0;
   const saleTotal = qty * price;
+  const salePct = Math.max(0, Math.min(100, Number(f.discountPct) || 0));
+  const saleNet = Math.round(saleTotal * (1 - salePct / 100) * 100) / 100;
   const restockCost = Number(f.unitCostGhs) || 0;
   const restockTotal = qty * restockCost;
 
@@ -773,11 +776,12 @@ function UnitForm({ type, busy, cfg, inventory, preselectItemId, onClose, onSubm
                 <I label="Customer Name" k="customerName" placeholder="Walk-in Customer" />
                 <I label="Customer Phone" k="customerPhone" />
                 <S label="Payment" k="paymentMethod" opts={["CASH", "MTN_MOMO", "TELECEL_CASH", "BANK_TRANSFER", "POS_CARD"]} />
+                <I label="Discount %" k="discountPct" t="number" step="0.5" min={0} max={100} placeholder="auto-calculates" />
                 <I label="Price Override Reason" k="customPriceReason" placeholder="only if price changed" />
               </div>
               {selectedItem && (
                 <div className="p-3 rounded-lg bg-emerald-500/10 border border-emerald-500/30 text-xs text-emerald-200">
-                  Total due: <span className="font-black">GH₵ {saleTotal.toLocaleString(undefined, { maximumFractionDigits: 2 })}</span> — sells {qty} {selectedItem.unit} of “{selectedItem.name}”. Stock after sale: {Math.max(0, (selectedItem.quantity || 0) - qty).toLocaleString()}.
+                  Total due: <span className="font-black">GH₵ {saleNet.toLocaleString(undefined, { maximumFractionDigits: 2 })}</span>{salePct > 0 && <span className="ml-1 text-emerald-300">({salePct}% discount − GH₵ {(saleTotal - saleNet).toLocaleString(undefined, { maximumFractionDigits: 2 })})</span>} — sells {qty} {selectedItem.unit} of “{selectedItem.name}”. Stock after sale: {Math.max(0, (selectedItem.quantity || 0) - qty).toLocaleString()}.
                 </div>
               )}
               <I label="Notes" k="notes" />

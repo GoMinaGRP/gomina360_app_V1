@@ -63,6 +63,7 @@ export default function UserAccessConsole({ isOpen, onClose, businesses, current
   const [canManageRecords, setCanManageRecords] = useState(false);
   const [canManageCctv, setCanManageCctv] = useState(false);
   const [canManageAuditors, setCanManageAuditors] = useState(false);
+  const [canManageOnline, setCanManageOnline] = useState(false);
   const [extraAccess, setExtraAccess] = useState<number[]>([]);
   const [isActive, setIsActive] = useState(true);
   const [canDelegateUsers, setCanDelegateUsers] = useState(false);
@@ -170,6 +171,7 @@ export default function UserAccessConsole({ isOpen, onClose, businesses, current
     setCanManageRecords(Boolean(u.canManageRecords));
     setCanManageCctv(Boolean(u.canManageCctv));
     setCanManageAuditors(Boolean(u.canManageAuditors));
+    setCanManageOnline(Boolean(u.canManageOnline));
     setExtraAccess(u.extraAccessIds || []);
     setIsActive(u.isActive !== false);
     setError("");
@@ -192,6 +194,7 @@ export default function UserAccessConsole({ isOpen, onClose, businesses, current
           canRecordSales, canRecordExpenses, canManageStock, canExportData, canManageRecords,
           canManageCctv: isOwner ? canManageCctv : undefined,
           canManageAuditors: isOwner ? canManageAuditors : undefined,
+          canManageOnline: isOwner ? canManageOnline : undefined,
           canManageUsers: isOwner ? canDelegateUsers : undefined,
           extraAccessIds: extraAccess,
         }),
@@ -232,6 +235,7 @@ export default function UserAccessConsole({ isOpen, onClose, businesses, current
           canRecordSales, canRecordExpenses, canManageStock, canExportData, canManageRecords,
           canManageCctv: isOwner ? canManageCctv : undefined,
           canManageAuditors: isOwner ? canManageAuditors : undefined,
+          canManageOnline: isOwner ? canManageOnline : undefined,
           canManageUsers: isOwner ? canDelegateUsers : undefined,
           extraAccessIds: extraAccess,
           newPassword: isOwner && password ? password : undefined,
@@ -368,6 +372,15 @@ export default function UserAccessConsole({ isOpen, onClose, businesses, current
           )}
           {isOwner && (
             <Toggle label="Manage CCTV cameras" value={canManageCctv} onChange={setCanManageCctv} testid="perm-cctv" tint="cyan" />
+          )}
+          {isOwner && (
+            <Toggle
+              label="Online storefront & delivery areas (switches, service areas, pickup points, help & MoMo)"
+              value={canManageOnline}
+              onChange={setCanManageOnline}
+              testid="perm-online"
+              tint="cyan"
+            />
           )}
           {isOwner && (role === "BRANCH_MANAGER" || role === "GENERAL_MANAGER") && (
             <Toggle label="Manage auditor access (Audit & Review)" value={canManageAuditors} onChange={setCanManageAuditors} testid="perm-auditors" tint="teal" />

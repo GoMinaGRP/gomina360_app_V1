@@ -174,6 +174,17 @@ export default function ManageBusinessesModal({
   const [onlQrTrack, setOnlQrTrack] = useState("");
   const [onlCopied, setOnlCopied] = useState("");
   const [onlGpsBusy, setOnlGpsBusy] = useState(false);
+  const [onlHelp, setOnlHelp] = useState(""); // customer help line (call/WhatsApp)
+  const [onlMomo, setOnlMomo] = useState(""); // MoMo number customers pay to
+  const [onlMomoName, setOnlMomoName] = useState(""); // MoMo payee name
+  // Service areas / localities + pickup locations (own lists per unit)
+  const [areas, setAreas] = useState<any[]>([]);
+  const [pickups, setPickups] = useState<any[]>([]);
+  const [listsBusy, setListsBusy] = useState(false);
+  const emptyAreaForm = { id: 0, name: "", radius: "5", lat: "", lng: "", note: "" };
+  const emptyPickForm = { id: 0, name: "", address: "", phone: "", instr: "", lat: "", lng: "" };
+  const [areaForm, setAreaForm] = useState<any>({ ...emptyAreaForm });
+  const [pickForm, setPickForm] = useState<any>({ ...emptyPickForm });
 
   const originOf = () =>
     typeof window !== "undefined" ? window.location.origin : "https://gomina360.app";
@@ -185,11 +196,17 @@ export default function ManageBusinessesModal({
     setOnlDelivery(biz.deliveryEnabled !== false);
     setOnlRadius(biz.serviceRadiusKm != null ? String(biz.serviceRadiusKm) : "");
     setOnlNote(biz.serviceNote || "");
+    setOnlHelp(biz.customerHelpPhone || "");
+    setOnlMomo(biz.momoNumber || "");
+    setOnlMomoName(biz.momoName || "");
     setOnlDirty(false);
     setError("");
     setNotice("");
     setOnlCopied("");
+    setAreaForm({ ...emptyAreaForm });
+    setPickForm({ ...emptyPickForm });
     setMode("online");
+    loadAreasPickups(biz.id);
     qrDataUrl(`${originOf()}/order?biz=${biz.id}`, 320).then(setOnlQrOrder).catch(() => setOnlQrOrder(""));
     qrDataUrl(`${originOf()}/track`, 320).then(setOnlQrTrack).catch(() => setOnlQrTrack(""));
   };
@@ -228,6 +245,9 @@ export default function ManageBusinessesModal({
           deliveryEnabled: onlDelivery,
           serviceRadiusKm: radius,
           serviceNote: onlNote.trim() || null,
+          customerHelpPhone: onlHelp.trim() || null,
+          momoNumber: onlMomo.trim() || null,
+          momoName: onlMomoName.trim() || null,
         }),
       });
       const d = await res.json().catch(() => null);
@@ -290,6 +310,172 @@ export default function ManageBusinessesModal({
       },
       { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 },
     );
+  };
+
+  // ── Service areas / localities + pickup locations CRUD (mode === "online")
+  const loadAreasPickups = async (bizId: number) => {
+    setListsBusy(true);
+    try {
+      const res = await fetch(`/api/service-areas?businessId=${bizId}`, { credentials: "include" });
+      const d = await res.json().catch(() => null);
+      if (res.ok && d?.success) {
+        setAreas(d.areas || []);
+        setPickups(d.pickups || []);
+      } else {
+        setAreas([]);
+        setPickups([]);
+        if (d?.error) setError(d.error);
+      }
+    } catch {
+      setAreas([]);
+      setPickups([]);
+    } finally {
+      setListsBusy(false);
+    }
+  };
+
+  const gpsInto = (setter: (lat: string, lng: string) => void) => {
+    if (typeof navigator === "undefined" || !navigator.geolocation) return;
+    navigator.geolocation.getCurrentPosition(
+      (pos) => setter(pos.coords.latitude.toFixed(7), pos.coords.longitude.toFixed(7)),
+      () => setError("Could not get a GPS fix — drop the coordinates manually instead."),
+      { enableHighAccuracy: true, timeout: 12000, maximumAge: 0 },
+    );
+  };
+
+  const saveArea = async () => {
+    if (!selected) return;
+    const editing = Number(areaForm.id) > 0;
+    const body: any = {
+      name: areaForm.name.trim(),
+      note: areaForm.note.trim() || null,
+      centerLat: areaForm.lat.trim() === "" ? null : Number(areaForm.lat),
+      centerLng: areaForm.lng.trim() === "" ? null : Number(areaForm.lng),
+      radiusKm: areaForm.radius.trim() === "" ? null : Number(areaForm.radius),
+    };
+    setListsBusy(true);
+    setError("");
+    try {
+      const res = await fetch("/api/service-areas", {
+        method: editing ? "PATCH" : "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify(editing ? { id: areaForm.id, ...body } : { businessId: selected.id, ...body }),
+      });
+      const d = await res.json().catch(() => null);
+      if (res.ok && d?.success) {
+        setAreaForm({ ...emptyAreaForm });
+        await loadAreasPickups(selected.id);
+        setNotice(editing ? `Service area "${body.name}" updated.` : `Service area "${body.name}" added — customers inside it now see this branch first.`);
+      } else {
+        setError(d?.error || "Could not save the service area.");
+      }
+    } finally {
+      setListsBusy(false);
+    }
+  };
+
+  const toggleArea = async (row: any) => {
+    if (!selected) return;
+    setListsBusy(true);
+    try {
+      await fetch("/api/service-areas", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ id: row.id, active: !row.active }),
+      });
+      await loadAreasPickups(selected.id);
+    } finally {
+      setListsBusy(false);
+    }
+  };
+
+  const removeArea = async (row: any) => {
+    if (!selected) return;
+    setListsBusy(true);
+    setError("");
+    try {
+      const res = await fetch("/api/service-areas", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ id: row.id }),
+      });
+      const d = await res.json().catch(() => null);
+      if (!(res.ok && d?.success)) setError(d?.error || "Could not remove the service area.");
+      await loadAreasPickups(selected.id);
+    } finally {
+      setListsBusy(false);
+    }
+  };
+
+  const savePickup = async () => {
+    if (!selected) return;
+    const editing = Number(pickForm.id) > 0;
+    const body: any = {
+      name: pickForm.name.trim(),
+      address: pickForm.address.trim() || null,
+      contactPhone: pickForm.phone.trim() || null,
+      instructions: pickForm.instr.trim() || null,
+      lat: pickForm.lat.trim() === "" ? null : Number(pickForm.lat),
+      lng: pickForm.lng.trim() === "" ? null : Number(pickForm.lng),
+    };
+    setListsBusy(true);
+    setError("");
+    try {
+      const res = await fetch("/api/service-areas?kind=pickups", {
+        method: editing ? "PATCH" : "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify(editing ? { id: pickForm.id, ...body } : { businessId: selected.id, ...body }),
+      });
+      const d = await res.json().catch(() => null);
+      if (res.ok && d?.success) {
+        setPickForm({ ...emptyPickForm });
+        await loadAreasPickups(selected.id);
+        setNotice(editing ? `Pickup point "${body.name}" updated.` : `Pickup point "${body.name}" added — customers choose it at checkout.`);
+      } else {
+        setError(d?.error || "Could not save the pickup point.");
+      }
+    } finally {
+      setListsBusy(false);
+    }
+  };
+
+  const togglePickup = async (row: any) => {
+    if (!selected) return;
+    setListsBusy(true);
+    try {
+      await fetch("/api/service-areas?kind=pickups", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ id: row.id, active: !row.active }),
+      });
+      await loadAreasPickups(selected.id);
+    } finally {
+      setListsBusy(false);
+    }
+  };
+
+  const removePickup = async (row: any) => {
+    if (!selected) return;
+    setListsBusy(true);
+    setError("");
+    try {
+      const res = await fetch("/api/service-areas?kind=pickups", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ id: row.id }),
+      });
+      const d = await res.json().catch(() => null);
+      if (!(res.ok && d?.success)) setError(d?.error || "Could not remove the pickup point.");
+      await loadAreasPickups(selected.id);
+    } finally {
+      setListsBusy(false);
+    }
   };
 
   if (!isOpen) return null;
@@ -999,6 +1185,169 @@ export default function ManageBusinessesModal({
                     </span>
                   )}
                 </div>
+
+                {/* Customer help & MoMo payment numbers */}
+                <section className="rounded-xl border border-slate-700 bg-slate-800/50 p-3.5 space-y-3" data-testid="mb-onl-contacts">
+                  <h4 className="text-[11px] font-black uppercase tracking-wider text-slate-300 flex items-center gap-1.5">
+                    <Building2 className="w-3.5 h-3.5 text-amber-300" /> Customer help & MoMo payment
+                  </h4>
+                  <p className="text-[10px] text-slate-400 leading-relaxed">
+                    Shown to customers straight after they place an order and on their tracking page: who to
+                    call/WhatsApp for help, and the MoMo number to pay. Saved together with the settings above.
+                  </p>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                    <label className="block">
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Help line (call / WhatsApp)</span>
+                      <input
+                        value={onlHelp}
+                        onChange={(e) => { setOnlHelp(e.target.value); setOnlDirty(true); }}
+                        maxLength={24}
+                        placeholder="e.g. 024 100 2000"
+                        className="mt-1 w-full px-3 py-2.5 bg-slate-900 border border-slate-700 focus:border-emerald-500/60 rounded-xl text-sm text-white outline-none"
+                        data-testid="mb-onl-help"
+                      />
+                    </label>
+                    <label className="block">
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">MoMo number</span>
+                      <input
+                        value={onlMomo}
+                        onChange={(e) => { setOnlMomo(e.target.value); setOnlDirty(true); }}
+                        maxLength={24}
+                        placeholder="e.g. 059 411 2233"
+                        className="mt-1 w-full px-3 py-2.5 bg-slate-900 border border-slate-700 focus:border-emerald-500/60 rounded-xl text-sm text-white outline-none"
+                        data-testid="mb-onl-momo"
+                      />
+                    </label>
+                    <label className="block">
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">MoMo payee name</span>
+                      <input
+                        value={onlMomoName}
+                        onChange={(e) => { setOnlMomoName(e.target.value); setOnlDirty(true); }}
+                        maxLength={60}
+                        placeholder="e.g. Mina Akuafo Poultry"
+                        className="mt-1 w-full px-3 py-2.5 bg-slate-900 border border-slate-700 focus:border-emerald-500/60 rounded-xl text-sm text-white outline-none"
+                        data-testid="mb-onl-momoname"
+                      />
+                    </label>
+                  </div>
+                </section>
+
+                {/* Service areas / localities — this unit's own list */}
+                <section className="rounded-xl border border-slate-700 bg-slate-800/50 p-3.5 space-y-3" data-testid="mb-areas">
+                  <h4 className="text-[11px] font-black uppercase tracking-wider text-slate-300 flex items-center gap-1.5">
+                    <MapPin className="w-3.5 h-3.5 text-cyan-300" /> Service areas / localities
+                    <span className="text-[9px] font-bold text-slate-500 normal-case" data-testid="mb-areas-count">({areas.length})</span>
+                  </h4>
+                  <p className="text-[10px] text-slate-400 leading-relaxed">
+                    The places THIS branch delivers to — every branch keeps its own list. Add a map centre +
+                    radius and only customers inside see this branch as serving them; name-only areas are shown
+                    to customers as information. Inactive areas neither show nor serve.
+                  </p>
+                  <div className="space-y-2" data-testid="mb-area-list">
+                    {areas.length === 0 && (
+                      <p className="text-[11px] text-slate-500 italic" data-testid="mb-area-empty">No named areas yet — the branch-radius rule above applies everywhere it covers.</p>
+                    )}
+                    {areas.map((a) => (
+                      <div key={a.id} className={`flex items-center gap-2 px-3 py-2 rounded-xl border ${a.active ? "border-slate-700 bg-slate-900/70" : "border-slate-800 bg-slate-900/40 opacity-60"}`} data-testid={`mb-area-row-${a.id}`}>
+                        <span className="min-w-0 flex-1">
+                          <span className="block text-[12px] font-bold text-white truncate">{a.name}</span>
+                          <span className="block text-[10px] text-slate-400 truncate">
+                            {a.centerLat != null ? `${Number(a.centerLat).toFixed(5)}, ${Number(a.centerLng).toFixed(5)} · ${a.radiusKm} km` : "name only (no map zone)"}{a.note ? ` — ${a.note}` : ""}
+                          </span>
+                        </span>
+                        <button type="button" onClick={() => setAreaForm({ id: a.id, name: a.name, radius: a.radiusKm != null ? String(a.radiusKm) : "", lat: a.centerLat != null ? String(a.centerLat) : "", lng: a.centerLng != null ? String(a.centerLng) : "", note: a.note || "" })} className="px-2 py-1 rounded-lg bg-slate-800 border border-slate-600 text-[10px] font-bold text-slate-200" data-testid={`mb-area-edit-${a.id}`}>Edit</button>
+                        <button type="button" onClick={() => toggleArea(a)} className={`px-2 py-1 rounded-lg border text-[10px] font-bold ${a.active ? "bg-emerald-500/10 border-emerald-500/40 text-emerald-300" : "bg-slate-800 border-slate-600 text-slate-400"}`} data-testid={`mb-area-toggle-${a.id}`}>{a.active ? "Active" : "Off"}</button>
+                        <button type="button" onClick={() => removeArea(a)} className="px-2 py-1 rounded-lg bg-rose-500/10 border border-rose-500/40 text-[10px] font-bold text-rose-300" data-testid={`mb-area-del-${a.id}`}>Remove</button>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="rounded-xl bg-slate-900/70 border border-slate-700/80 p-3 space-y-2.5">
+                    <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                      {Number(areaForm.id) > 0 ? "Edit service area" : "Add a service area"}
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      <input value={areaForm.name} onChange={(e) => setAreaForm((f: any) => ({ ...f, name: e.target.value }))} maxLength={60} placeholder='Area / locality name — e.g. "Osu"' className="px-3 py-2 bg-slate-900 border border-slate-700 focus:border-cyan-500/60 rounded-lg text-sm text-white outline-none" data-testid="mb-area-add-name" />
+                      <input value={areaForm.radius} onChange={(e) => setAreaForm((f: any) => ({ ...f, radius: e.target.value }))} inputMode="decimal" placeholder="Radius km (needs map point)" className="px-3 py-2 bg-slate-900 border border-slate-700 focus:border-cyan-500/60 rounded-lg text-sm text-white outline-none" data-testid="mb-area-add-radius" />
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <input value={areaForm.lat} onChange={(e) => setAreaForm((f: any) => ({ ...f, lat: e.target.value }))} inputMode="decimal" placeholder="Centre latitude (optional)" className="px-3 py-2 bg-slate-900 border border-slate-700 focus:border-cyan-500/60 rounded-lg text-[12px] text-white outline-none font-mono" data-testid="mb-area-add-lat" />
+                      <input value={areaForm.lng} onChange={(e) => setAreaForm((f: any) => ({ ...f, lng: e.target.value }))} inputMode="decimal" placeholder="Centre longitude (optional)" className="px-3 py-2 bg-slate-900 border border-slate-700 focus:border-cyan-500/60 rounded-lg text-[12px] text-white outline-none font-mono" data-testid="mb-area-add-lng" />
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <button type="button" disabled={bizRow.gpsLat == null} onClick={() => setAreaForm((f: any) => ({ ...f, lat: String(bizRow.gpsLat), lng: String(bizRow.gpsLng) }))} className="px-2.5 py-1.5 rounded-lg bg-slate-800 border border-slate-600 disabled:opacity-40 text-[10px] font-bold text-slate-200" data-testid="mb-area-gps-branch">Use branch pin</button>
+                      <button type="button" onClick={() => gpsInto((lat, lng) => setAreaForm((f: any) => ({ ...f, lat, lng })))} className="px-2.5 py-1.5 rounded-lg bg-slate-800 border border-slate-600 text-[10px] font-bold text-slate-200" data-testid="mb-area-gps-here">Use my location</button>
+                      <input value={areaForm.note} onChange={(e) => setAreaForm((f: any) => ({ ...f, note: e.target.value }))} maxLength={160} placeholder='Note — e.g. "Same-day before 2pm"' className="flex-1 min-w-[160px] px-3 py-1.5 bg-slate-900 border border-slate-700 focus:border-cyan-500/60 rounded-lg text-[12px] text-white outline-none" data-testid="mb-area-add-note" />
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <button type="button" onClick={saveArea} disabled={listsBusy} className="px-3.5 py-2 rounded-xl bg-cyan-600 hover:bg-cyan-500 disabled:opacity-40 text-white text-[11px] font-black" data-testid="mb-area-add-btn">
+                        {Number(areaForm.id) > 0 ? "Save area" : "Add area"}
+                      </button>
+                      {Number(areaForm.id) > 0 && (
+                        <button type="button" onClick={() => setAreaForm({ ...emptyAreaForm })} className="px-3 py-2 rounded-xl bg-slate-800 border border-slate-600 text-[11px] font-bold text-slate-300" data-testid="mb-area-cancel">Cancel edit</button>
+                      )}
+                    </div>
+                  </div>
+                </section>
+
+                {/* Pickup locations — customers choose at checkout */}
+                <section className="rounded-xl border border-slate-700 bg-slate-800/50 p-3.5 space-y-3" data-testid="mb-pickups">
+                  <h4 className="text-[11px] font-black uppercase tracking-wider text-slate-300 flex items-center gap-1.5">
+                    <Building2 className="w-3.5 h-3.5 text-fuchsia-300" /> Pickup locations
+                    <span className="text-[9px] font-bold text-slate-500 normal-case" data-testid="mb-pick-count">({pickups.length})</span>
+                  </h4>
+                  <p className="text-[10px] text-slate-400 leading-relaxed">
+                    Where customers collect PICKUP orders. With no points listed, pickup defaults to the branch
+                    itself; with one or more active points, customers pick one at checkout and it is saved on
+                    their order & tracking. Removing a point never rewrites past orders (they keep a snapshot).
+                  </p>
+                  <div className="space-y-2" data-testid="mb-pick-list">
+                    {pickups.length === 0 && (
+                      <p className="text-[11px] text-slate-500 italic" data-testid="mb-pick-empty">No pickup points — customers collect at the branch (branch pin above).</p>
+                    )}
+                    {pickups.map((pl) => (
+                      <div key={pl.id} className={`flex items-center gap-2 px-3 py-2 rounded-xl border ${pl.active ? "border-slate-700 bg-slate-900/70" : "border-slate-800 bg-slate-900/40 opacity-60"}`} data-testid={`mb-pick-row-${pl.id}`}>
+                        <span className="min-w-0 flex-1">
+                          <span className="block text-[12px] font-bold text-white truncate">{pl.name}</span>
+                          <span className="block text-[10px] text-slate-400 truncate">
+                            {pl.address || "—"}{pl.lat != null ? ` · ${Number(pl.lat).toFixed(5)}, ${Number(pl.lng).toFixed(5)}` : ""}{pl.contactPhone ? ` · ${pl.contactPhone}` : ""}
+                          </span>
+                        </span>
+                        <button type="button" onClick={() => setPickForm({ id: pl.id, name: pl.name, address: pl.address || "", phone: pl.contactPhone || "", instr: pl.instructions || "", lat: pl.lat != null ? String(pl.lat) : "", lng: pl.lng != null ? String(pl.lng) : "" })} className="px-2 py-1 rounded-lg bg-slate-800 border border-slate-600 text-[10px] font-bold text-slate-200" data-testid={`mb-pick-edit-${pl.id}`}>Edit</button>
+                        <button type="button" onClick={() => togglePickup(pl)} className={`px-2 py-1 rounded-lg border text-[10px] font-bold ${pl.active ? "bg-emerald-500/10 border-emerald-500/40 text-emerald-300" : "bg-slate-800 border-slate-600 text-slate-400"}`} data-testid={`mb-pick-toggle-${pl.id}`}>{pl.active ? "Active" : "Off"}</button>
+                        <button type="button" onClick={() => removePickup(pl)} className="px-2 py-1 rounded-lg bg-rose-500/10 border border-rose-500/40 text-[10px] font-bold text-rose-300" data-testid={`mb-pick-del-${pl.id}`}>Remove</button>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="rounded-xl bg-slate-900/70 border border-slate-700/80 p-3 space-y-2.5">
+                    <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                      {Number(pickForm.id) > 0 ? "Edit pickup point" : "Add a pickup point"}
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      <input value={pickForm.name} onChange={(e) => setPickForm((f: any) => ({ ...f, name: e.target.value }))} maxLength={60} placeholder='Name — e.g. "Spintex Depot"' className="px-3 py-2 bg-slate-900 border border-slate-700 focus:border-fuchsia-500/60 rounded-lg text-sm text-white outline-none" data-testid="mb-pick-add-name" />
+                      <input value={pickForm.address} onChange={(e) => setPickForm((f: any) => ({ ...f, address: e.target.value }))} maxLength={200} placeholder="Address / directions" className="px-3 py-2 bg-slate-900 border border-slate-700 focus:border-fuchsia-500/60 rounded-lg text-sm text-white outline-none" data-testid="mb-pick-add-addr" />
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      <input value={pickForm.phone} onChange={(e) => setPickForm((f: any) => ({ ...f, phone: e.target.value }))} maxLength={24} placeholder="Contact phone (optional)" className="px-3 py-2 bg-slate-900 border border-slate-700 focus:border-fuchsia-500/60 rounded-lg text-sm text-white outline-none" data-testid="mb-pick-add-phone" />
+                      <input value={pickForm.instr} onChange={(e) => setPickForm((f: any) => ({ ...f, instr: e.target.value }))} maxLength={240} placeholder='Instructions — e.g. "Ask for the blue gate"' className="px-3 py-2 bg-slate-900 border border-slate-700 focus:border-fuchsia-500/60 rounded-lg text-sm text-white outline-none" data-testid="mb-pick-add-instr" />
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <input value={pickForm.lat} onChange={(e) => setPickForm((f: any) => ({ ...f, lat: e.target.value }))} inputMode="decimal" placeholder="Latitude (optional)" className="px-3 py-2 bg-slate-900 border border-slate-700 focus:border-fuchsia-500/60 rounded-lg text-[12px] text-white outline-none font-mono" data-testid="mb-pick-add-lat" />
+                      <input value={pickForm.lng} onChange={(e) => setPickForm((f: any) => ({ ...f, lng: e.target.value }))} inputMode="decimal" placeholder="Longitude (optional)" className="px-3 py-2 bg-slate-900 border border-slate-700 focus:border-fuchsia-500/60 rounded-lg text-[12px] text-white outline-none font-mono" data-testid="mb-pick-add-lng" />
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <button type="button" disabled={bizRow.gpsLat == null} onClick={() => setPickForm((f: any) => ({ ...f, lat: String(bizRow.gpsLat), lng: String(bizRow.gpsLng) }))} className="px-2.5 py-1.5 rounded-lg bg-slate-800 border border-slate-600 disabled:opacity-40 text-[10px] font-bold text-slate-200" data-testid="mb-pick-gps-branch">Use branch pin</button>
+                      <button type="button" onClick={() => gpsInto((lat, lng) => setPickForm((f: any) => ({ ...f, lat, lng })))} className="px-2.5 py-1.5 rounded-lg bg-slate-800 border border-slate-600 text-[10px] font-bold text-slate-200" data-testid="mb-pick-gps-here">Use my location</button>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <button type="button" onClick={savePickup} disabled={listsBusy} className="px-3.5 py-2 rounded-xl bg-fuchsia-600 hover:bg-fuchsia-500 disabled:opacity-40 text-white text-[11px] font-black" data-testid="mb-pick-add-btn">
+                        {Number(pickForm.id) > 0 ? "Save point" : "Add point"}
+                      </button>
+                      {Number(pickForm.id) > 0 && (
+                        <button type="button" onClick={() => setPickForm({ ...emptyPickForm })} className="px-3 py-2 rounded-xl bg-slate-800 border border-slate-600 text-[11px] font-bold text-slate-300" data-testid="mb-pick-cancel">Cancel edit</button>
+                      )}
+                    </div>
+                  </div>
+                </section>
 
                 {/* Shareable links + QR codes */}
                 <section className="rounded-xl border border-slate-700 bg-slate-800/50 p-3.5 space-y-3">

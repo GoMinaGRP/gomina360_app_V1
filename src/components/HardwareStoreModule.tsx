@@ -276,6 +276,7 @@ export default function HardwareStoreModule({
             customerName: data.customerName, customerPhone: data.customerPhone,
             paymentMethod: data.paymentMethod, notes: data.notes,
             discount: Number(data.discount) || 0,
+            discountPercent: data.discountPct ? Number(data.discountPct) : undefined,
             cartItems: [{ inventoryId: Number(data.inventoryId), quantity: Number(data.quantity), sellingPrice: data.sellingPrice ? Number(data.sellingPrice) : undefined, originalPrice: data.sellingPrice ? Number(data.sellingPrice) : undefined, customPriceReason: data.customPriceReason }],
             createdByUserId: currentUser?.id, createdByName: currentUser?.name, createdByRole: currentUser?.role,
           }),
@@ -822,7 +823,7 @@ function HardwareForm({ type, busy, onClose, onSubmit, inventory, suppliers, ord
       <div className="grid grid-cols-2 gap-3"><I label="Customer Name" k="customerName" required /><I label="Customer Phone" k="customerPhone" /></div>
       <S label="Material (in stock)" k="inventoryId" opts={[{ v: "", l: "— select material —" }, ...(inventory || []).map((i: any) => ({ v: i.id, l: `${i.name} (${i.quantity} in stock)` }))]} />
       <div className="grid grid-cols-2 gap-3"><I label="Quantity" k="quantity" t="number" required min={1} /><I label="Unit Price (GH₵)" k="sellingPrice" t="number" step="0.01" placeholder={selectedItem ? String(selectedItem.sellingPriceGhs) : "auto"} /></div>
-      <div className="grid grid-cols-2 gap-3"><S label="Payment" k="paymentMethod" opts={["CASH", "MTN_MOMO", "TELECEL_CASH", "BANK_TRANSFER", "POS_CARD"]} /><I label="Discount (GH₵)" k="discount" t="number" step="0.01" min={0} /></div>
+      <div className="grid grid-cols-2 gap-3"><S label="Payment" k="paymentMethod" opts={["CASH", "MTN_MOMO", "TELECEL_CASH", "BANK_TRANSFER", "POS_CARD"]} /><I label="Discount %" k="discountPct" t="number" step="0.5" min={0} max={100} placeholder="auto" /><I label="Discount (GH₵)" k="discount" t="number" step="0.01" min={0} /></div>
       <I label="Custom price reason (if discounted)" k="customPriceReason" /><I label="Notes" k="notes" />
       {saleTotal > 0 && <div className="text-xs text-amber-300 font-bold" data-testid="hwf-sale-total">Total: {formatMoney(saleTotal, currency)}</div>}
     </>}

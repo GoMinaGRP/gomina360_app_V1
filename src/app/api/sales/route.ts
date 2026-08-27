@@ -43,6 +43,7 @@ export async function POST(request: NextRequest) {
       createdByName,
       createdByRole,
       discount,
+      discountPercent,
     } = body;
 
     if (!businessId || !cartItems || !Array.isArray(cartItems) || cartItems.length === 0) {
@@ -153,8 +154,32 @@ export async function POST(request: NextRequest) {
 
     // ── 3. Calculate totals ──────────────────────────────────────────
     const subtotal = lineItems.reduce((acc: number, li: any) => acc + li.total, 0);
-    const discountAmount = Number(discount) || 0;
-    const total = subtotal - discountAmount;
+    // Percentage discount is the primary mode (auto-calculates the amount);
+    // a flat GH₵ amount stays supported for backward compatibility.
+    const r2 = (n: number) => Math.round(n * 100) / 100;
+    let discountPct = 0;
+    let discountAmount = 0;
+    if (discountPercent !== undefined && discountPercent !== null && discountPercent !== "") {
+      const pct = Number(discountPercent);
+      if (!Number.isFinite(pct) || pct < 0 || pct > 100) {
+        return NextResponse.json(
+          { success: false, error: "Discount percent must be between 0 and 100." },
+          { status: 400 },
+        );
+      }
+      discountPct = r2(pct);
+      discountAmount = r2((subtotal * discountPct) / 100);
+    } else {
+      discountAmount = r2(Number(discount) || 0);
+      discountPct = subtotal > 0 ? r2((discountAmount / subtotal) * 100) : 0;
+    }
+    if (discountAmount < 0 || discountAmount > subtotal) {
+      return NextResponse.json(
+        { success: false, error: "Discount cannot exceed the sale subtotal." },
+        { status: 400 },
+      );
+    }
+    const total = r2(subtotal - discountAmount);
     // Cost of goods sold (inventory cost × qty) → real profit per sale
     const cogs = lineItems.reduce((acc: number, li: any) => acc + (li.costTotal || 0), 0);
     const grossProfit = total - cogs;
@@ -164,19 +189,17 @@ export async function POST(request: NextRequest) {
     try {
       const allCustomers = await db.select().from(customers);
       const norm = (s: any) => String(s || "").trim().toLowerCase();
+      // Business-isolated CRM: prefer a match ALREADY belonging to this
+      // business, then fall back to legacy group-shared rows (null); brand
+      // new customers are stamped to THIS unit so a new business never
+      // inherits another's clientele.
+      const belongs = (c: any) => c.businessId === Number(businessId);
+      const shared = (c: any) => c.businessId === null;
       const cust =
-        (customerPhone &&
-          allCustomers.find(
-            (c) =>
-              norm(c.phone) === norm(customerPhone) &&
-              (c.businessId === null || c.businessId === Number(businessId))
-          )) ||
-        (customerName &&
-          allCustomers.find(
-            (c) =>
-              norm(c.name) === norm(customerName) &&
-              (c.businessId === null || c.businessId === Number(businessId))
-          )) ||
+        (customerPhone && allCustomers.find((c) => norm(c.phone) === norm(customerPhone) && belongs(c))) ||
+        (customerName && allCustomers.find((c) => norm(c.name) === norm(customerName) && belongs(c))) ||
+        (customerPhone && allCustomers.find((c) => norm(c.phone) === norm(customerPhone) && shared(c))) ||
+        (customerName && allCustomers.find((c) => norm(c.name) === norm(customerName) && shared(c))) ||
         null;
       if (cust) {
         linkedCustomerId = cust.id;
@@ -198,7 +221,7 @@ export async function POST(request: NextRequest) {
             phone: customerPhone || "",
             totalSpentGhs: total,
             loyaltyPoints: Math.floor(total / 100),
-            businessId: null,
+            businessId: Number(businessId),
           })
           .returning();
         linkedCustomerId = created?.id ?? null;
@@ -235,7 +258,7 @@ export async function POST(request: NextRequest) {
         amountGhs: total,
         paymentMethod: paymentMethod || "CASH",
         customerId: linkedCustomerId,
-        description: `[INV:${trxNum}] ${lineDesc} — ${customerName || "Walk-in"}`,
+        description: `[INV:${trxNum}] ${lineDesc} — ${customerName || "Walk-in"}${discountAmount > 0 ? ` · ${discountPct}% discount −GH₵${discountAmount.toFixed(2)}` : ""}`,
         date: dateStr,
         createdAt: new Date(),
         status: "COMPLETED",
@@ -262,6 +285,7 @@ export async function POST(request: NextRequest) {
         lineItems,
         subtotalGhs: subtotal,
         discountGhs: discountAmount,
+        discountPercent: discountPct,
         totalGhs: total,
         cogsGhs: cogs,
         grossProfitGhs: grossProfit,

@@ -184,10 +184,26 @@ export async function POST(request: NextRequest) {
               total: (Number(li.quantity) || 1) * (Number(li.unitPrice) || 0),
             }))
         : [];
+      const r2 = (n: number) => Math.round(n * 100) / 100;
+      const subtotalGhs = items.reduce((acc: number, li: any) => acc + li.total, 0);
+      // Percentage discount (staff register): amount is auto-calculated.
+      let discountPct = 0;
+      let discountGhs = 0;
+      if (body.discountPercent !== undefined && body.discountPercent !== null && body.discountPercent !== "") {
+        const pct = Number(body.discountPercent);
+        if (!Number.isFinite(pct) || pct < 0 || pct > 100) {
+          return NextResponse.json(
+            { success: false, error: "Discount percent must be between 0 and 100." },
+            { status: 400 },
+          );
+        }
+        discountPct = r2(pct);
+        discountGhs = r2((subtotalGhs * discountPct) / 100);
+      }
       const totalGhs =
         body.totalGhs != null && !Number.isNaN(Number(body.totalGhs))
           ? Number(body.totalGhs)
-          : items.reduce((acc: number, li: any) => acc + li.total, 0);
+          : r2(subtotalGhs - discountGhs);
       const customerName = String(body.customerName || "").trim() || "Walk-in Customer";
 
       // Optional Google-Maps delivery pin (staff may paste a shared map link
@@ -227,6 +243,8 @@ export async function POST(request: NextRequest) {
           saleDocumentId: body.saleDocumentId ? Number(body.saleDocumentId) : null,
           transactionId: body.transactionId ? Number(body.transactionId) : null,
           items,
+          discountPercent: discountPct,
+          discountGhs,
           totalGhs,
           currency: "GHS",
           fulfillmentType,

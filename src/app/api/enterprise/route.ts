@@ -561,6 +561,19 @@ export async function POST(request: Request) {
     }
 
     if (entityType === "customer") {
+      // Business-isolated CRM (owner directive): every new customer belongs to
+      // exactly one Business/Branch, so a new unit never inherits another's
+      // clientele. Fallback: the staffer's own primary assignment.
+      const custBizId = data.businessId != null ? Number(data.businessId) : (session.user as any)?.assignedBusinessId ?? null;
+      if (!custBizId) {
+        return NextResponse.json(
+          { success: false, error: "Choose the business this customer belongs to — customer records are isolated per Business/Branch." },
+          { status: 400 },
+        );
+      }
+      if (!(await canAccessBusiness(session.user, custBizId))) {
+        return FORBIDDEN("You do not have access to that business.");
+      }
       const [inserted] = await db
         .insert(customers)
         .values({
@@ -575,7 +588,7 @@ export async function POST(request: Request) {
           ...loc,
           totalSpentGhs: 0,
           loyaltyPoints: 0,
-          businessId: data.businessId ? Number(data.businessId) : null,
+          businessId: custBizId,
         })
         .returning();
       return NextResponse.json({ success: true, item: inserted });

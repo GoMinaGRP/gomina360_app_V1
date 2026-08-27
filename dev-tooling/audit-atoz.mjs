@@ -335,7 +335,7 @@ async function phaseF(browser, errors, cookies) {
   ok("F1 owner can create a new business unit (API)", make.status === 200 && biz?.id > 0, JSON.stringify(make.json || {}).slice(0, 200));
   baseline.testBizId = biz?.id;
   baseline.testBizCode = biz?.code;
-  ok("F1b new unit auto-provisioned (metrics/starter stock/checklists)", make.json?.provisioned != null);
+  ok("F1b new unit auto-provisioned clean (zero metrics + checklists, NO sample stock)", make.json?.provisioned != null && (make.json?.provisioned?.starterItems ?? 0) === 0 && (make.json?.provisioned?.starterKitCostGhs ?? 0) === 0);
 
   // register staff for it
   const mkStaff = await api(cookies.owner, "/api/users", {

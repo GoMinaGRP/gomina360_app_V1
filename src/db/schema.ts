@@ -50,6 +50,13 @@ export const users = pgTable("users", {
   // accessible businesses. The OWNER always controls every Auditor
   // permission group-wide. Grant/revoke is OWNER-only.
   canManageAuditors: boolean("can_manage_auditors").default(false),
+  // OWNER-granted Online Storefront & Delivery Areas management: the user may
+  // open Manage Businesses → Online and control the storefront switches,
+  // service areas/localities, pickup locations and customer help / MoMo
+  // payment numbers — strictly inside the businesses/branches they can
+  // access (primary assignment + explicit grants). The OWNER always manages
+  // every unit group-wide; grant/revoke is OWNER-only.
+  canManageOnline: boolean("can_manage_online").default(false),
   // ── Secure login ──────────────────────────────────────────────────────
   // scrypt password hash (format "scrypt:<salt_hex>:<hash_hex>"); null until
   // the OWNER sets a password for the account.
@@ -153,7 +160,61 @@ export const businesses = pgTable("businesses", {
   deliveryEnabled: boolean("delivery_enabled").default(true),
   serviceRadiusKm: doublePrecision("service_radius_km"),
   serviceNote: text("service_note"), // customer-facing, e.g. "Free delivery in Spintex"
+  // Customer-facing contact points shown right after an online order is
+  // placed and on the public /track page. Managed from Manage Businesses →
+  // Online by the OWNER / staff carrying the canManageOnline grant.
+  customerHelpPhone: text("customer_help_phone"), // "Need help? Call/WhatsApp …"
+  momoNumber: text("momo_number"), // mobile-money number customers pay to
+  momoName: text("momo_name"), // payee name shown beside the MoMo number
   createdAt: timestamp("created_at").defaultNow(),
+});
+
+// Service areas / localities a Business (branch unit) delivers to. Every
+// unit defines its OWN list — different branches serve different areas. An
+// area carries a name (required) plus an optional Google-Maps centre +
+// radius used by the storefront's "serving my location" filter and by
+// checkout enforcement; name-only areas are advisory (listed to customers,
+// never used to hide or refuse). Managed by the OWNER (all units) or staff
+// with the canManageOnline grant (their accessible units only).
+export const serviceAreas = pgTable("service_areas", {
+  id: serial("id").primaryKey(),
+  businessId: integer("business_id").notNull(), // Business → Branch chain
+  branchCode: text("branch_code").notNull(),
+  name: text("name").notNull(), // e.g. "Osu", "East Legon", "Spintex Corridor"
+  centerLat: doublePrecision("center_lat"), // Google-Maps centre (optional)
+  centerLng: doublePrecision("center_lng"),
+  radiusKm: doublePrecision("radius_km"), // coverage ring around the centre
+  note: text("note"), // customer-facing, e.g. "Same-day before 2pm"
+  active: boolean("active").default(true),
+  sortOrder: integer("sort_order").default(0),
+  createdByUserId: integer("created_by_user_id"),
+  createdByName: text("created_by_name"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+// Pickup locations a Business (branch unit) offers online customers. A unit
+// may run several (main shop, depot, partner point…); when at least one is
+// active the storefront makes the customer choose one for PICKUP orders and
+// the choice is snapshotted onto the order/tracking (chain stays intact even
+// if the location is edited or removed later). Managed by the OWNER (all
+// units) or staff with the canManageOnline grant (their accessible units).
+export const pickupLocations = pgTable("pickup_locations", {
+  id: serial("id").primaryKey(),
+  businessId: integer("business_id").notNull(), // Business → Branch chain
+  branchCode: text("branch_code").notNull(),
+  name: text("name").notNull(), // e.g. "Spintex Depot", "Osu Shopfront"
+  address: text("address"), // human-readable directions
+  lat: doublePrecision("lat"), // Google-Maps point (optional)
+  lng: doublePrecision("lng"),
+  contactPhone: text("contact_phone"),
+  instructions: text("instructions"), // e.g. "Ask for the blue gate"
+  active: boolean("active").default(true),
+  sortOrder: integer("sort_order").default(0),
+  createdByUserId: integer("created_by_user_id"),
+  createdByName: text("created_by_name"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
 });
 
 /** Group-wide company settings (single live row, id=1) — the GoMina
@@ -482,6 +543,11 @@ export const salesDocuments = pgTable("sales_documents", {
   taxRateGhs: doublePrecision("tax_rate_ghs").default(0),
   taxAmountGhs: doublePrecision("tax_amount_ghs").default(0),
   discountGhs: doublePrecision("discount_ghs").default(0),
+  // Percentage discount entered at the till / document builder — the system
+  // derives discountGhs = subtotal × discountPercent/100 (both are stored so
+  // receipts, invoices, quotations and reports show e.g. "Discount 5% −GH₵x").
+  // 0 (and legacy rows) mean "no percentage recorded".
+  discountPercent: doublePrecision("discount_percent").default(0),
   totalGhs: doublePrecision("total_ghs").notNull(),
   cogsGhs: doublePrecision("cogs_ghs").default(0), // cost of goods sold (inventory cost × qty) for profit reporting
   grossProfitGhs: doublePrecision("gross_profit_ghs").default(0), // totalGhs − cogsGhs
@@ -517,6 +583,10 @@ export const customerTrackings = pgTable("customer_trackings", {
   saleDocumentId: integer("sale_document_id"), // linked sales_documents.id (order)
   transactionId: integer("transaction_id"), // linked transactions.id
   items: jsonb("items").notNull().default([]), // [{description, sku?, quantity, unit?, unitPrice, total}]
+  // Percentage discount applied when the order was created (staff register /
+  // till). Online storefront orders pay full price unless staff adjust them.
+  discountPercent: doublePrecision("discount_percent").default(0),
+  discountGhs: doublePrecision("discount_ghs").default(0),
   totalGhs: doublePrecision("total_ghs").default(0),
   currency: text("currency").notNull().default("GHS"),
   fulfillmentType: text("fulfillment_type").notNull().default("PICKUP"), // 'PICKUP' | 'DELIVERY'
@@ -533,6 +603,14 @@ export const customerTrackings = pgTable("customer_trackings", {
   deliveryAccuracyM: doublePrecision("delivery_accuracy_m"), // GPS accuracy when captured (metres)
   deliveryMapLink: text("delivery_map_link"), // canonical https://maps.google.com/?q=lat,lng
   deliveryPinnedAt: timestamp("delivery_pinned_at"),
+  // Chosen PICKUP point — snapshot of the pickup_locations row at order time
+  // (kept verbatim so the order stays correct even if the location is later
+  // edited/removed). Null = collect at the branch itself (legacy default).
+  pickupLocationId: integer("pickup_location_id"),
+  pickupLocationName: text("pickup_location_name"),
+  pickupLocationAddress: text("pickup_location_address"),
+  pickupLat: doublePrecision("pickup_lat"),
+  pickupLng: doublePrecision("pickup_lng"),
   // Flow: RECEIVED → CONFIRMED → PROCESSING → READY | DISPATCHED → COMPLETED | DELIVERED (+ CANCELLED)
   status: text("status").notNull().default("RECEIVED"),
   statusHistory: jsonb("status_history").notNull().default([]), // [{status, at, by, byRole, note}]

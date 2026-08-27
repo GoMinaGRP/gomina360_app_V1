@@ -52,6 +52,7 @@ export default function SalesDocumentBuilder({
   ]);
   const [taxRate, setTaxRate] = useState<number>(0);
   const [discount, setDiscount] = useState<number>(0);
+  const [discountPct, setDiscountPct] = useState<number>(0); // % drives the amount automatically
   const [notes, setNotes] = useState("");
   const [terms, setTerms] = useState(
     documentType === "INVOICE"
@@ -75,10 +76,10 @@ export default function SalesDocumentBuilder({
 
   const branchCustomers = useMemo(
     () =>
-      customers.filter(
-        (c: any) =>
-          c.businessId === activeBiz?.id || c.businessId === null
-      ),
+      // Business-isolated CRM — a branch only ever picks from its OWN
+      // customers (owner directive; group-shared legacy rows live in the
+      // group Customers register, not in a branch's sales flow).
+      customers.filter((c: any) => c.businessId === activeBiz?.id),
     [customers, activeBiz?.id]
   );
 
@@ -93,6 +94,7 @@ export default function SalesDocumentBuilder({
       setLineItems([{ description: "", quantity: 1, unitPrice: 0 }]);
       setTaxRate(0);
       setDiscount(0);
+      setDiscountPct(0);
       setNotes("");
       setTerms(
         documentType === "INVOICE"
@@ -154,7 +156,9 @@ export default function SalesDocumentBuilder({
     0
   );
   const taxAmount = (subtotal * taxRate) / 100;
-  const total = subtotal + taxAmount - discount;
+  // Percentage discount auto-calculates the amount (and vice versa).
+  const discountAmount = discountPct > 0 ? Math.round(((subtotal * discountPct) / 100) * 100) / 100 : discount;
+  const total = subtotal + taxAmount - discountAmount;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -190,7 +194,8 @@ export default function SalesDocumentBuilder({
           customerAddress,
           lineItems: validItems,
           taxRateGhs: taxRate,
-          discountGhs: discount,
+          discountGhs: discountPct > 0 ? undefined : discount,
+          discountPercent: discountPct > 0 ? discountPct : undefined,
           currency,
           notes,
           terms,
@@ -409,14 +414,38 @@ export default function SalesDocumentBuilder({
               </div>
               <div>
                 <label className="block text-[11px] font-semibold text-slate-400 mb-1">
+                  Discount % (auto-calculates)
+                </label>
+                <input
+                  type="number"
+                  min="0"
+                  max="100"
+                  step="0.5"
+                  value={discountPct}
+                  data-testid="sdb-discount-pct"
+                  onChange={(e) => {
+                    const pct = Math.max(0, Math.min(100, Number(e.target.value) || 0));
+                    setDiscountPct(pct);
+                    if (pct > 0) setDiscount(Math.round(((subtotal * pct) / 100) * 100) / 100);
+                  }}
+                  className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-white text-sm"
+                />
+              </div>
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-400 mb-1">
                   Discount ({currency})
                 </label>
                 <input
                   type="number"
                   min="0"
                   step="0.01"
-                  value={discount}
-                  onChange={(e) => setDiscount(Number(e.target.value))}
+                  value={discountAmount}
+                  data-testid="sdb-discount-amt"
+                  onChange={(e) => {
+                    const amt = Math.max(0, Number(e.target.value) || 0);
+                    setDiscount(amt);
+                    setDiscountPct(subtotal > 0 ? Math.round((amt / subtotal) * 10000) / 100 : 0);
+                  }}
                   className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-white text-sm"
                 />
               </div>
@@ -466,10 +495,10 @@ export default function SalesDocumentBuilder({
                 <span>Subtotal:</span>
                 <span>{formatMoney(subtotal, currency)}</span>
               </div>
-              {discount > 0 && (
-                <div className="flex justify-between text-rose-300">
-                  <span>Discount:</span>
-                  <span>- {formatMoney(discount, currency)}</span>
+              {discountAmount > 0 && (
+                <div className="flex justify-between text-rose-300" data-testid="sdb-discount-line">
+                  <span>Discount{discountPct > 0 ? ` (${discountPct}%)` : ""}:</span>
+                  <span>- {formatMoney(discountAmount, currency)}</span>
                 </div>
               )}
               {taxRate > 0 && (

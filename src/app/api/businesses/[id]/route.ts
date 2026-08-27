@@ -53,6 +53,8 @@ import {
   scenarioSimulations,
   checklistTemplates,
   checklistEntries,
+  serviceAreas,
+  pickupLocations,
   electronicsOrders,
   electronicsSerials,
   electronicsWarranties,
@@ -71,16 +73,19 @@ import {
 } from "@/lib/businessProvisioning";
 import { requireOwner, getSessionInfo, canAccessBusiness, FORBIDDEN } from "@/lib/auth";
 
-/** Online-ordering & service-area fields. These are the ONLY business fields
- *  a non-OWNER may change — and only the manager roles (GENERAL_MANAGER /
- *  BRANCH_MANAGER, plus anyone the owner trusted with canManageRecords) on a
- *  business they actually have access to. Everything else stays OWNER-only. */
+/** Online-ordering, service-area, pickup & customer-contact fields. These are
+ *  the ONLY business fields a non-OWNER may change — and only staff carrying
+ *  the OWNER-granted canManageOnline permission, on a business they actually
+ *  have access to. Everything else stays OWNER-only. */
 const ONLINE_ORDERING_FIELDS = [
   "onlineOrderingEnabled",
   "pickupEnabled",
   "deliveryEnabled",
   "serviceRadiusKm",
   "serviceNote",
+  "customerHelpPhone",
+  "momoNumber",
+  "momoName",
   "gpsLat",
   "gpsLng",
 ] as const;
@@ -223,19 +228,19 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     const body = await request.json();
 
     // Session-verified gate (secure login cookie — no spoofing). The OWNER
-    // may update everything. Authorized staff (GENERAL_MANAGER /
-    // BRANCH_MANAGER / canManageRecords) may update ONLY the online-ordering
-    // & service-area fields, and only on a business they can access.
+    // may update everything. Staff carrying the OWNER-granted canManageOnline
+    // permission (Users & Access → Permissions) may update ONLY the
+    // online-ordering / service-area / customer-contact fields, and only on
+    // a business they can access.
     const actor = await requireOwner(request);
     if (!actor) {
       const session = await getSessionInfo(request);
       const user = session?.user;
-      const managerRole =
-        !!user &&
-        (user.role === "GENERAL_MANAGER" ||
-          user.role === "BRANCH_MANAGER" ||
-          !!user.canManageRecords);
-      if (!managerRole) return FORBIDDEN("Only the OWNER can update businesses.");
+      if (!user || !user.canManageOnline) {
+        return FORBIDDEN(
+          "Only the OWNER — or staff granted “Online Storefront & Delivery Areas” in Users & Access — can update businesses.",
+        );
+      }
       const allowed = await canAccessBusiness(user, businessId);
       if (!allowed) return FORBIDDEN("You do not have access to this business.");
       const touched = Object.keys(body || {}).filter((k) => !["actorUserId", "id"].includes(k));
@@ -244,7 +249,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
       );
       if (outsideScope.length > 0) {
         return FORBIDDEN(
-          `Only the OWNER can change: ${outsideScope.join(", ")}. Staff may manage online ordering & service area only.`,
+          `Only the OWNER can change: ${outsideScope.join(", ")}. Granted staff may manage online ordering, service areas & customer contacts only.`,
         );
       }
     }
@@ -355,6 +360,19 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
       const s = typeof body.serviceNote === "string" ? body.serviceNote.trim().slice(0, 160) : "";
       updates.serviceNote = s || null;
     }
+    // Customer-facing contact points (shown after checkout + on /track).
+    if (body.customerHelpPhone !== undefined) {
+      const s = typeof body.customerHelpPhone === "string" ? body.customerHelpPhone.trim().slice(0, 24) : "";
+      updates.customerHelpPhone = s || null;
+    }
+    if (body.momoNumber !== undefined) {
+      const s = typeof body.momoNumber === "string" ? body.momoNumber.trim().slice(0, 24) : "";
+      updates.momoNumber = s || null;
+    }
+    if (body.momoName !== undefined) {
+      const s = typeof body.momoName === "string" ? body.momoName.trim().slice(0, 60) : "";
+      updates.momoName = s || null;
+    }
     if (body.gpsLat !== undefined || body.gpsLng !== undefined) {
       if (body.gpsLat === null && body.gpsLng === null) {
         updates.gpsLat = null;
@@ -384,7 +402,8 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
       .returning();
 
     // Business type changed → re-provision so the unit mounts its new flagship
-    // module with the right starter stock kit + checklist templates.
+    // module with the right checklist templates (never any sample stock —
+    // real units stay clean).
     let typeChange: any = null;
     if (categoryChanged) {
       typeChange = await reprovisionForTypeChange({
@@ -498,6 +517,8 @@ export async function DELETE(request: Request, { params }: { params: Promise<{ i
       [hardwareOrders, hardwareOrders.businessId],
       [hardwarePurchases, hardwarePurchases.businessId],
       [hardwareDeliveries, hardwareDeliveries.businessId],
+      [serviceAreas, serviceAreas.businessId],
+      [pickupLocations, pickupLocations.businessId],
       [aiInsights, aiInsights.businessId],
       [checklistTemplates, checklistTemplates.businessId],
       [checklistEntries, checklistEntries.businessId],
@@ -665,6 +686,8 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       [hardwareOrders, hardwareOrders.businessId],
       [hardwarePurchases, hardwarePurchases.businessId],
       [hardwareDeliveries, hardwareDeliveries.businessId],
+      [serviceAreas, serviceAreas.businessId],
+      [pickupLocations, pickupLocations.businessId],
       // Checklist completion history (templates are setup — kept unless opted out)
       [checklistEntries, checklistEntries.businessId],
       // Executive dashboards — fresh zero-based row re-seeded in phase 2
@@ -700,10 +723,12 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     }
 
     // ── Phase 2: re-seed the factory-fresh workspace ─────────────────────
-    // provisionBusiness is idempotent per area — with metrics/inventory wiped
-    // above it recreates exactly what a brand-new unit receives: zero-based
-    // metrics (initial capital intact), the category starter stock kit, and
-    // (if master lists were reset) the default checklist template set.
+    // provisionBusiness is idempotent per area — with metrics wiped above it
+    // recreates exactly what a brand-new unit receives TODAY: zero-based
+    // metrics (initial capital intact) and (if master lists were reset) the
+    // default checklist template set. No starter stock / sample rows — a
+    // clean unit, precisely like New Branch / Unit produces. The wipe above
+    // already removed its inventory; nothing is re-added.
     const seeded = await provisionBusiness({
       id: biz.id,
       code: biz.code,

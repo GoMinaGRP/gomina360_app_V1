@@ -110,8 +110,17 @@ const clickByText = (page, text, tag = "button") =>
 const shot = (page, name) => page.screenshot({ path: `/home/user/${name}.png` });
 
 /* ═══ A · Menu + enforcement + gating API ═══ */
+async function grantBmOnline(cookies, on) {
+  const res = await api(cookies.owner, "/api/users", {
+    method: "PATCH",
+    body: JSON.stringify({ userId: 3, canManageOnline: on }),
+  });
+  ok(`SETUP BM canManageOnline=${on}`, res.status === 200 && res.json?.success === true, JSON.stringify(res.json || {}).slice(0, 160));
+}
+
 async function sectionA(cookies) {
   console.log("\n— A · service-area menu + enforcement + PATCH gating —");
+  await grantBmOnline(cookies, true);
 
   const menu = (await api(null, "/api/menu")).json;
   const m1 = (menu.businesses || []).find((b) => b.businessId === 1);
@@ -520,6 +529,7 @@ async function sectionF() {
 async function cleanup() {
   console.log("\n— Z · cleanup & forensics —");
   // restore business online/surface state exactly (ids 1 & 2)
+  await grantBmOnline({ owner: baseline.ownerCookie }, baseline.bmOnlineWas);
   for (const b of baseline.bizRestore) {
     await pg.query(
       `UPDATE businesses SET online_ordering_enabled=$2, pickup_enabled=$3, delivery_enabled=$4,
@@ -588,11 +598,16 @@ async function main() {
   if (!baseline.product || !baseline.product2) throw new Error("menu lacks sellable products on biz 1/2");
   baseline.qtyBefore = Number((await pg.query(`SELECT quantity FROM inventory_items WHERE id=$1`, [baseline.product.id])).rows[0].quantity);
 
+  // The Online Storefront & Delivery Areas permission is OWNER-granted now —
+  // capture Emmanuel's flag, then grant it for the BM sections (restored in Z).
+  baseline.bmOnlineWas = (await pg.query(`SELECT can_manage_online f FROM users WHERE id=3`)).rows[0]?.f === true;
+
   const cookies = {
     owner: await login(OWNER.email, OWNER.pass),
     bm: await login(BM.email, BM.pass),
     worker: await login(WORKER.email, WORKER.pass),
   };
+  baseline.ownerCookie = cookies.owner;
   await sectionA(cookies);
 
   browser = await puppeteer.launch({

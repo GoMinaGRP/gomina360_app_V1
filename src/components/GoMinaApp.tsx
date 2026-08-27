@@ -658,12 +658,10 @@ export default function GoMinaApp() {
           onOpenManageBusinesses={() => { setManageBizOnlineId(null); setIsManageBizOpen(true); }}
           onOpenUserAccess={() => setIsUserAccessOpen(true)}
           canManageBusinesses={currentUser?.role === "OWNER"}
-          canManageOnline={
-            currentUser?.role === "OWNER" ||
-            currentUser?.role === "GENERAL_MANAGER" ||
-            currentUser?.role === "BRANCH_MANAGER" ||
-            !!currentUser?.canManageRecords
-          }
+          // Owner-controlled permission (Users & Access → Permissions):
+          // only the OWNER or staff carrying the canManageOnline grant may
+          // open the Online Storefront & Delivery Areas management.
+          canManageOnline={currentUser?.role === "OWNER" || !!currentUser?.canManageOnline}
           canManageUsersConsole={currentUser?.role === "OWNER" || !!currentUser?.canManageUsers}
           checklists={checklistData}
         />
@@ -1070,10 +1068,7 @@ export default function GoMinaApp() {
         onOpenChangePassword={() => setIsChangePwOpen(true)}
         onOpenProfilePhoto={() => setIsProfilePhotoOpen(true)}
         onOpenOnlineOrdering={
-          currentUser?.role === "OWNER" ||
-          currentUser?.role === "GENERAL_MANAGER" ||
-          currentUser?.role === "BRANCH_MANAGER" ||
-          !!currentUser?.canManageRecords
+          currentUser?.role === "OWNER" || !!currentUser?.canManageOnline
             ? () => {
                 // Branch managers land straight on their own unit's Online
                 // panel; everyone else picks a unit from the list first.

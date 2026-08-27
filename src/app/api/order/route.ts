@@ -1,14 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
-import { customerTrackings, businesses, inventoryItems } from "@/db/schema";
-import { eq } from "drizzle-orm";
+import { customerTrackings, businesses, inventoryItems, serviceAreas, pickupLocations } from "@/db/schema";
+import { eq, and } from "drizzle-orm";
 import {
   uniqueTrackingCode,
   linkCrmCustomer,
   notifyOnlineOrder,
   normalizeDeliveryPin,
 } from "@/lib/trackingServer";
-import { googleMapsLink, haversineM } from "@/lib/tracking";
+import { googleMapsLink, businessServesLocation } from "@/lib/tracking";
 
 /**
  * PUBLIC online checkout — customers order WITHOUT logging in.
@@ -29,7 +29,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: "Choose a business to order from." }, { status: 400 });
     }
     const [biz] = await db.select().from(businesses).where(eq(businesses.id, businessId));
-    if (!biz || (biz.status || "").toUpperCase() === "INACTIVE") {
+    // Only ACTIVE / EXPANDING units trade publicly (mirrors /api/menu).
+    if (!biz || !["ACTIVE", "EXPANDING"].includes((biz.status || "").toUpperCase())) {
       return NextResponse.json({ success: false, error: "That business is not taking online orders." }, { status: 404 });
     }
     // Switched off the customer storefront by the OWNER / authorized staff
@@ -86,26 +87,65 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Service-area enforcement: when the branch configured a delivery radius
-    // AND has a GPS anchor, an out-of-area delivery pin is refused up front —
-    // customers are only *shown* branches serving their location, and this is
-    // the server-side guarantee behind it. (Pickup remains available.)
-    if (
-      pin &&
-      biz.serviceRadiusKm != null &&
-      Number(biz.serviceRadiusKm) > 0 &&
-      biz.gpsLat != null &&
-      biz.gpsLng != null
-    ) {
-      const distM = haversineM(pin.deliveryLat, pin.deliveryLng, biz.gpsLat, biz.gpsLng);
-      if (distM > Number(biz.serviceRadiusKm) * 1000) {
+    // Service-area enforcement: the branch defines its OWN service areas /
+    // localities (named map zones, each centre + radius) and/or a legacy
+    // branch-pin radius. A delivery pin outside every configured zone is
+    // refused up front — customers are only *shown* branches serving their
+    // location, and this is the server-side guarantee behind it. Units with
+    // no geocoded zone at all accept any pin. (Pickup remains available.)
+    const activeAreas = await db
+      .select()
+      .from(serviceAreas)
+      .where(and(eq(serviceAreas.businessId, businessId), eq(serviceAreas.active, true)));
+    if (pin) {
+      const verdict = businessServesLocation(biz, pin.deliveryLat, pin.deliveryLng, activeAreas);
+      const hasGeoZones =
+        activeAreas.some((a) => a.centerLat != null && a.centerLng != null && Number(a.radiusKm) > 0) ||
+        (biz.serviceRadiusKm != null && Number(biz.serviceRadiusKm) > 0 && biz.gpsLat != null && biz.gpsLng != null);
+      if (hasGeoZones && !verdict.serves) {
+        const areaList = activeAreas.map((a) => a.name).filter(Boolean).join(", ");
+        const gapKm = verdict.distanceM != null ? ` (about ${(Math.max(verdict.distanceM, 0) / 1000).toFixed(1)} km beyond)` : "";
         return NextResponse.json(
           {
             success: false,
-            error: `Your pinned point is ${(distM / 1000).toFixed(1)} km away — outside ${biz.name}'s delivery area (${Number(biz.serviceRadiusKm)} km around ${biz.branchLocation || biz.name}). Please choose Pickup or contact the branch.`,
+            error: `Your pinned delivery point is outside ${biz.name}'s service area${gapKm}.${areaList ? ` We deliver to: ${areaList}.` : ""} Please choose Pickup or contact the branch.`,
           },
           { status: 400 },
         );
+      }
+    }
+
+    // Pickup locations: when the unit runs named pickup points the customer
+    // must choose one — it is snapshotted onto the order so the Business →
+    // Branch → Orders → Delivery → Pickup chain survives later edits/removal.
+    let pickupSnap: {
+      pickupLocationId: number;
+      pickupLocationName: string;
+      pickupLocationAddress: string | null;
+      pickupLat: number | null;
+      pickupLng: number | null;
+    } | null = null;
+    if (fulfillmentType === "PICKUP") {
+      const points = await db
+        .select()
+        .from(pickupLocations)
+        .where(and(eq(pickupLocations.businessId, businessId), eq(pickupLocations.active, true)));
+      if (points.length > 0) {
+        const chosenId = Number(body.pickupLocationId);
+        const chosen = points.find((p) => p.id === chosenId);
+        if (!chosen) {
+          return NextResponse.json(
+            { success: false, error: `Choose where you will collect your order — ${biz.name} has ${points.length} pickup point${points.length === 1 ? "" : "s"}.` },
+            { status: 400 },
+          );
+        }
+        pickupSnap = {
+          pickupLocationId: chosen.id,
+          pickupLocationName: chosen.name,
+          pickupLocationAddress: chosen.address || null,
+          pickupLat: chosen.lat ?? null,
+          pickupLng: chosen.lng ?? null,
+        };
       }
     }
 
@@ -176,6 +216,7 @@ export async function POST(request: NextRequest) {
         fulfillmentType,
         destinationAddress: fulfillmentType === "DELIVERY" ? destinationAddress : null,
         ...(pin || {}), // deliveryLat/Lng/accuracyM + canonical mapLink + pinnedAt (DELIVERY only)
+        ...(pickupSnap || {}), // chosen pickup point snapshot (PICKUP only)
         status: "RECEIVED",
         statusHistory: [
           {
@@ -234,11 +275,31 @@ export async function POST(request: NextRequest) {
           ? { lat: pin.deliveryLat, lng: pin.deliveryLng, accuracyM: pin.deliveryAccuracyM, mapLink: googleMapsLink(pin.deliveryLat, pin.deliveryLng) }
           : null,
         pickupLocation:
-          fulfillmentType === "PICKUP" && biz.gpsLat != null && biz.gpsLng != null
-            ? { lat: biz.gpsLat, lng: biz.gpsLng, address: biz.branchLocation || null }
+          fulfillmentType === "PICKUP"
+            ? pickupSnap
+              ? {
+                  name: pickupSnap.pickupLocationName,
+                  address: pickupSnap.pickupLocationAddress,
+                  lat: pickupSnap.pickupLat,
+                  lng: pickupSnap.pickupLng,
+                  mapLink:
+                    pickupSnap.pickupLat != null && pickupSnap.pickupLng != null
+                      ? googleMapsLink(pickupSnap.pickupLat, pickupSnap.pickupLng)
+                      : null,
+                }
+              : biz.gpsLat != null && biz.gpsLng != null
+                ? { lat: biz.gpsLat, lng: biz.gpsLng, address: biz.branchLocation || null }
+                : null
             : null,
         status: "RECEIVED",
         payment: paymentChoice === "MOMO_NOW" ? "PENDING_CONFIRMATION" : "UNPAID",
+        // Customer help & MoMo payment numbers — shown straight after the
+        // order lands (and again on the tracking page).
+        help: biz.customerHelpPhone ? { phone: biz.customerHelpPhone } : null,
+        momo: biz.momoNumber ? { number: biz.momoNumber, name: biz.momoName || null } : null,
+        discountPercent: 0,
+        discountGhs: 0,
+        subtotalGhs: totalGhs,
       },
     });
   } catch (error: any) {

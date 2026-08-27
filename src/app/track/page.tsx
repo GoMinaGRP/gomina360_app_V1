@@ -21,6 +21,7 @@ import {
   User as UserIcon,
   Banknote,
   Navigation,
+  Smartphone,
 } from "lucide-react";
 import { googleMapsEmbed, googleMapsLink, googleMapsRouteLink } from "@/lib/tracking";
 import { qrDataUrl } from "@/lib/qrRegistry";
@@ -382,34 +383,43 @@ function TrackInner() {
               </div>
             )}
 
-            {/* Pickup point — the branch's public shop location */}
+            {/* Pickup point — the chosen pickup location (or the branch itself) */}
             {t.fulfillmentType === "PICKUP" && t.pickupLocation && (
               <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 sm:p-5 shadow-xl" data-testid="track-pickup-map">
                 <h2 className="text-sm font-extrabold text-white flex items-center gap-2 mb-2">
                   <Store className="w-4 h-4 text-emerald-300" /> Where to pick up
                 </h2>
-                <div className="rounded-xl overflow-hidden border border-slate-700">
-                  <iframe
-                    key={`${t.pickupLocation.lat},${t.pickupLocation.lng}`}
-                    title="Branch pickup point — Google Maps"
-                    src={googleMapsEmbed(t.pickupLocation.lat, t.pickupLocation.lng, 16)}
-                    className="w-full h-[240px] bg-slate-800"
-                    loading="lazy"
-                    referrerPolicy="no-referrer-when-downgrade"
-                    data-testid="track-pickup-map-frame"
-                  />
-                </div>
+                {t.pickupLocation.name && (
+                  <p className="text-[12px] font-bold text-emerald-300 mb-2" data-testid="track-pickpoint-name">
+                    {t.pickupLocation.name}
+                  </p>
+                )}
+                {t.pickupLocation.lat != null && t.pickupLocation.lng != null && (
+                  <div className="rounded-xl overflow-hidden border border-slate-700">
+                    <iframe
+                      key={`${t.pickupLocation.lat},${t.pickupLocation.lng}`}
+                      title="Pickup point — Google Maps"
+                      src={googleMapsEmbed(t.pickupLocation.lat, t.pickupLocation.lng, 16)}
+                      className="w-full h-[240px] bg-slate-800"
+                      loading="lazy"
+                      referrerPolicy="no-referrer-when-downgrade"
+                      data-testid="track-pickup-map-frame"
+                    />
+                  </div>
+                )}
                 <div className="mt-2 text-[11px] text-slate-400 flex flex-wrap items-center gap-x-4 gap-y-1">
                   {t.pickupLocation.address && <span>{t.pickupLocation.address}</span>}
-                  <a
-                    href={googleMapsLink(t.pickupLocation.lat, t.pickupLocation.lng)}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="flex items-center gap-1 font-bold text-emerald-300 hover:text-emerald-200 underline decoration-emerald-500/40"
-                    data-testid="track-pickup-directions"
-                  >
-                    <Navigation className="w-3 h-3" /> Get directions
-                  </a>
+                  {t.pickupLocation.lat != null && t.pickupLocation.lng != null && (
+                    <a
+                      href={t.pickupLocation.mapLink || googleMapsLink(t.pickupLocation.lat, t.pickupLocation.lng)}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="flex items-center gap-1 font-bold text-emerald-300 hover:text-emerald-200 underline decoration-emerald-500/40"
+                      data-testid="track-pickup-directions"
+                    >
+                      <Navigation className="w-3 h-3" /> Get directions
+                    </a>
+                  )}
                 </div>
                 <p className="mt-1.5 text-[10px] text-slate-500">
                   Come in when your order shows “Ready for Pickup” above — this is the branch's public location.
@@ -463,7 +473,23 @@ function TrackInner() {
                     ))}
                   </tbody>
                   <tfoot>
-                    <tr>
+                    {Number(t.discountGhs) > 0 && (
+                      <>
+                        <tr>
+                          <td colSpan={2} className="pt-2 text-right font-bold text-slate-500">Subtotal</td>
+                          <td className="pt-2 text-right font-semibold text-slate-300" data-testid="track-subtotal">{fmtMoney(t.subtotalGhs, t.currency)}</td>
+                        </tr>
+                        <tr>
+                          <td colSpan={2} className="text-right font-bold text-slate-500">
+                            Discount{Number(t.discountPercent) > 0 ? ` (${Number(t.discountPercent)}%)` : ""}
+                          </td>
+                          <td className="text-right font-semibold text-amber-300" data-testid="track-discount">
+                            − {fmtMoney(t.discountGhs, t.currency)}
+                          </td>
+                        </tr>
+                      </>
+                    )}
+                    <tr data-testid="track-total-row">
                       <td colSpan={2} className="py-2 text-right font-bold text-slate-400">Total</td>
                       <td className="py-2 text-right font-black text-emerald-300">{fmtMoney(t.totalGhs, t.currency)}</td>
                     </tr>
@@ -500,6 +526,26 @@ function TrackInner() {
                   <div className="mt-2 text-[11px] text-cyan-300 flex items-center gap-1.5" data-testid="track-delivery-progress">
                     <Truck className="w-3.5 h-3.5" /> Delivery in progress — watch the live map above.
                   </div>
+                )}
+              </div>
+            )}
+
+            {/* Customer help & MoMo payment — set per branch by the owner */}
+            {(t.help || t.momo) && (
+              <div className="bg-slate-900 border border-amber-500/30 rounded-2xl p-4 sm:p-5 shadow-xl" data-testid="track-contacts">
+                <h2 className="text-sm font-extrabold text-white flex items-center gap-2 mb-2">
+                  <Smartphone className="w-4 h-4 text-amber-300" /> Help & payment for this order
+                </h2>
+                {t.momo && (
+                  <p className="text-[12px] text-amber-200 mb-1" data-testid="track-momo">
+                    Pay MoMo to <span className="font-black">{t.momo.number}</span>
+                    {t.momo.name ? ` — ${t.momo.name}` : ""}. Quote your tracking code as reference.
+                  </p>
+                )}
+                {t.help && (
+                  <p className="text-[12px] text-amber-100/90" data-testid="track-help">
+                    Questions about your order? Call / WhatsApp <span className="font-black">{t.help.phone}</span>
+                  </p>
                 )}
               </div>
             )}

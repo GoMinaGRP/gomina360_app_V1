@@ -70,6 +70,7 @@ export async function POST(request: NextRequest) {
       lineItems,
       taxRateGhs,
       discountGhs,
+      discountPercent,
       currency,
       notes,
       terms,
@@ -95,8 +96,32 @@ export async function POST(request: NextRequest) {
     const subtotal = items.reduce((sum: number, i: any) => sum + i.total, 0);
     const taxRate = Number(taxRateGhs) || 0;
     const taxAmount = (subtotal * taxRate) / 100;
-    const discount = Number(discountGhs) || 0;
-    const total = subtotal + taxAmount - discount;
+    // Percentage discount is the primary mode (auto-calculates the amount);
+    // a flat GH₵ amount stays supported for backward compatibility.
+    const r2 = (n: number) => Math.round(n * 100) / 100;
+    let discountPct = 0;
+    let discount = 0;
+    if (discountPercent !== undefined && discountPercent !== null && discountPercent !== "") {
+      const pct = Number(discountPercent);
+      if (!Number.isFinite(pct) || pct < 0 || pct > 100) {
+        return NextResponse.json(
+          { success: false, error: "Discount percent must be between 0 and 100." },
+          { status: 400 },
+        );
+      }
+      discountPct = r2(pct);
+      discount = r2((subtotal * discountPct) / 100);
+    } else {
+      discount = r2(Number(discountGhs) || 0);
+      discountPct = subtotal > 0 ? r2((discount / subtotal) * 100) : 0;
+    }
+    if (discount < 0 || discount > subtotal) {
+      return NextResponse.json(
+        { success: false, error: "Discount cannot exceed the document subtotal." },
+        { status: 400 },
+      );
+    }
+    const total = r2(subtotal + taxAmount - discount);
 
     // Fetch business/branch details if not provided
     let resolvedBranchCode = branchCode;
@@ -142,6 +167,7 @@ export async function POST(request: NextRequest) {
       taxRateGhs: taxRate,
       taxAmountGhs: taxAmount,
       discountGhs: discount,
+      discountPercent: discountPct,
       totalGhs: total,
       currency: currency || "GHS",
       status: documentType === "QUOTATION" ? "SENT" : "SENT",
@@ -215,6 +241,7 @@ export async function PATCH(request: NextRequest) {
         taxRateGhs: existing.taxRateGhs,
         taxAmountGhs: existing.taxAmountGhs,
         discountGhs: existing.discountGhs,
+        discountPercent: existing.discountPercent ?? 0,
         totalGhs: existing.totalGhs,
         currency: existing.currency,
         status: "SENT",

@@ -51,6 +51,8 @@ function OrderInner() {
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
   const [fulfillment, setFulfillment] = useState<"PICKUP" | "DELIVERY">("PICKUP");
+  // Chosen pickup point (when the branch runs named pickup locations).
+  const [pickPointId, setPickPointId] = useState<number | null>(null);
   const [destination, setDestination] = useState("");
   const [deliveryPin, setDeliveryPin] = useState<PinValue | null>(null);
   const [payChoice, setPayChoice] = useState<"ON_DELIVERY" | "MOMO_NOW">("ON_DELIVERY");
@@ -95,6 +97,10 @@ function OrderInner() {
   }, []);
 
   const biz = useMemo(() => (menu || []).find((b) => b.businessId === bizId) || null, [menu, bizId]);
+  const chosenPickPoint = useMemo(
+    () => (biz?.pickupLocations || []).find((pt: any) => pt.id === pickPointId) || null,
+    [biz, pickPointId],
+  );
   const categories: string[] = useMemo(
     () => ["ALL", ...Array.from(new Set<string>((biz?.products || []).map((p: any) => String(p.category))))],
     [biz],
@@ -150,7 +156,9 @@ function OrderInner() {
   const decorated = useMemo(
     () =>
       (menu || []).map((b: any) =>
-        custLoc ? { b, ...businessServesLocation(b, custLoc.lat, custLoc.lng) } : { b, serves: true, distanceM: null },
+        custLoc
+          ? { b, ...businessServesLocation(b, custLoc.lat, custLoc.lng, b.serviceAreas) }
+          : { b, serves: true, distanceM: null, areaName: null },
       ),
     [menu, custLoc],
   );
@@ -165,6 +173,14 @@ function OrderInner() {
         : decorated,
     [decorated, custLoc, nearOnly, bizId],
   );
+
+  // A branch's own pickup points: preselect when there is only one; any
+  // branch switch resets the choice (points belong to the new branch).
+  useEffect(() => {
+    const pts = biz?.pickupLocations || [];
+    setPickPointId(pts.length === 1 ? pts[0].id : null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [bizId, (biz?.pickupLocations || []).length]);
 
   // Keep the fulfilment choice valid for the selected branch's switches.
   useEffect(() => {
@@ -201,6 +217,7 @@ function OrderInner() {
     setBizId(id);
     setCat("ALL");
     setSearch("");
+    setPickPointId(null);
     setDeliveryPin(null); // different branch — re-pin the delivery point
   };
 
@@ -212,6 +229,9 @@ function OrderInner() {
     if (phone.trim().length < 6) return setOrderError("Please enter a phone number we can reach you on.");
     if (fulfillment === "DELIVERY" && destination.trim().length < 3)
       return setOrderError("Tell us where to deliver (area / landmark).");
+    const pickPts: any[] = biz.pickupLocations || [];
+    if (fulfillment === "PICKUP" && pickPts.length > 0 && !pickPointId)
+      return setOrderError(`Choose where you will collect your order — ${biz.businessName} has ${pickPts.length} pickup points.`);
     if (fulfillment === "DELIVERY" && !deliveryPin)
       return setOrderError(
         "Pin your exact delivery point on the Google Map below — tap “Use my location” (or drop the pin and fine-tune it with the arrows) so our courier finds you without calling.",
@@ -227,6 +247,7 @@ function OrderInner() {
           customerPhone: phone.trim(),
           fulfillmentType: fulfillment,
           destinationAddress: destination.trim(),
+          ...(fulfillment === "PICKUP" && pickPointId ? { pickupLocationId: pickPointId } : {}),
           ...(fulfillment === "DELIVERY" && deliveryPin
             ? {
                 deliveryLat: deliveryPin.lat,
@@ -399,7 +420,7 @@ function OrderInner() {
               </div>
             ) : (
               <div className="flex gap-2 overflow-x-auto pb-1">
-                {visibleBiz.map(({ b, serves, distanceM }) => (
+                {visibleBiz.map(({ b, serves, distanceM, areaName }) => (
                   <button
                     key={b.businessId}
                     onClick={() => pickBiz(b.businessId)}
@@ -415,6 +436,11 @@ function OrderInner() {
                       {b.branchName} · {b.products.length} product{b.products.length === 1 ? "" : "s"}
                     </div>
                     <div className="flex items-center gap-1 mt-0.5">
+                      {serves && (b.serviceAreas || []).length > 0 && (
+                        <span className="text-[9px] font-bold text-cyan-300 truncate max-w-[140px]" data-testid={`oo-biz-area-${b.businessId}`}>
+                          {areaName || `${(b.serviceAreas || []).length} area${(b.serviceAreas || []).length === 1 ? "" : "s"}`}
+                        </span>
+                      )}
                       {distanceM != null && (
                         <span className="text-[9px] font-bold text-emerald-300" data-testid={`oo-biz-dist-${b.businessId}`}>
                           {(distanceM / 1000).toFixed(1)} km
@@ -434,6 +460,16 @@ function OrderInner() {
               <p className="text-[10px] text-cyan-300/90 px-1" data-testid="oo-biz-note">
                 {biz.serviceNote}
               </p>
+            )}
+            {biz && (biz.serviceAreas || []).length > 0 && (
+              <div className="flex flex-wrap items-center gap-1 px-1" data-testid="oo-biz-areas">
+                <span className="text-[9px] text-slate-500 font-bold uppercase tracking-wider">Delivers to:</span>
+                {biz.serviceAreas.map((a: any) => (
+                  <span key={a.id} className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-cyan-500/10 border border-cyan-500/30 text-cyan-300" data-testid={`oo-biz-areachip-${a.id}`}>
+                    {a.name}{a.note ? ` · ${a.note}` : ""}
+                  </span>
+                ))}
+              </div>
             )}
 
             {biz && (
@@ -606,7 +642,37 @@ function OrderInner() {
                       />
                     </div>
                   )}
-                  {fulfillment === "PICKUP" && biz.gpsLat != null && biz.gpsLng != null && (
+                  {fulfillment === "PICKUP" && (biz.pickupLocations || []).length > 0 && (
+                    <div className="space-y-2" data-testid="oo-pickpoints">
+                      <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1">
+                        <PackageCheck className="w-3.5 h-3.5 text-emerald-300" /> Choose your pickup point
+                      </p>
+                      {biz.pickupLocations.map((pt: any) => (
+                        <label key={pt.id} className={`flex items-start gap-2.5 px-3 py-2.5 rounded-xl border cursor-pointer transition ${pickPointId === pt.id ? "bg-emerald-500/15 border-emerald-500/60" : "bg-slate-800 border-slate-700"}`} data-testid={`oo-pickpoint-${pt.id}`}>
+                          <input type="radio" className="mt-0.5" checked={pickPointId === pt.id} onChange={() => setPickPointId(pt.id)} />
+                          <span className="min-w-0">
+                            <span className="block text-[12px] font-extrabold text-white">{pt.name}</span>
+                            {pt.address && <span className="block text-[10px] text-slate-400">{pt.address}</span>}
+                            {pt.instructions && <span className="block text-[9px] text-slate-500">{pt.instructions}</span>}
+                          </span>
+                        </label>
+                      ))}
+                      {chosenPickPoint && chosenPickPoint.lat != null && chosenPickPoint.lng != null && (
+                        <div className="rounded-xl border border-slate-700 bg-slate-900/60 overflow-hidden" data-testid="oo-pickup-map">
+                          <iframe
+                            key={`${chosenPickPoint.lat},${chosenPickPoint.lng}`}
+                            title={`Pickup point map — ${chosenPickPoint.name}`}
+                            src={googleMapsEmbed(chosenPickPoint.lat, chosenPickPoint.lng, 16)}
+                            className="w-full h-[180px] bg-slate-800"
+                            loading="lazy"
+                            referrerPolicy="no-referrer-when-downgrade"
+                            data-testid="oo-pickup-map-frame"
+                          />
+                        </div>
+                      )}
+                    </div>
+                  )}
+                  {fulfillment === "PICKUP" && (biz.pickupLocations || []).length === 0 && biz.gpsLat != null && biz.gpsLng != null && (
                     <div className="rounded-xl border border-slate-700 bg-slate-900/60 overflow-hidden" data-testid="oo-pickup-map">
                       <p className="px-3 pt-2.5 pb-2 text-[10px] font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1">
                         <MapPin className="w-3.5 h-3.5 text-emerald-300" /> Pickup point — {biz.branchName}
@@ -639,6 +705,11 @@ function OrderInner() {
                       <span className="flex-1">
                         <span className="flex items-center gap-1.5 text-[12px] font-extrabold"><Smartphone className="w-3.5 h-3.5 text-yellow-300" /> Pay now with MTN MoMo</span>
                         <span className="block text-[9px] text-slate-400">The branch shares the MoMo number and confirms your payment on your tracking page.</span>
+                        {biz.momoNumber && (
+                          <span className="block text-[10px] font-bold text-yellow-300 mt-0.5" data-testid="oo-momo-dest">
+                            Pay to: {biz.momoNumber}{biz.momoName ? ` — ${biz.momoName}` : ""}
+                          </span>
+                        )}
                       </span>
                     </label>
                     {payChoice === "MOMO_NOW" && (
@@ -720,6 +791,27 @@ function OrderInner() {
                   loading="lazy"
                   referrerPolicy="no-referrer-when-downgrade"
                 />
+              </div>
+            )}
+            {placed.pickupLocation?.name && (
+              <p className="text-[11px] text-emerald-300" data-testid="oo-success-pickpoint">
+                Collect at: <span className="font-black">{placed.pickupLocation.name}</span>
+                {placed.pickupLocation.address ? ` — ${placed.pickupLocation.address}` : ""}
+              </p>
+            )}
+            {(placed.help || placed.momo) && (
+              <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-left space-y-1" data-testid="oo-success-contacts">
+                {placed.momo && (
+                  <p className="text-[11px] text-amber-200" data-testid="oo-success-momo">
+                    Pay MoMo to <span className="font-black">{placed.momo.number}</span>
+                    {placed.momo.name ? ` (${placed.momo.name})` : ""} — keep your reference.
+                  </p>
+                )}
+                {placed.help && (
+                  <p className="text-[11px] text-amber-200/90" data-testid="oo-success-help">
+                    Need help with this order? Call / WhatsApp <span className="font-black">{placed.help.phone}</span>
+                  </p>
+                )}
               </div>
             )}
             <div className="flex justify-center gap-2 pt-1">

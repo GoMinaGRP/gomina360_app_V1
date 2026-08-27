@@ -14,12 +14,16 @@ import { tasksForBusiness } from "@/lib/checklistDefaults";
 /**
  * New-business auto-provisioning.
  *
- * Every business created through “New Branch / Unit” gets a complete,
- * immediately-usable operating workspace so its dashboard is NEVER blank:
+ * Every business created through “New Branch / Unit” gets a MINIMAL,
+ * completely clean operating workspace (owner directive 2026-08-27 — a new
+ * unit must start with zero sample, test or unrelated data):
  *   • zero-based live financial metrics (they grow from real activity)
- *   • a category starter inventory kit (raw materials + sellable products)
- *     booked as an opening EXPENSE against the unit’s initial capital
  *   • the full specialized daily-checklist template set for its type
+ *     (operational configuration, not business records)
+ * …and NOTHING else: no starter inventory, no sample services, no sample
+ * tills/packages. The sample catalogue below (starter kits, wash services,
+ * telecom lines) is reserved for the DEMO/RECOVERY seed (seed.ts opts in
+ * via { starterKit: true }) to preserve the original flagship units.
  */
 
 export const CATEGORY_PREFIX: Record<string, string> = {
@@ -296,15 +300,25 @@ export function nextBusinessCode(existingCodes: string[], category: string): str
 
 /**
  * Provision a freshly-created business. Idempotent per area: skips whatever
- * already exists (so it can also repair a unit whose kit was removed).
+ * already exists (so it can also repair a unit whose setup went missing).
+ *
+ * opts.starterKit — DEMO/RECOVERY ONLY. When true, additionally seeds the
+ * category starter inventory kit (booked as an opening expense against the
+ * unit's capital) plus the Car Wash service catalogue / Telecom lines +
+ * Wi-Fi packages. Real units created from the app NEVER pass this: they
+ * start completely clean.
  */
-export async function provisionBusiness(biz: {
-  id: number;
-  code: string;
-  name: string;
-  category: string;
-  initialCapitalGhs?: number | null;
-}) {
+export async function provisionBusiness(
+  biz: {
+    id: number;
+    code: string;
+    name: string;
+    category: string;
+    initialCapitalGhs?: number | null;
+  },
+  opts?: { starterKit?: boolean },
+) {
+  const withSamples = opts?.starterKit === true;
   const businessId = biz.id;
 
   // 1. Zero-based Q1 metrics — grow purely from real recorded activity.
@@ -329,17 +343,17 @@ export async function provisionBusiness(biz: {
     });
   }
 
-  // 2. Category starter inventory kit. Its cost value is folded into the
-  //    metrics row (expenses / inventory value) — NOT booked as a transaction —
-  //    so GoMinaApp's live layering never double-counts it; the module surfaces
-  //    it as "Starter kit funded from initial capital".
+  // 2. Category starter inventory kit — SAMPLE data, seeded ONLY for
+  //    demo/recovery units (opts.starterKit). Its cost value is folded into
+  //    the metrics row (expenses / inventory value) — NOT booked as a
+  //    transaction — so live layering never double-counts it.
   const existingInv = await db
     .select()
     .from(inventoryItems)
     .where(eq(inventoryItems.businessId, businessId));
   let kitCost = 0;
   const createdItems: any[] = [];
-  if (existingInv.length === 0) {
+  if (withSamples && existingInv.length === 0) {
     const kit = KITS[biz.category] || GENERIC_KIT;
     for (const item of kit) {
       const qty = Number(item.quantity) || 0;
@@ -403,19 +417,25 @@ export async function provisionBusiness(biz: {
     templateCount = seeds.length;
   }
 
-  // 4. Auto Car Wash units get the default service catalogue (chemical
-  //    consumption auto-linked to the branch's chemical drum when present),
-  //    and Telecom units get their default MoMo agent lines + Wi-Fi packages.
-  const servicesCreated = await ensureCarWashServiceCatalogue({
-    id: businessId,
-    code: biz.code,
-    category: biz.category,
-  });
-  const telecomCreated = await ensureTelecomDefaults({
-    id: businessId,
-    code: biz.code,
-    category: biz.category,
-  });
+  // 4. SAMPLE service catalogues (demo/recovery units only): Auto Car Wash
+  //    units get the default service catalogue (chemical consumption
+  //    auto-linked to the branch's drum when present), and Telecom units get
+  //    their default MoMo agent lines + Wi-Fi packages. Never seeded into
+  //    real app-created units — they start clean.
+  let servicesCreated = 0;
+  let telecomCreated = { lines: 0, packages: 0 };
+  if (withSamples) {
+    servicesCreated = await ensureCarWashServiceCatalogue({
+      id: businessId,
+      code: biz.code,
+      category: biz.category,
+    });
+    telecomCreated = await ensureTelecomDefaults({
+      id: businessId,
+      code: biz.code,
+      category: biz.category,
+    });
+  }
 
   return {
     metricsCreated: existingMetrics.length === 0,
@@ -449,57 +469,9 @@ export async function reprovisionForTypeChange(biz: {
 }) {
   const businessId = biz.id;
 
-  // 1. Starter kit: add only the SKUs of the new category that do not exist yet.
-  const kit = KITS[biz.category] || GENERIC_KIT;
-  const existingInv = await db
-    .select({ sku: inventoryItems.sku })
-    .from(inventoryItems)
-    .where(eq(inventoryItems.businessId, businessId));
-  const existingSkus = new Set(existingInv.map((r) => r.sku));
+  // 1. NO starter stock is ever added on a type change (owner directive —
+  //    units only ever hold stock a human actually entered).
   const addedItems: any[] = [];
-  let addedKitCost = 0;
-  for (const item of kit) {
-    const sku = `${biz.code}-${item.skuSuffix}`;
-    if (existingSkus.has(sku)) continue;
-    const qty = Number(item.quantity) || 0;
-    const [row] = await db
-      .insert(inventoryItems)
-      .values({
-        name: item.name,
-        sku,
-        businessId,
-        category: item.category,
-        quantity: qty,
-        unit: item.unit,
-        costPriceGhs: item.costPriceGhs,
-        sellingPriceGhs: item.sellingPriceGhs,
-        minStockThreshold: item.minStockThreshold,
-        status: computeStockStatus(qty, item.minStockThreshold),
-      })
-      .returning();
-    addedKitCost += qty * (Number(item.costPriceGhs) || 0);
-    addedItems.push(row);
-  }
-
-  // Fold the added kit cost incrementally into the metrics row (exactly like
-  // creation does, but as a delta instead of an absolute set).
-  if (addedKitCost > 0) {
-    const [metric] = await db
-      .select()
-      .from(businessMetrics)
-      .where(eq(businessMetrics.businessId, businessId));
-    if (metric) {
-      await db
-        .update(businessMetrics)
-        .set({
-          expensesGhs: Math.round((metric.expensesGhs + addedKitCost) * 100) / 100,
-          netProfitGhs: Math.round((metric.netProfitGhs - addedKitCost) * 100) / 100,
-          cashFlowGhs: Math.round((metric.cashFlowGhs - addedKitCost) * 100) / 100,
-          inventoryValueGhs: Math.round((metric.inventoryValueGhs + addedKitCost) * 100) / 100,
-        })
-        .where(eq(businessMetrics.id, metric.id));
-    }
-  }
 
   // 2. Checklist templates: point the unit at its new type's task set.
   const wanted = tasksForBusiness(undefined, biz.category);
@@ -557,7 +529,7 @@ export async function reprovisionForTypeChange(biz: {
 
   return {
     kitItemsAdded: addedItems.length,
-    kitCostAddedGhs: Math.round(addedKitCost * 100) / 100,
+    kitCostAddedGhs: 0,
     checklistTemplatesCreated: createdTpls,
     checklistTemplatesDeactivated: deactivated,
     carWashServices: servicesCreated,

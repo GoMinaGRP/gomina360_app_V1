@@ -133,11 +133,14 @@ export async function linkCrmCustomer({
   try {
     const all = await db.select().from(customers);
     const norm = (s: any) => String(s || "").trim().toLowerCase();
+    // Business isolation: the selling business's OWN customer wins first; a
+    // legacy group-shared (NULL business) row still matches as a fallback so
+    // history flows to it, but new rows are always stamped to the seller.
     const match =
-      (phone &&
-        all.find((c) => norm(c.phone) === norm(phone) && (c.businessId === null || c.businessId === businessId))) ||
-      (name &&
-        all.find((c) => norm(c.name) === norm(name) && (c.businessId === null || c.businessId === businessId))) ||
+      (phone && all.find((c) => norm(c.phone) === norm(phone) && c.businessId === businessId)) ||
+      (name && all.find((c) => norm(c.name) === norm(name) && c.businessId === businessId)) ||
+      (phone && all.find((c) => norm(c.phone) === norm(phone) && c.businessId === null)) ||
+      (name && all.find((c) => norm(c.name) === norm(name) && c.businessId === null)) ||
       null;
     if (match) {
       await db
@@ -158,7 +161,9 @@ export async function linkCrmCustomer({
           phone: phone || "",
           totalSpentGhs: spendGhs,
           loyaltyPoints: Math.floor(spendGhs / 100),
-          businessId: null,
+          // Isolation: storefront & staff-tracked orders stamp the SELLING
+          // business so the buyer appears in that unit's CRM scope.
+          businessId: businessId || null,
         })
         .returning();
       return created?.id ?? null;
