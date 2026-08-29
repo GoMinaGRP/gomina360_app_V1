@@ -26,6 +26,7 @@ import {
 } from "lucide-react";
 import { googleMapsEmbed, googleMapsLink, googleMapsRouteLink } from "@/lib/tracking";
 import { qrDataUrl } from "@/lib/qrRegistry";
+import { copyText } from "@/lib/clipboard";
 
 const STEP_DEFS = [
   { key: "RECEIVED", label: "Order Received", icon: ClipboardList },
@@ -592,11 +593,10 @@ function TrackInner() {
             <div className="flex flex-col items-center gap-2.5 pb-4">
               <button
                 onClick={async () => {
-                  try {
-                    await navigator.clipboard.writeText(window.location.origin + t.trackUrl);
+                  if (await copyText(window.location.origin + t.trackUrl)) {
                     setCopied(true);
                     setTimeout(() => setCopied(false), 1500);
-                  } catch {}
+                  }
                 }}
                 className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 text-[11px] font-bold"
                 data-testid="track-copy"

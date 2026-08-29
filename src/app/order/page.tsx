@@ -25,6 +25,7 @@ import {
 } from "lucide-react";
 import LocationPinPicker, { type PinValue } from "@/components/LocationPinPicker";
 import { googleMapsEmbed, businessServesLocation } from "@/lib/tracking";
+import { copyText } from "@/lib/clipboard";
 
 function fmtMoney(amount: number | null | undefined, currency = "GHS") {
   if (amount == null) return "—";
@@ -817,11 +818,10 @@ function OrderInner() {
             <div className="flex justify-center gap-2 pt-1">
               <button
                 onClick={async () => {
-                  try {
-                    await navigator.clipboard.writeText(placed.code);
+                  if (await copyText(placed.code)) {
                     setCopied(true);
                     setTimeout(() => setCopied(false), 1500);
-                  } catch {}
+                  }
                 }}
                 className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 text-[11px] font-bold"
                 data-testid="oo-copy"
