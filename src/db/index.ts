@@ -1,37 +1,73 @@
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
+import * as schema from "./schema";
 
 /**
- * Database connection — hardened against two production failure modes:
- *
- * 1. BOOT FAILURE: the module used to THROW at import time when
- *    DATABASE_URL was unset. Next.js loads this module for EVERY API route,
- *    so a missing env var (e.g. the prod server restarted without the env,
- *    or a sandbox reset wiped the untracked .env file) took down the entire
- *    API surface — sign-in and the public menu included. The workspace-local
- *    default below is the same connection string already committed in
- *    drizzle.config.json; DATABASE_URL still overrides it in real
- *    deployments.
- *
- * 2. PROCESS CRASH ON DB OUTAGE: pg.Pool emits "error" from IDLE clients
- *    when the PostgreSQL server restarts or the network drops. Without a
- *    listener that event is UNHANDLED and kills the whole Next.js process —
- *    the app then serves 500s ("database connection") until someone manually
- *    restarts it. The listener below logs and discards the dead client so
- *    the server survives the outage; the pool reconnects automatically on
- *    the next query once PostgreSQL is back.
+ * Database connection — hardened against production connection and outage
+ * failures while keeping the workspace-local default useful for development.
  */
 const DEFAULT_DATABASE_URL =
   "postgresql://postgres:postgres@127.0.0.1:5432/app_db";
 
-const databaseUrl = process.env.DATABASE_URL || DEFAULT_DATABASE_URL;
+/**
+ * Vercel integrations have used a few different names for the same hosted
+ * PostgreSQL connection over time. Prefer an explicitly configured URL, then
+ * fall back to the component variables exposed by Neon/Vercel Postgres.
+ */
+const DATABASE_URL_KEYS = [
+  "DATABASE_URL",
+  "POSTGRES_URL",
+  "POSTGRES_PRISMA_URL",
+  "POSTGRES_URL_NON_POOLING",
+  "DATABASE_URL_UNPOOLED",
+  "POSTGRES_DATABASE_URL",
+  "NEON_DATABASE_URL",
+  "POSTGRES_URL_NO_SSL",
+] as const;
 
-if (!process.env.DATABASE_URL) {
-  console.warn(
-    "[db] DATABASE_URL is not set — falling back to the workspace-local " +
-      "PostgreSQL default (see drizzle.config.json)."
+function readConfiguredDatabaseUrl() {
+  for (const key of DATABASE_URL_KEYS) {
+    const value = process.env[key]?.trim();
+    if (value) return value;
+  }
+
+  const host = (
+    process.env.PGHOST ??
+    process.env.POSTGRES_HOST
+  )?.trim();
+  const user = (process.env.PGUSER ?? process.env.POSTGRES_USER)?.trim();
+  const password = process.env.PGPASSWORD ?? process.env.POSTGRES_PASSWORD;
+  const database = (process.env.PGDATABASE ?? process.env.POSTGRES_DATABASE)?.trim();
+
+  if (!host || !user || password === undefined || !database) return undefined;
+
+  const port = (process.env.PGPORT ?? process.env.POSTGRES_PORT ?? "5432").trim();
+  const normalizedHost = host.includes(":") && !host.startsWith("[") ? `[${host}]` : host;
+  const sslMode =
+    process.env.PGSSLMODE?.trim() ||
+    (process.env.VERCEL === "1" || process.env.VERCEL_ENV ? "require" : "");
+  const query = sslMode ? `?sslmode=${encodeURIComponent(sslMode)}` : "";
+
+  return `postgresql://${encodeURIComponent(user)}:${encodeURIComponent(password)}@${normalizedHost}:${port}/${encodeURIComponent(database)}${query}`;
+}
+
+const configuredDatabaseUrl = readConfiguredDatabaseUrl();
+const runningOnVercel = process.env.VERCEL === "1" || Boolean(process.env.VERCEL_ENV);
+
+if (!configuredDatabaseUrl && runningOnVercel) {
+  throw new Error(
+    "[db] No hosted PostgreSQL connection is configured. Set DATABASE_URL or a supported Vercel/Neon POSTGRES_* connection variable."
   );
 }
+
+if (!configuredDatabaseUrl) {
+  console.warn(
+    "[db] DATABASE_URL is not set — falling back to the workspace-local " +
+      "PostgreSQL default (see drizzle.config.ts)."
+  );
+}
+
+const databaseUrl = configuredDatabaseUrl ?? DEFAULT_DATABASE_URL;
 
 const globalForDb = globalThis as typeof globalThis & {
   __arenaNextJsPostgresqlPool?: Pool;
@@ -47,6 +83,7 @@ export const pool =
     connectionTimeoutMillis: 10_000,
     idleTimeoutMillis: 30_000,
     keepAlive: true,
+    max: Number(process.env.PGPOOL_MAX ?? 5),
   });
 
 // Attach once per pool instance (the pool is reused across HMR reloads in
@@ -65,4 +102,6 @@ if (process.env.NODE_ENV !== "production") {
   globalForDb.__arenaNextJsPostgresqlPool = pool;
 }
 
-export const db = drizzle(pool);
+export const db = drizzle(pool, {
+  schema,
+});

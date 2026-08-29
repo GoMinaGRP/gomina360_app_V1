@@ -30,3 +30,13 @@ LD_LIBRARY_PATH=/tmp/al2023/lib node dev-tooling/verify-live.mjs
 Credentials used by the scripts are the seeded demo accounts
 (`kwame.owner@gomina360.com`, password via `GOMINA_OWNER_PW`, default
 `Owner@GoMina26`).
+
+## Vercel production database
+
+Vercel runs `npm run vercel-build` automatically. That command resolves the
+hosted PostgreSQL connection from `DATABASE_URL` (or the supported Vercel /
+Neon `POSTGRES_*` variables), applies the Drizzle schema without `--force`,
+then runs the idempotent seed before building Next.js. Configure the connection
+variable for the Vercel **Production** environment and redeploy. A schema
+change that would require dropping existing data fails the build rather than
+silently deleting it.
