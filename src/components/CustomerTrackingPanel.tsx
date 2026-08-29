@@ -33,6 +33,7 @@ import {
   Store,
 } from "lucide-react";
 import { formatMoney } from "@/lib/currency";
+import { copyText } from "@/lib/clipboard";
 import AiSectionGuide from "./AiSectionGuide";
 import {
   googleMapsEmbed,
@@ -238,11 +239,10 @@ export default function CustomerTrackingPanel({
   };
 
   const copy = async (text: string, tag: string) => {
-    try {
-      await navigator.clipboard.writeText(text);
+    if (await copyText(text)) {
       setCopied(tag);
       setTimeout(() => setCopied(""), 1600);
-    } catch {}
+    }
   };
 
   // ── Filtering (client-side, on the server-scoped set) ────────────────
@@ -1182,11 +1182,10 @@ function NewTrackingModal({
             <div className="flex justify-center gap-2">
               <button
                 onClick={async () => {
-                  try {
-                    await navigator.clipboard.writeText(createdCode);
+                  if (await copyText(createdCode)) {
                     setCopied(true);
                     setTimeout(() => setCopied(false), 1500);
-                  } catch {}
+                  }
                 }}
                 className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-slate-700/70 border border-slate-600 text-slate-200 text-xs font-bold"
                 data-testid="ct-new-copy"

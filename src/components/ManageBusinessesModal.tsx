@@ -22,6 +22,7 @@ import {
 } from "lucide-react";
 import LocationSelector, { LocationValue } from "./LocationSelector";
 import { qrDataUrl } from "@/lib/qrRegistry";
+import { copyText } from "@/lib/clipboard";
 import { googleMapsEmbed } from "@/lib/tracking";
 
 /** Resize an uploaded image to a compact base64 data-URL (≤512px JPEG) —
@@ -1049,11 +1050,10 @@ export default function ManageBusinessesModal({
             );
 
             const copy = async (key: string, text: string) => {
-              try {
-                await navigator.clipboard.writeText(text);
-              } catch { /* clipboard can be unavailable — the URL field is selectable */ }
-              setOnlCopied(key);
-              setTimeout(() => setOnlCopied((c) => (c === key ? "" : c)), 1500);
+              if (await copyText(text)) {
+                setOnlCopied(key);
+                setTimeout(() => setOnlCopied((c) => (c === key ? "" : c)), 1500);
+              }
             };
 
             return (
